@@ -68,26 +68,42 @@ services:
     environment:
       NOOSPIRE_API_ORIGIN: http://api:8000
       NOOSPIRE_GW_READ_TIMEOUT: "30"
+      NOOSPIRE_GW_MAX_CONNECTIONS: "100"
+      # Cloudflare Access verified at the origin. Fail closed: with REQUIRED=true and no team/AUD
+      # the gateway answers 503. Set REQUIRED=false only for loopback-only use without a tunnel.
+      NOOSPIRE_ACCESS_TEAM_DOMAIN: ${NOOSPIRE_ACCESS_TEAM_DOMAIN:-}
+      NOOSPIRE_ACCESS_AUD: ${NOOSPIRE_ACCESS_AUD:-}
+      NOOSPIRE_ACCESS_REQUIRED: ${NOOSPIRE_ACCESS_REQUIRED:-true}
+    # Loopback only on the host (owner console / smoke tests). Never 0.0.0.0.
     ports: ["127.0.0.1:8080:8080"]
-    networks: [internal, edge]
+    # internal: reaches the API · connector: reached by cloudflared · edge: host loopback publish
+    networks: [internal, connector, edge]
 
   cloudflared:
     profiles: ["tunnel"]
     # Pin to a reviewed release; record its digest in the hand-over.
-    image: cloudflare/cloudflared:${CLOUDFLARED_VERSION:?pin CLOUDFLARED_VERSION, e.g. 2025.x.y}
+    # Pinned release + digest (resolved 2026-11-11). Bump deliberately and record it in the hand-over.
+    image: cloudflare/cloudflared:2026.10.7@sha256:4955524aeaa379e154023d5a027c250f7b35041a2e7e950cf13f144bc9b9c5ba
     restart: unless-stopped
     depends_on: [gateway]
-    command: ["tunnel", "--no-autoupdate", "run"]
+    # Published route in the Zero Trust dashboard: <admin hostname> -> http://gateway:8080
+    # Protocol: QUIC (UDP 7844) with automatic HTTP/2 fallback (TCP 7844); allow only those to
+    # region1/region2.v2.argotunnel.com on the host firewall, plus 443 to api.cloudflare.com.
+    command: ["tunnel", "--no-autoupdate", "--metrics", "127.0.0.1:20241", "--grace-period", "30s",
+              "--retries", "8", "run"]
     environment:
       # Named Tunnel token from the secret store. Never commit it, never default it.
       TUNNEL_TOKEN: ${TUNNEL_TOKEN:?set TUNNEL_TOKEN from the secret store}
-    networks: [internal, tunnel-egress]
+    # Only the gateway is reachable from the connector: no API, DB, worker or debug port.
+    networks: [connector, tunnel-egress]
 
 volumes:
   noospire-data: {}
 
 networks:
   internal:
+    internal: true
+  connector:
     internal: true
   edge: {}
   worker-egress: {}

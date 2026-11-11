@@ -49,3 +49,6 @@ deploy/.env
 backups/
 .venv/
 noospire.db*
+
+# TypeScript incremental build cache
+*.tsbuildinfo

@@ -585,7 +585,7 @@ function ActiveAssessmentsContent() {
             size="md"
             icon={<RefreshCw className="w-3.5 h-3.5 text-slate-300" />}
             onClick={handleResetBaseline}
-            title="Reset system state back to verified 379 assets, 98 findings, and 50 baseline scans from database"
+            title="Development-only reset (refused in production). Reseeds synthetic demo data only when SENTINEL_SEED_DEMO_DATA is enabled."
           >
             Quay Về Ban Đầu
           </Button>

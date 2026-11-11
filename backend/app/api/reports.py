@@ -182,6 +182,7 @@ async def download_report(
             "Cache-Control": "private, no-store",
             "X-Content-SHA256": digest,
             "X-Content-Type-Options": "nosniff",
+            "X-Template-Version": "legacy-report",
         },
     )
 

@@ -23,12 +23,16 @@ export default function ThreatIntelPage() {
   const [cveResult, setCveResult] = useState<ThreatIntelItem | null>(null);
   const [cveSearching, setCveSearching] = useState(false);
   const [cveError, setCveError] = useState('');
+  const [feeds, setFeeds] = useState<any | null>(null);
+  const [feedError, setFeedError] = useState<string | null>(null);
 
   const fetchKevCatalog = async () => {
     try {
       setLoading(true);
       const res = await api.getKevCatalog().catch(() => ({ items: [], total: 0 }));
       setKevItems(res.items || []);
+      await api.getIntelStatus().then((f) => { setFeeds(f); setFeedError(null); })
+        .catch((e: any) => setFeedError(`Feed status unavailable: ${e?.message || e}`));
     } finally {
       setLoading(false);
     }
@@ -41,10 +45,11 @@ export default function ThreatIntelPage() {
   const handleSync = async () => {
     try {
       setSyncing(true);
-      await api.syncIntel();
+      const r = await api.syncIntel();
       await fetchKevCatalog();
+      alert(`Sync ${r.status}: ` + r.results.map((x) => `${x.source} ${x.success ? 'ok' : 'failed'}`).join(', '));
     } catch (err: any) {
-      alert(`Sync triggered: ${err.message}`);
+      alert(`Sync failed: ${err.message}`);
     } finally {
       setSyncing(false);
     }
@@ -91,51 +96,20 @@ export default function ThreatIntelPage() {
         </button>
       </div>
 
-      {/* Feed Status Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="liquid-glass-card rounded-2xl p-4 shadow-md border border-white/10">
-          <div className="flex items-center justify-between text-xs font-mono text-slate-400 mb-2">
-            <span>CISA KEV CATALOG</span>
-            <Flame className="w-4 h-4 text-rose-500" />
+      {/* Feed Status Grid: real per-source status from /threat-intel/summary (no hard-coded "Synchronized") */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        {feedError && <p role="alert" className="text-xs text-rose-300 col-span-full">{feedError}</p>}
+        {feeds && Object.values(feeds.sources || {}).length === 0 && (
+          <p className="text-xs text-slate-400 col-span-full">No feed has been synchronized yet.</p>
+        )}
+        {feeds && Object.values(feeds.sources || {}).map((src: any) => (
+          <div key={src.source_name} className="p-3 rounded-xl border border-white/10 bg-black/30 text-xs">
+            <div className="font-mono text-slate-300 uppercase">{src.source_name}</div>
+            <div className={src.status === 'success' ? 'text-emerald-400' : src.status === 'failed' ? 'text-rose-400' : 'text-amber-300'}>{src.status}</div>
+            <div className="text-slate-400">{src.last_sync_at ? new Date(src.last_sync_at).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false }) + ' ICT' : 'never'} · {src.records_synced} records</div>
+            {src.error_message && <div className="text-rose-300 break-all">{src.error_message}</div>}
           </div>
-          <div className="text-xl font-bold text-white">Active Exploitation</div>
-          <div className="text-xs text-emerald-400 flex items-center gap-1 mt-2">
-            <CheckCircle2 className="w-3.5 h-3.5" /> Synchronized
-          </div>
-        </div>
-
-        <div className="liquid-glass-card rounded-2xl p-4 shadow-md border border-white/10">
-          <div className="flex items-center justify-between text-xs font-mono text-slate-400 mb-2">
-            <span>FIRST EPSS v3</span>
-            <Database className="w-4 h-4 text-cyan-400" />
-          </div>
-          <div className="text-xl font-bold text-white">Exploit Probability</div>
-          <div className="text-xs text-emerald-400 flex items-center gap-1 mt-2">
-            <CheckCircle2 className="w-3.5 h-3.5" /> Synchronized
-          </div>
-        </div>
-
-        <div className="liquid-glass-card rounded-2xl p-4 shadow-md border border-white/10">
-          <div className="flex items-center justify-between text-xs font-mono text-slate-400 mb-2">
-            <span>NIST NVD 2.0</span>
-            <ShieldAlert className="w-4 h-4 text-amber-400" />
-          </div>
-          <div className="text-xl font-bold text-white">CVSS v3.1 Metrics</div>
-          <div className="text-xs text-emerald-400 flex items-center gap-1 mt-2">
-            <CheckCircle2 className="w-3.5 h-3.5" /> Synchronized
-          </div>
-        </div>
-
-        <div className="liquid-glass-card rounded-2xl p-4 shadow-md border border-white/10">
-          <div className="flex items-center justify-between text-xs font-mono text-slate-400 mb-2">
-            <span>OSV & GHSA</span>
-            <Database className="w-4 h-4 text-purple-400" />
-          </div>
-          <div className="text-xl font-bold text-white">Package Advisories</div>
-          <div className="text-xs text-emerald-400 flex items-center gap-1 mt-2">
-            <CheckCircle2 className="w-3.5 h-3.5" /> Synchronized
-          </div>
-        </div>
+        ))}
       </div>
 
       {/* CVE Instant Lookup Tool */}

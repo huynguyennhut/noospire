@@ -240,6 +240,13 @@ async def run_execution(scan_id: uuid.UUID, fencing_token: int, worker_id: str, 
         rec = (await db.execute(select(ExecutionRecord).where(ExecutionRecord.scan_id == scan_id))).scalars().first()
         if rec is None:
             return "not_defensive"
+        # The lease may already be gone (cancelled, reaped, re-claimed) between claim and start:
+        # then this worker must not touch the record or open an attempt at all.
+        live = (await db.execute(select(Scan.id).where(Scan.id == scan_id, Scan.fencing_token == fencing_token,
+                                                       Scan.status == "RUNNING"))).first()
+        if live is None:
+            log.info("execution %s: lease not held at start (token %s); skipping", rec.id, fencing_token)
+            return "fenced"
         # Close attempts left open by a worker that died or lost its lease.
         await db.execute(update(ExecutionAttempt)
                          .where(ExecutionAttempt.execution_id == rec.id, ExecutionAttempt.status == EXEC_RUNNING)

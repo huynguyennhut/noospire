@@ -185,7 +185,7 @@ td,th{{border:1px solid #ccc;padding:4px;vertical-align:top}}th{{background:#f3f
 <p>So với kỳ trước / Since previous report: mới/new {es['new_since_previous']} · đã sửa/fixed {es['fixed_since_previous']} · mở lại/reopened {es['reopened_since_previous']}
 {(' · kỳ trước/previous ' + e(_ict(ch['previous_generated_at']) or '')) if ch['previous_snapshot_id'] else ' · chưa có kỳ trước/no previous report'}</p>
 <p>Coverage: {es['coverage']['assets_with_successful_check']}/{es['coverage']['assets_in_scope']} asset có kiểm tra thành công · lỗi/loại trừ: {es['errors_or_exclusions']}</p>
-<h2>Phạm vi / Scope</h2><p>{e(snap['scope']['kind'])} · {len(snap['scope']['assets'])} asset · batch {e(str(snap['scope']['batch_id']))} · window {e(str(snap['scope']['window_days']))} ngày/days</p>
+<h2>Phạm vi / Scope</h2><p>{e(snap['scope']['kind'])} · {len(snap['scope']['assets'])} asset · {('batch ' + e(str(snap['scope']['batch_id']))) if snap['scope']['batch_id'] else ('window ' + e(str(snap['scope']['window_days'])) + ' ngày/days')}</p>
 <h2>Coverage</h2><table><tr><th>Asset</th><th>Module</th><th>sbom</th><th>tls_health</th></tr>{cov}</table>
 <h2>Findings &amp; remediation</h2><table><tr><th>Severity</th><th>Status</th><th>Title</th><th>Asset</th><th>Location</th><th>Last verified</th><th>Remediation</th><th>Owner / assignee</th><th>Evidence sha</th></tr>{rows}</table>
 <h2>Phụ lục lỗi / loại trừ · Appendix: errors &amp; exclusions</h2><table><tr><th>Asset</th><th>Engine</th><th>Status</th><th>Reason</th></tr>{app}</table>

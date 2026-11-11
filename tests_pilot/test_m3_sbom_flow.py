@@ -227,12 +227,24 @@ async def test_lost_lease_is_fenced_and_retry_succeeds(client, owner):
     async with AsyncSessionLocal() as db:
         scan = await IDBDurableQueue.claim_next_job(db, "worker-dies")
         sid, stale = scan.id, scan.fencing_token
-        # Simulate the worker freezing past its lease, then the reaper running.
-        await db.execute(update(Scan).where(Scan.id == sid).values(lease_expires_at=scan.leased_at))
-        await db.commit()
-        assert await IDBDurableQueue.recover_expired_leases(db, requeue_backoff_seconds=0) == 1
 
-    assert await runner.run_execution(sid, stale, "worker-dies", None) == "fenced"
+    # The worker freezes after doing the work; meanwhile its lease expires and the reaper runs.
+    # Its commit must then be fenced (lease lost DURING the run, not before it).
+    real_set_phase = runner._set_phase
+
+    async def freeze_then_reap(attempt_id, phase):
+        await real_set_phase(attempt_id, phase)
+        if phase == "reporting":
+            async with AsyncSessionLocal() as db2:
+                await db2.execute(update(Scan).where(Scan.id == sid).values(lease_expires_at=scan.leased_at))
+                await db2.commit()
+                assert await IDBDurableQueue.recover_expired_leases(db2, requeue_backoff_seconds=0) == 1
+
+    runner._set_phase = freeze_then_reap
+    try:
+        assert await runner.run_execution(sid, stale, "worker-dies", None) == "fenced"
+    finally:
+        runner._set_phase = real_set_phase
     ex = (await client.get(f"{API}/executions/{eid}")).json()
     assert ex["finding_count"] is None and ex["attempts"][0]["status"] == "fenced"
     assert (await client.get(f"{API}/findings", params={"asset_id": str(asset)})).json()["total"] == 0

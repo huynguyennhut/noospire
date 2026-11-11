@@ -19,6 +19,7 @@ Run:  NOOSPIRE_API_ORIGIN=http://127.0.0.1:8000 NOOSPIRE_STATIC_DIR=frontend/out
 from __future__ import annotations
 
 import contextlib
+from http.cookiejar import CookieJar
 import logging
 import mimetypes
 import os
@@ -33,6 +34,11 @@ from starlette.background import BackgroundTask
 from starlette.requests import Request
 from starlette.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from starlette.routing import Route
+
+try:  # package import (uvicorn deploy.gateway.gateway:app) or flat copy in the image
+    from deploy.gateway.access import AccessDenied, AccessVerifier
+except ImportError:  # pragma: no cover
+    from access import AccessDenied, AccessVerifier  # type: ignore
 
 log = logging.getLogger("noospire.gateway")
 
@@ -50,14 +56,33 @@ HOP_BY_HOP = {"connection", "keep-alive", "proxy-authenticate", "proxy-authoriza
 # Files that exist in the export for other hosting modes but must never be served here.
 BLOCKED_STATIC = {"_worker.js", "_routes.json", "_redirects"}
 _RID = re.compile(r"^[A-Za-z0-9._:-]{8,128}$")
+_REPORT_HTML = re.compile(r"^/api/v1/(report-snapshots|reports)/[0-9a-fA-F-]{36}/download$")
+ACCESS = AccessVerifier.from_env()
+# Identity headers only the gateway may set; anything a client sends under these names is dropped.
+TRUSTED_IDENTITY_HEADERS = ("x-noospire-access-email", "x-noospire-access-sub")
 
 _client: Optional[httpx.AsyncClient] = None
+
+
+class _NoCookieJar(CookieJar):
+    """The proxy is shared by every user: it must never store or replay cookies.
+    (A normal jar kept the first Set-Cookie it saw and attached it to everyone's requests.)"""
+
+    def set_cookie(self, cookie):  # noqa: D401
+        return None
+
+    def extract_cookies(self, response, request):
+        return None
+
+    def add_cookie_header(self, request):
+        return None
 
 
 def _get_client() -> httpx.AsyncClient:
     global _client
     if _client is None:
         _client = httpx.AsyncClient(
+            cookies=_NoCookieJar(),  # a CookieJar instance is used as-is (a Cookies object would be copied)
             timeout=httpx.Timeout(connect=CONNECT_TIMEOUT, read=READ_TIMEOUT, write=READ_TIMEOUT, pool=CONNECT_TIMEOUT),
             limits=httpx.Limits(max_connections=MAX_CONN, max_keepalive_connections=MAX_CONN // 2),
             follow_redirects=False,
@@ -83,7 +108,12 @@ async def proxy(request: Request) -> Response:
     if len(body) > MAX_BODY:
         return _error(413, "PAYLOAD_TOO_LARGE", "Request body exceeds gateway limit.", rid)
 
-    headers = {k: v for k, v in request.headers.items() if k.lower() not in HOP_BY_HOP}
+    headers = {k: v for k, v in request.headers.items()
+               if k.lower() not in HOP_BY_HOP and k.lower() not in TRUSTED_IDENTITY_HEADERS}
+    claims = getattr(request.state, "access_claims", None)
+    if claims:
+        headers["x-noospire-access-email"] = str(claims.get("email", ""))[:256]
+        headers["x-noospire-access-sub"] = str(claims.get("sub", ""))[:128]
     headers["x-request-id"] = rid
     headers["x-forwarded-proto"] = request.url.scheme
     if request.client:
@@ -107,7 +137,10 @@ async def proxy(request: Request) -> Response:
         return _error(502, "UPSTREAM_UNREACHABLE", "The API origin is unreachable.", rid)
 
     ctype = upstream.headers.get("content-type", "")
-    if ctype.startswith("text/html"):
+    # HTML on an API path is a routing error, except a rendered report the API explicitly marks
+    # (only on the report download routes, and only with the API's X-Template-Version header).
+    is_report_html = bool(_REPORT_HTML.match(request.url.path)) and "x-template-version" in upstream.headers
+    if ctype.startswith("text/html") and not is_report_html:
         await upstream.aclose()
         return _error(502, "MISROUTED", "API path answered with HTML; routing is misconfigured.", rid)
 
@@ -176,15 +209,40 @@ async def static(request: Request) -> Response:
 async def gateway_health(request: Request) -> Response:
     # Gateway's own liveness (does not touch the API). API health is /healthz/*.
     return JSONResponse({"status": "live", "component": "gateway", "build": BUILD_ID,
-                         "api_origin_configured": bool(API_ORIGIN),
+                         "api_origin_configured": bool(API_ORIGIN), "access": ACCESS.describe(),
                          "static_present": (STATIC_DIR / "index.html").is_file()},
                         headers={"Cache-Control": "no-store"})
+
+
+async def _access_gate(request: Request) -> Optional[Response]:
+    """Cloudflare Access at the origin. Fails closed when required but not configured."""
+    incoming = request.headers.get("x-request-id", "")
+    rid = incoming if _RID.match(incoming) else uuid.uuid4().hex
+    if ACCESS.misconfigured:
+        return _error(503, "ACCESS_NOT_CONFIGURED",
+                      "Cloudflare Access verification is required but not configured on the gateway.", rid)
+    if not ACCESS.enabled:
+        return None
+    token = request.headers.get("cf-access-jwt-assertion") or request.cookies.get("CF_Authorization")
+    try:
+        request.state.access_claims = await ACCESS.verify(token)
+    except AccessDenied as exc:
+        log.info("access denied rid=%s code=%s path=%s", rid, exc.code, request.url.path)
+        if request.url.path.startswith(PROXY_PREFIXES):
+            return _error(403, exc.code, exc.detail, rid)
+        return Response(f"Access denied ({exc.code}). Sign in through Cloudflare Access and reload.",
+                        status_code=403, media_type="text/plain; charset=utf-8",
+                        headers={"Cache-Control": "no-store", "X-Request-ID": rid})
+    return None
 
 
 async def dispatch(request: Request) -> Response:
     path = request.url.path
     if path == "/gateway/live":
-        return await gateway_health(request)
+        return await gateway_health(request)  # connector/container liveness: no identity needed
+    denied = await _access_gate(request)
+    if denied is not None:
+        return denied
     if path.startswith(PROXY_PREFIXES) or path in ("/api", "/healthz"):
         return await proxy(request)
     return await static(request)

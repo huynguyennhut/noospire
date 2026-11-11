@@ -150,3 +150,11 @@ def test_repeated_set_cookie_headers_survive_proxy(stack):
     r = httpx.get(f"{stack['bad']}/api/v1/cookies")
     assert r.status_code == 200
     assert {c.split("=")[0] for c in r.headers.get_list("set-cookie")} == {"a_session", "b_csrf"}
+
+
+def test_gateway_never_shares_one_users_session_with_another(stack):
+    """P0 regression (found in Round B): the shared upstream client kept Set-Cookie in a jar and
+    replayed the first user's session cookie on every later request through the gateway."""
+    # Any login response carrying Set-Cookie (here: the fake upstream) must not be remembered.
+    httpx.get(f"{stack['bad']}/api/v1/cookies")
+    assert httpx.get(f"{stack['bad']}/api/v1/echo-cookies").json().get("cookie") in (None, "")

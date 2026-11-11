@@ -37,6 +37,8 @@ const CHANNEL = 'noospire-events';
 const STREAM_URL = '/api/v1/events/stream';
 const POLL_URL = '/api/v1/events';
 const POLL_MS = 10_000;
+// Quick Tunnels (*.trycloudflare.com) do not support SSE and cap in-flight requests: poll only.
+const QUICK_TUNNEL = typeof window !== 'undefined' && window.location.hostname.endsWith('.trycloudflare.com');
 
 const listeners = new Set<Listener>();
 let started = false;
@@ -65,14 +67,14 @@ async function lead(): Promise<void> {
   let failures = 0;
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-  const poll = async () => {
+  const poll = async (): Promise<'revoked' | 'retry'> => {
     deliver({ kind: 'state', state: 'polling' }, true);
     for (;;) {
       try {
         const r = await fetch(`${POLL_URL}?after=${cursor}&limit=200`, { credentials: 'same-origin' });
-        if (r.status === 401) {
+        if (r.status === 401 || r.status === 403) { // app session ended or Cloudflare Access expired
           deliver({ kind: 'state', state: 'auth_revoked' }, true);
-          return;
+          return 'revoked';
         }
         if (r.ok) {
           const body = await r.json();
@@ -91,13 +93,13 @@ async function lead(): Promise<void> {
         deliver({ kind: 'state', state: 'offline' }, true);
       }
       await sleep(jitter(Math.min(60_000, POLL_MS * Math.max(1, failures))));
-      if (typeof EventSource !== 'undefined' && failures === 0) return; // try the stream again
+      if (typeof EventSource !== 'undefined' && !QUICK_TUNNEL && failures === 0) return 'retry'; // try the stream again
     }
   };
 
   for (;;) {
-    if (typeof EventSource === 'undefined') {
-      await poll();
+    if (typeof EventSource === 'undefined' || QUICK_TUNNEL) {
+      if ((await poll()) === 'revoked') return;
       continue;
     }
     const outcome = await new Promise<'closed' | 'failed' | 'revoked'>((resolve) => {
@@ -149,7 +151,7 @@ async function lead(): Promise<void> {
     }
     failures++;
     if (failures >= 3) {
-      await poll();
+      if ((await poll()) === 'revoked') return;
     } else {
       deliver({ kind: 'state', state: 'offline' }, true);
       await sleep(jitter(Math.min(30_000, 3000 * 2 ** failures)));

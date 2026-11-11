@@ -1,323 +1,164 @@
-import asyncio
-from datetime import datetime, timezone
-import os
-from pathlib import Path
-import shutil
-import subprocess
+"""Engine health contract (Milestone 6) — the single source for "is this engine usable now".
+
+Only engines registered in the defensive runner are reported as operational, and only from
+measured state: a worker heartbeat that lists the engine, the inputs it needs (e.g. an active
+advisory snapshot for sbom), and its last committed success. Legacy integrations (nuclei, ZAP,
+crawler, "empire engine") are listed as NOT_INTEGRATED: they are not wired into the fenced
+execution flow and the pilot does not run them.
+
+The former implementation reported every engine ONLINE / UP_TO_DATE / all_healthy=true even when
+no binary existed (a "lab runner" stood in). That contract was removed.
+"""
+
+from __future__ import annotations
+
+import json
 import time
-from typing import Any, Dict, List, Optional
-import uuid
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.deps import get_current_active_user, require_operator
 from backend.app.core.database import get_db
-from backend.app.models.alert import SecurityAlert
+from backend.app.engines import sbom as sbom_engine
+from backend.app.engines import tls_health
+from backend.app.engines.advisories import AdvisoryIndex
+from backend.app.models.defensive import AdvisorySnapshot, ExecutionRecord, WorkerHeartbeat
 from backend.app.models.user import User
-from backend.app.scanners.crawler import AsyncBFSCrawler
-from backend.app.scanners.empire_engine import EmpireAssessmentEngine
-from backend.app.scanners.lab_runners import NucleiLabRunner, ZAPLabRunner
-from backend.app.scanners.nuclei import NucleiAdapter
-from backend.app.scanners.zap import ZAPAdapter
 
-router = APIRouter(prefix="/engines", tags=["Scanner Engines Lifecycle & Health"], dependencies=[Depends(get_current_active_user)])
+router = APIRouter(prefix="/engines", tags=["Engine health"], dependencies=[Depends(get_current_active_user)])
 
-
-def _find_nuclei_binary() -> Optional[str]:
-    """Locate Nuclei binary on PATH or standard Go bin path."""
-    bin_path = shutil.which("nuclei") or shutil.which("nuclei.exe") or shutil.which("nuclei.EXE")
-    if bin_path and os.path.exists(bin_path):
-        return bin_path
-    
-    # Common go bin location on Windows
-    user_home = os.path.expanduser("~")
-    common_go_bin = os.path.join(user_home, "go", "bin", "nuclei.exe")
-    if os.path.exists(common_go_bin):
-        return common_go_bin
-    common_go_bin_caps = os.path.join(user_home, "go", "bin", "nuclei.EXE")
-    if os.path.exists(common_go_bin_caps):
-        return common_go_bin_caps
-
-    return None
+WORKER_STALE = timedelta(seconds=30)
+FEED_STALE = timedelta(days=7)
+LEGACY = {
+    "nuclei": "ProjectDiscovery Nuclei",
+    "zap": "OWASP ZAP",
+    "trivy": "Aqua Trivy",
+    "crawler": "BFS web crawler",
+    "empire_engine": "Empire assessment engine",
+}
+DEFENSIVE = {
+    "sbom": {"name": "SBOM vs versioned advisories", "driver": sbom_engine.DRIVER_NAME,
+             "version": sbom_engine.DRIVER_VERSION, "capabilities": ["cyclonedx", "spdx", "pypi", "semver", "maven"]},
+    "tls_health": {"name": "Read-only TLS / health measurement", "driver": tls_health.DRIVER_NAME,
+                   "version": tls_health.DRIVER_VERSION,
+                   "capabilities": ["tls-certificate-expiry", "tls-verification", "http-status", "latency"]},
+}
 
 
-def _get_nuclei_version(binary_path: str) -> str:
-    """Run nuclei -version to obtain installed CLI version."""
-    try:
-        res = subprocess.run([binary_path, "-version"], capture_output=True, text=True, timeout=5)
-        output = (res.stdout or "") + (res.stderr or "")
-        for line in output.splitlines():
-            if "Engine Version:" in line:
-                parts = line.split("Engine Version:")
-                if len(parts) > 1:
-                    return parts[1].strip()
-            elif "version" in line.lower():
-                return line.strip()
-    except Exception:
-        pass
-    return "v3.11.1"
+def _utc(dt):
+    return dt if dt is None or dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
 @router.get("/health")
-async def get_engines_health() -> Any:
-    """Returns real runtime status, executable path, version, and capability profile for all scanner engines."""
-    engines_info: List[Dict[str, Any]] = []
-
-    # 1. Nuclei Engine
-    nuclei_bin = _find_nuclei_binary()
-    if nuclei_bin:
-        nuclei_ver = _get_nuclei_version(nuclei_bin)
-        engines_info.append({
-            "name": "nuclei",
-            "display_name": "ProjectDiscovery Nuclei CLI",
-            "status": "ONLINE",
-            "mode": "BINARY_CLI",
-            "executable_path": nuclei_bin,
-            "version": nuclei_ver,
-            "capabilities": [
-                "cve-detection",
-                "misconfiguration",
-                "exposure",
-                "passive-dns",
-                "active-templates",
-            ],
-            "is_available": True,
+async def get_engines_health(db: AsyncSession = Depends(get_db)) -> Any:
+    now = datetime.now(timezone.utc)
+    workers = [w for w in (await db.execute(select(WorkerHeartbeat))).scalars()
+               if now - _utc(w.last_seen_at) <= WORKER_STALE]
+    snap = (await db.execute(select(AdvisorySnapshot).where(AdvisorySnapshot.is_active == True))).scalars().first()  # noqa
+    engines: List[Dict[str, Any]] = []
+    for eid, meta in DEFENSIVE.items():
+        online = [w for w in workers if eid in (w.engines or [])]
+        last_ok = (await db.execute(select(func.max(ExecutionRecord.finished_at)).where(
+            ExecutionRecord.engine_id == eid, ExecutionRecord.status == "succeeded"))).scalar()
+        status, reason = "OPERATIONAL", None
+        if not online:
+            status, reason = "UNAVAILABLE", "no worker heartbeat listing this engine in the last 30 s"
+        elif eid == "sbom" and snap is None:
+            status, reason = "DEGRADED", "no active advisory snapshot; sbom runs end as 'unavailable'"
+        elif eid == "sbom" and now - _utc(snap.imported_at) > FEED_STALE:
+            status, reason = "DEGRADED", "active advisory snapshot is older than 7 days"
+        elif any(w.throttle_reason for w in online) and len([w for w in online if not w.throttle_reason]) == 0:
+            status, reason = "DEGRADED", online[0].throttle_reason
+        engines.append({
+            "id": eid, "name": meta["name"], "driver": meta["driver"], "version": meta["version"],
+            "status": status, "reason": reason, "runtime_context": "worker process (native, no subprocess)",
+            "workers_online": len(online), "last_success_at": _utc(last_ok).isoformat() if last_ok else None,
+            "rules": ({"source": snap.source, "version": snap.version_label, "digest": snap.digest,
+                       "imported_at": _utc(snap.imported_at).isoformat()} if eid == "sbom" and snap
+                      else {"id": tls_health.RULESET["id"], "version": tls_health.RULESET["version"]}
+                      if eid == "tls_health" else None),
+            "capabilities": meta["capabilities"], "update_available": None,
         })
-    else:
-        engines_info.append({
-            "name": "nuclei",
-            "display_name": "ProjectDiscovery Nuclei (Embedded Lab Runner)",
-            "status": "ONLINE",
-            "mode": "LAB_RUNNER",
-            "executable_path": None,
-            "version": "v3.11.1-lab",
-            "capabilities": ["cve-detection", "misconfiguration", "exposure", "passive-dns"],
-            "is_available": True,
-        })
-
-    # 2. OWASP ZAP
-    zap_bin = shutil.which("zap.bat") or shutil.which("zap.sh") or shutil.which("zap")
-    if zap_bin:
-        engines_info.append({
-            "name": "zap",
-            "display_name": "OWASP Zed Attack Proxy (CLI)",
-            "status": "ONLINE",
-            "mode": "BINARY_CLI",
-            "executable_path": zap_bin,
-            "version": "2.14.0",
-            "capabilities": ["passive-headers", "cookie-flags", "clickjacking", "active-sqli", "active-xss"],
-            "is_available": True,
-        })
-    else:
-        engines_info.append({
-            "name": "zap",
-            "display_name": "OWASP ZAP (High-Fidelity Lab Runner)",
-            "status": "ONLINE",
-            "mode": "LAB_RUNNER",
-            "executable_path": None,
-            "version": "2.14.0-lab",
-            "capabilities": ["passive-headers", "cookie-flags", "clickjacking", "bounded-sqli", "bounded-xss"],
-            "is_available": True,
-        })
-
-    # 3. Empire Specialized Security Engine
-    engines_info.append({
-        "name": "empire_engine",
-        "display_name": "Empire Educational Specialized Assessment Engine",
-        "status": "ONLINE",
-        "mode": "IN_PROCESS",
-        "executable_path": None,
-        "version": "v2.0-specialized",
-        "capabilities": [
-            "module-a-auth",
-            "module-b-media-policy",
-            "module-c-ssrf",
-            "module-d-api",
-            "module-e-headers",
-            "module-f-negative-auth",
-        ],
-        "is_available": True,
-    })
-
-    # 4. BFS Web Crawler
-    engines_info.append({
-        "name": "crawler",
-        "display_name": "Asynchronous Bounded BFS Web Crawler",
-        "status": "ONLINE",
-        "mode": "IN_PROCESS",
-        "executable_path": None,
-        "version": "v2.0-async-bfs",
-        "capabilities": [
-            "same-origin-crawl",
-            "endpoint-discovery",
-            "html-link-extraction",
-            "static-file-filtering",
-        ],
-        "is_available": True,
-    })
-
+    for eid, name in LEGACY.items():
+        engines.append({"id": eid, "name": name, "driver": None, "version": None, "status": "NOT_INTEGRATED",
+                        "reason": "not wired into the fenced execution flow; not run in the pilot",
+                        "runtime_context": None, "workers_online": 0, "last_success_at": None, "rules": None,
+                        "capabilities": [], "update_available": None})
+    defensive = [e for e in engines if e["id"] in DEFENSIVE]
+    operational = sum(1 for e in defensive if e["status"] == "OPERATIONAL")
+    overall = "HEALTHY" if operational == len(defensive) else ("DEGRADED" if operational or any(
+        e["status"] == "DEGRADED" for e in defensive) else "UNAVAILABLE")
     return {
-        "all_healthy": True,
-        "total_engines": len(engines_info),
-        "online_engines": len([e for e in engines_info if e["status"] == "ONLINE"]),
-        "engines": engines_info,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "status": overall, "as_of": now.isoformat(), "timestamp": now.isoformat(),
+        "engines_count": len(defensive), "operational_count": operational, "engines": engines,
+        # compatibility keys of the former contract, now derived from measured state
+        "all_healthy": overall == "HEALTHY", "total_engines": len(defensive), "online_engines": operational,
     }
 
 
-@router.post("/check-updates")
-async def check_engine_updates(
-    current_user: User = Depends(require_operator),
-) -> Any:
-    """Checks version status and template availability for all engines."""
-    updates_report = []
-
-    # 1. Nuclei CLI & Templates
-    nuclei_bin = _find_nuclei_binary()
-    if nuclei_bin:
-        nuclei_ver = _get_nuclei_version(nuclei_bin)
-        updates_report.append({
-            "engine": "nuclei",
-            "version": nuclei_ver,
-            "templates_status": "UP_TO_DATE",
-            "has_update": False,
-            "detail": f"Nuclei CLI {nuclei_ver} templates synchronized with ProjectDiscovery repository.",
-        })
-    else:
-        updates_report.append({
-            "engine": "nuclei",
-            "version": "v3.11.1-lab",
-            "templates_status": "UP_TO_DATE",
-            "has_update": False,
-            "detail": "Embedded NucleiLabRunner templates verified.",
-        })
-
-    # 2. ZAP
-    updates_report.append({
-        "engine": "zap",
-        "version": "2.14.0",
-        "templates_status": "UP_TO_DATE",
-        "has_update": False,
-        "detail": "OWASP ZAP 2.14.0 active/passive rules up-to-date.",
-    })
-
-    # 3. Empire Specialized Engine
-    updates_report.append({
-        "engine": "empire_engine",
-        "version": "v2.0-specialized",
-        "templates_status": "UP_TO_DATE",
-        "has_update": False,
-        "detail": "Empire 6-module taxonomy v2.0 synchronized with latest educational ecosystem baseline.",
-    })
-
-    # 4. Crawler
-    updates_report.append({
-        "engine": "crawler",
-        "version": "v2.0-async-bfs",
-        "templates_status": "UP_TO_DATE",
-        "has_update": False,
-        "detail": "Crawler same-origin heuristics up-to-date.",
-    })
-
-    return {
-        "status": "CHECK_COMPLETED",
-        "engines": updates_report,
-        "checked_at": datetime.now(timezone.utc).isoformat(),
-        "summary": "All 4 security engines and vulnerability templates are verified up-to-date.",
-    }
+_SELFTEST_SBOM = json.dumps({"bomFormat": "CycloneDX", "specVersion": "1.5", "components": [
+    {"type": "library", "name": "noospire-selftest", "version": "1.0.0", "purl": "pkg:pypi/noospire-selftest@1.0.0"}]})
+_SELFTEST_ADVISORY = [{"id": "NOOSPIRE-SELFTEST-0001", "modified": "2026-01-01T00:00:00Z",
+                       "summary": "SYNTHETIC self-test advisory",
+                       "affected": [{"package": {"ecosystem": "PyPI", "name": "noospire-selftest"},
+                                     "ranges": [{"type": "ECOSYSTEM",
+                                                 "events": [{"introduced": "0"}, {"fixed": "2.0.0"}]}]}]}]
 
 
 @router.post("/test")
-async def test_all_engines(
-    current_user: User = Depends(require_operator),
-    db: AsyncSession = Depends(get_db),
-) -> Any:
-    """Executes live integrity probes on all 4 scanning engines to verify readiness and operational validity."""
-    probes_result = []
+async def test_engines(current_user: User = Depends(require_operator)) -> Any:
+    """In-process self-test with built-in synthetic inputs. No network, no subprocess, no target contact."""
+    t_all = time.perf_counter()
+    results = []
 
-    # 1. Nuclei Probe
     t0 = time.perf_counter()
-    nuclei_bin = _find_nuclei_binary()
-    if nuclei_bin:
-        try:
-            res = subprocess.run([nuclei_bin, "-version"], capture_output=True, text=True, timeout=15)
-            nuclei_passed = (res.returncode == 0)
-            detail = f"Binary execution OK: {_get_nuclei_version(nuclei_bin)}"
-        except Exception as e:
-            lab = NucleiLabRunner()
-            nuclei_passed = lab is not None
-            detail = f"Nuclei CLI notice ({e}); embedded NucleiLabRunner ready"
-    else:
-        lab = NucleiLabRunner()
-        nuclei_passed = lab is not None
-        detail = "Embedded NucleiLabRunner initialized successfully"
-    latency_nuclei = round((time.perf_counter() - t0) * 1000, 2)
-    probes_result.append({
-        "engine": "nuclei",
-        "passed": nuclei_passed,
-        "detail": detail,
-        "latency_ms": latency_nuclei,
-    })
+    try:
+        res = sbom_engine.analyze(_SELFTEST_SBOM.encode(), AdvisoryIndex.build(_SELFTEST_ADVISORY))
+        ok = len(res.matches) == 1 and res.components_evaluated == 1
+        msg = "synthetic SBOM matched the synthetic advisory" if ok else f"unexpected result: {len(res.matches)} match(es)"
+    except Exception as exc:  # pragma: no cover - reported, not raised
+        ok, msg = False, f"{type(exc).__name__}: {exc}"
+    results.append({"engine": "sbom", "status": "PASS" if ok else "FAIL",
+                    "latency_ms": round((time.perf_counter() - t0) * 1000, 2), "message": msg})
 
-    # 2. ZAP Probe
     t0 = time.perf_counter()
-    zap_lab = ZAPLabRunner()
-    zap_passed = zap_lab is not None
-    latency_zap = round((time.perf_counter() - t0) * 1000, 2)
-    probes_result.append({
-        "engine": "zap",
-        "passed": zap_passed,
-        "detail": "ZAP security audit rules validated OK",
-        "latency_ms": latency_zap,
-    })
+    try:
+        await tls_health.resolve_vetted("169.254.169.254", 443, allow_private=True)
+        ok, msg = False, "egress guard did NOT refuse the metadata address"
+    except tls_health.EgressDenied:
+        ok, msg = True, "egress guard refuses metadata addresses before any connection"
+    except Exception as exc:  # pragma: no cover
+        ok, msg = False, f"{type(exc).__name__}: {exc}"
+    results.append({"engine": "tls_health", "status": "PASS" if ok else "FAIL",
+                    "latency_ms": round((time.perf_counter() - t0) * 1000, 2), "message": msg})
 
-    # 3. Empire Engine Probe
-    t0 = time.perf_counter()
-    empire = EmpireAssessmentEngine()
-    empire_passed = empire is not None
-    latency_empire = round((time.perf_counter() - t0) * 1000, 2)
-    probes_result.append({
-        "engine": "empire_engine",
-        "passed": empire_passed,
-        "detail": "Empire 6-module assessment engine initialized OK",
-        "latency_ms": latency_empire,
-    })
+    now = datetime.now(timezone.utc).isoformat()
+    return {"overall_status": "PASS" if all(r["status"] == "PASS" for r in results) else "FAIL",
+            "duration_ms": round((time.perf_counter() - t_all) * 1000, 2), "timestamp": now, "results": results,
+            "scope": "self-test of engine code paths with synthetic inputs; does not prove a worker is running"}
 
-    # 4. Crawler Probe
-    t0 = time.perf_counter()
-    crawler = AsyncBFSCrawler()
-    crawler_passed = crawler is not None
-    latency_crawler = round((time.perf_counter() - t0) * 1000, 2)
-    probes_result.append({
-        "engine": "crawler",
-        "passed": crawler_passed,
-        "detail": "Asynchronous BFS Crawler initialized OK",
-        "latency_ms": latency_crawler,
-    })
 
-    all_pass = all(p["passed"] for p in probes_result)
-
-    # Generate integrity test alert
-    alert = SecurityAlert(
-        id=uuid.uuid4(),
-        severity="INFO" if all_pass else "HIGH",
-        title="Engine Live Integrity Test: ALL PASS" if all_pass else "Engine Integrity Test Issues Detected",
-        message=f"Live probe test across 4 engines completed. Status: {'ALL_ENGINES_PASS' if all_pass else 'DEGRADED'}.",
-        category="SCAN",
-        is_read=False,
-        metadata_json={
-            "probes": probes_result,
-            "tested_at": datetime.now(timezone.utc).isoformat(),
-        },
-    )
-    db.add(alert)
-    await db.commit()
-
-    return {
-        "status": "ALL_ENGINES_PASS" if all_pass else "DEGRADED",
-        "all_passed": all_pass,
-        "probes": probes_result,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    }
+@router.post("/check-updates")
+async def check_engine_updates(current_user: User = Depends(require_operator),
+                               db: AsyncSession = Depends(get_db)) -> Any:
+    """Reports what can be known offline: driver versions and the age of the rule data. The pilot has
+    no update channel for drivers, so `latest_version` is unknown rather than claimed up to date."""
+    now = datetime.now(timezone.utc)
+    snap = (await db.execute(select(AdvisorySnapshot).where(AdvisorySnapshot.is_active == True))).scalars().first()  # noqa
+    sbom_stale = snap is None or now - _utc(snap.imported_at) > FEED_STALE
+    engines = [
+        {"engine": "sbom", "current_version": sbom_engine.DRIVER_VERSION, "latest_version": None, "has_update": None,
+         "templates_updated": not sbom_stale,
+         "notes": ("no active advisory snapshot" if snap is None else
+                   f"advisory snapshot {snap.version_label} imported {_utc(snap.imported_at).isoformat()}"
+                   + (" (older than 7 days: import a newer snapshot)" if sbom_stale else ""))},
+        {"engine": "tls_health", "current_version": tls_health.DRIVER_VERSION, "latest_version": None,
+         "has_update": None, "templates_updated": True,
+         "notes": f"built-in ruleset {tls_health.RULESET['id']} {tls_health.RULESET['version']}"},
+    ]
+    return {"timestamp": now.isoformat(), "updates_available": sbom_stale, "engines": engines,
+            "note": "driver update channel not configured in the pilot; rule data freshness is reported"}

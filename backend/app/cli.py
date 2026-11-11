@@ -16,6 +16,7 @@ import argparse
 import asyncio
 import getpass
 import sqlite3
+from contextlib import closing
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -86,7 +87,7 @@ def main(argv: list[str] | None = None) -> int:
         out = Path(args.out or f"backups/noospire-{stamp}.db")
         out.parent.mkdir(parents=True, exist_ok=True)
         # sqlite3 online backup API: consistent snapshot even with WAL and live writers.
-        with sqlite3.connect(src) as s, sqlite3.connect(out) as d:
+        with closing(sqlite3.connect(src)) as s, closing(sqlite3.connect(out)) as d:
             s.backup(d)
         print(f"backup written {out}")
         return 0
@@ -97,9 +98,10 @@ def main(argv: list[str] | None = None) -> int:
         scratch = bk.with_suffix(".restore-check.db")
         if scratch.exists():
             scratch.unlink()
-        with sqlite3.connect(bk) as s, sqlite3.connect(scratch) as d:
+        # sqlite3's context manager commits but does not close; close explicitly (Windows file locks).
+        with closing(sqlite3.connect(bk)) as s, closing(sqlite3.connect(scratch)) as d:
             s.backup(d)
-        with sqlite3.connect(scratch) as d:
+        with closing(sqlite3.connect(scratch)) as d:
             ok = d.execute("PRAGMA integrity_check").fetchone()[0]
             tables = [r[0] for r in d.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")]
             for t in tables:

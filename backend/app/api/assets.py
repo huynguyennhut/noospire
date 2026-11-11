@@ -54,6 +54,29 @@ from backend.app.schemas.common import (
 router = APIRouter(prefix="/assets", tags=["Target & Asset Management"])
 
 
+async def annotate_verification(db: AsyncSession, assets) -> None:
+    """Attach `verification_state` / `verification_proof` from the proof table (Milestone 6)."""
+    assets = [a for a in assets if a is not None]
+    if not assets:
+        return
+    rows = (await db.execute(select(AssetOwnershipProof).where(
+        AssetOwnershipProof.asset_id.in_([a.id for a in assets]),
+        AssetOwnershipProof.status == OwnershipProofStatus.VERIFIED.value)
+        .order_by(AssetOwnershipProof.created_at))).scalars().all()
+    latest = {r.asset_id: r for r in rows}
+    for a in assets:
+        proof = latest.get(a.id)
+        if proof is not None and a.verification_status == VerificationStatus.VERIFIED.value:
+            a.verification_state = "VERIFIED"
+            a.verification_proof = {"proof_id": str(proof.id), "method": proof.method,
+                                    "verified_at": proof.verified_at.isoformat() if proof.verified_at else None,
+                                    "created_by": proof.created_by}
+        else:
+            a.verification_state = ("UNPROVEN" if a.verification_status == VerificationStatus.VERIFIED.value
+                                    else a.verification_status)
+            a.verification_proof = None
+
+
 @router.get("", response_model=PaginatedResponse[AssetResponse])
 async def list_assets(
     page: int = Query(1, ge=1),
@@ -99,6 +122,7 @@ async def list_assets(
     stmt = stmt.order_by(Asset.created_at.asc()).offset((page - 1) * size).limit(size)
     result = await db.execute(stmt)
     items = result.scalars().all()
+    await annotate_verification(db, items)
 
     pages = (total + size - 1) // size if total > 0 else 1
     return {
@@ -173,6 +197,7 @@ async def create_asset(
 
     await db.commit()
     await db.refresh(asset)
+    await annotate_verification(db, [asset])
     return asset
 
 
@@ -639,12 +664,14 @@ async def get_asset(
 ) -> Any:
     allowed_ids = await get_authorized_asset_ids(current_user, db)
     if allowed_ids is not None and asset_id not in allowed_ids:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied to this asset")
+        # Outside the caller's scope: indistinguishable from a missing asset.
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target asset not found")
 
     result = await db.execute(select(Asset).where(Asset.id == asset_id))
     asset = result.scalars().first()
     if not asset:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target asset not found")
+    await annotate_verification(db, [asset])
     return asset
 
 
@@ -764,6 +791,7 @@ async def update_asset(
 
     await db.commit()
     await db.refresh(asset)
+    await annotate_verification(db, [asset])
     return asset
 
 

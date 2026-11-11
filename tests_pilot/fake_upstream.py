@@ -28,6 +28,10 @@ async def cookies(_):
     return r
 
 
+async def echo_cookies(request):
+    return JSONResponse({"cookie": request.headers.get("cookie")})
+
+
 async def ok(_):
     return Response('{"ok": true}', media_type="application/json")
 
@@ -37,5 +41,6 @@ app = Starlette(routes=[
     Route("/api/v1/slow", slow),
     Route("/api/v1/status/{code:int}", status),
     Route("/api/v1/ok", ok),
+    Route("/api/v1/echo-cookies", echo_cookies),
     Route("/api/v1/cookies", cookies),
 ])

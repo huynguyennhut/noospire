@@ -61,7 +61,7 @@ Mọi response có `X-Request-ID`. Lỗi gateway có dạng `{"code": "UPSTREAM_
 
 1. Tạo Named Tunnel, published route `https://<hostname-quản-trị-của-Empire>` → `http://gateway:8080`.
 2. Tạo Access application (self-hosted) cho đúng hostname, policy chỉ cho các email được duyệt. Bật validate JWT ở origin hoặc dùng "Protect with Access".
-3. Đặt `TUNNEL_TOKEN` và `CLOUDFLARED_VERSION` (bản cụ thể, không dùng `latest`) trong `deploy/.env`, rồi `--profile tunnel up -d`.
+3. Đặt `TUNNEL_TOKEN`, `NOOSPIRE_ACCESS_TEAM_DOMAIN` và `NOOSPIRE_ACCESS_AUD` trong `deploy/.env` (cloudflared đã được ghim phiên bản và digest trong compose), rồi `--profile tunnel up -d`. Chi tiết: `docs/pilot/RUNBOOK.md`.
 4. App vẫn kiểm user, vai trò và asset grant sau lớp Access.
 5. Quick Tunnel chỉ dùng cho demo ngắn: giới hạn 200 request đang xử lý, không hỗ trợ SSE. Giao diện phải dùng polling theo cursor.
 

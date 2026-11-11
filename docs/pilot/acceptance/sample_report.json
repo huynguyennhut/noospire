@@ -1,0 +1,374 @@
+{
+  "appendix_errors_exclusions": [],
+  "changes_vs_previous": {
+    "fixed": [],
+    "new": [],
+    "previous_generated_at": null,
+    "previous_snapshot_id": null,
+    "reopened": [],
+    "unchanged": 0
+  },
+  "correlation_ids": [
+    "79644aac50ab42429e90e64c5ef9e928"
+  ],
+  "coverage": [
+    {
+      "asset": "pilot-test-api",
+      "asset_id": "ae55b9f0-86ca-4190-9ef6-19c2ecf31fee",
+      "engines": {
+        "sbom": {
+          "last_success_at": "2026-11-11T13:24:45.194673+00:00",
+          "runs": 1,
+          "succeeded": 1
+        },
+        "tls_health": {
+          "last_success_at": null,
+          "runs": 0,
+          "succeeded": 0
+        }
+      },
+      "module": "API_SERVICES"
+    },
+    {
+      "asset": "pilot-test-portal",
+      "asset_id": "031ac301-3fa1-4148-b3df-2331f1ee7bee",
+      "engines": {
+        "sbom": {
+          "last_success_at": "2026-11-11T13:24:45.091273+00:00",
+          "runs": 1,
+          "succeeded": 1
+        },
+        "tls_health": {
+          "last_success_at": "2026-11-11T13:24:45.007531+00:00",
+          "runs": 1,
+          "succeeded": 1
+        }
+      },
+      "module": "WEB_APPLICATION"
+    }
+  ],
+  "display_timezone": "Asia/Ho_Chi_Minh",
+  "executions": [
+    "cfbb0a03-db38-40eb-8754-d924d62cd1de",
+    "795fedf9-ed5e-43b1-9b95-7a79a2b92904",
+    "aef4123e-2565-429f-b40b-7dc12e74612a"
+  ],
+  "executive_summary": {
+    "coverage": {
+      "assets_in_scope": 2,
+      "assets_with_successful_check": 2
+    },
+    "errors_or_exclusions": 0,
+    "fixed_since_previous": 0,
+    "new_since_previous": 0,
+    "open_by_severity": {
+      "CRITICAL": 4,
+      "HIGH": 1,
+      "INFO": 0,
+      "LOW": 0,
+      "MEDIUM": 4
+    },
+    "open_total": 9,
+    "reopened_since_previous": 0
+  },
+  "findings": [
+    {
+      "affected_version": "1.5.0",
+      "asset": "pilot-test-portal",
+      "asset_id": "031ac301-3fa1-4148-b3df-2331f1ee7bee",
+      "assignee": null,
+      "component": "pilot-test-alpha",
+      "cve": "CVE-2099-0001",
+      "engine": "sbom",
+      "evidence": {
+        "confidence": "high",
+        "execution_id": "795fedf9-ed5e-43b1-9b95-7a79a2b92904",
+        "input_sha256": "7582166fde72243140e2824a40e18d2f468ab106ce8c1b1e5cdeddac948e1b90",
+        "observed_at": "2026-11-11T13:24:45.086251+00:00",
+        "output_sha256": "c6e3b0632d9a67fa75a6305a59fb44fc37d150cf2323c928c53576ab0f84f7e7",
+        "rule_digest": "b020b79b6f2d3f4c658399a18c4ba9ba6e116c849beed2efd0d1f07385759e29"
+      },
+      "fingerprint": "65d3fb30d15f335024928249ffca0fbf763e869bd5eed2168a8947fed5f6897c",
+      "first_seen_at": "2026-11-11T13:24:45.091273+00:00",
+      "fixed_version": "2.0.0",
+      "id": "2d0e6b7b-2d12-4d1f-af4f-ac985c39f970",
+      "last_seen_at": "2026-11-11T13:24:45.091273+00:00",
+      "last_verified_at": "2026-11-11T13:24:45.091273+00:00",
+      "location": "pkg:pypi/pilot-test-alpha",
+      "owner": null,
+      "remediation": "Upgrade pilot-test-alpha to 2.0.0 or later.",
+      "rule": "PILOT-TEST-0001",
+      "severity": "CRITICAL",
+      "status": "NEW",
+      "title": "PILOT-TEST-0001: SYNTHETIC TEST ADVISORY: alpha deserialization flaw (pilot-test-alpha@1.5.0)"
+    },
+    {
+      "affected_version": "1.5.0",
+      "asset": "pilot-test-api",
+      "asset_id": "ae55b9f0-86ca-4190-9ef6-19c2ecf31fee",
+      "assignee": null,
+      "component": "pilot-test-alpha",
+      "cve": "CVE-2099-0001",
+      "engine": "sbom",
+      "evidence": {
+        "confidence": "high",
+        "execution_id": "cfbb0a03-db38-40eb-8754-d924d62cd1de",
+        "input_sha256": "7582166fde72243140e2824a40e18d2f468ab106ce8c1b1e5cdeddac948e1b90",
+        "observed_at": "2026-11-11T13:24:44.911281+00:00",
+        "output_sha256": "4781fc9ad1891531f1f9f8de4264f9817fb30b18a1a6ea7e639fa883bccbd029",
+        "rule_digest": "b020b79b6f2d3f4c658399a18c4ba9ba6e116c849beed2efd0d1f07385759e29"
+      },
+      "fingerprint": "fdf9cecb9ec3666fcc056042df77ac09176d976543ee9ed6b1ce69684abf0ddc",
+      "first_seen_at": "2026-11-11T13:24:45.194673+00:00",
+      "fixed_version": "2.0.0",
+      "id": "a910acad-30b8-40ab-8f36-662b2e0a3820",
+      "last_seen_at": "2026-11-11T13:24:45.194673+00:00",
+      "last_verified_at": "2026-11-11T13:24:45.194673+00:00",
+      "location": "pkg:pypi/pilot-test-alpha",
+      "owner": null,
+      "remediation": "Upgrade pilot-test-alpha to 2.0.0 or later.",
+      "rule": "PILOT-TEST-0001",
+      "severity": "CRITICAL",
+      "status": "NEW",
+      "title": "PILOT-TEST-0001: SYNTHETIC TEST ADVISORY: alpha deserialization flaw (pilot-test-alpha@1.5.0)"
+    },
+    {
+      "affected_version": "2.14.1",
+      "asset": "pilot-test-portal",
+      "asset_id": "031ac301-3fa1-4148-b3df-2331f1ee7bee",
+      "assignee": null,
+      "component": "org.pilottest:gamma",
+      "cve": "CVE-2099-0003",
+      "engine": "sbom",
+      "evidence": {
+        "confidence": "high",
+        "execution_id": "795fedf9-ed5e-43b1-9b95-7a79a2b92904",
+        "input_sha256": "7582166fde72243140e2824a40e18d2f468ab106ce8c1b1e5cdeddac948e1b90",
+        "observed_at": "2026-11-11T13:24:45.086251+00:00",
+        "output_sha256": "c6e3b0632d9a67fa75a6305a59fb44fc37d150cf2323c928c53576ab0f84f7e7",
+        "rule_digest": "b020b79b6f2d3f4c658399a18c4ba9ba6e116c849beed2efd0d1f07385759e29"
+      },
+      "fingerprint": "7b30f6a8266c1cd9b54d0dc579fe42f79435246fcbaf28d2c686a772533369a7",
+      "first_seen_at": "2026-11-11T13:24:45.091273+00:00",
+      "fixed_version": "2.15.0",
+      "id": "1e0a432f-ca9b-4362-b7fb-c93e3b6d1c55",
+      "last_seen_at": "2026-11-11T13:24:45.091273+00:00",
+      "last_verified_at": "2026-11-11T13:24:45.091273+00:00",
+      "location": "pkg:maven/org.pilottest/gamma",
+      "owner": null,
+      "remediation": "Upgrade org.pilottest:gamma to 2.15.0 or later.",
+      "rule": "PILOT-TEST-0003",
+      "severity": "CRITICAL",
+      "status": "NEW",
+      "title": "PILOT-TEST-0003: SYNTHETIC TEST ADVISORY: gamma lookup injection (org.pilottest:gamma@2.14.1)"
+    },
+    {
+      "affected_version": "2.14.1",
+      "asset": "pilot-test-api",
+      "asset_id": "ae55b9f0-86ca-4190-9ef6-19c2ecf31fee",
+      "assignee": null,
+      "component": "org.pilottest:gamma",
+      "cve": "CVE-2099-0003",
+      "engine": "sbom",
+      "evidence": {
+        "confidence": "high",
+        "execution_id": "cfbb0a03-db38-40eb-8754-d924d62cd1de",
+        "input_sha256": "7582166fde72243140e2824a40e18d2f468ab106ce8c1b1e5cdeddac948e1b90",
+        "observed_at": "2026-11-11T13:24:44.911281+00:00",
+        "output_sha256": "4781fc9ad1891531f1f9f8de4264f9817fb30b18a1a6ea7e639fa883bccbd029",
+        "rule_digest": "b020b79b6f2d3f4c658399a18c4ba9ba6e116c849beed2efd0d1f07385759e29"
+      },
+      "fingerprint": "50dac6824ca73c8ba1d42fa67f8ebbeca4b653711e3313addbae6c5ea2b00f75",
+      "first_seen_at": "2026-11-11T13:24:45.194673+00:00",
+      "fixed_version": "2.15.0",
+      "id": "3181e598-d12c-4d6d-b065-7a1a6f39e235",
+      "last_seen_at": "2026-11-11T13:24:45.194673+00:00",
+      "last_verified_at": "2026-11-11T13:24:45.194673+00:00",
+      "location": "pkg:maven/org.pilottest/gamma",
+      "owner": null,
+      "remediation": "Upgrade org.pilottest:gamma to 2.15.0 or later.",
+      "rule": "PILOT-TEST-0003",
+      "severity": "CRITICAL",
+      "status": "NEW",
+      "title": "PILOT-TEST-0003: SYNTHETIC TEST ADVISORY: gamma lookup injection (org.pilottest:gamma@2.14.1)"
+    },
+    {
+      "affected_version": null,
+      "asset": "pilot-test-portal",
+      "asset_id": "031ac301-3fa1-4148-b3df-2331f1ee7bee",
+      "assignee": null,
+      "component": "tls",
+      "cve": null,
+      "engine": "tls_health",
+      "evidence": {
+        "confidence": "high",
+        "execution_id": "007385ed-60ed-4a20-baf1-5ceef0c2b13e",
+        "input_sha256": null,
+        "observed_at": "2026-11-11T13:25:42.597387+00:00",
+        "output_sha256": "38d594c74d71ab6d5ca148ac9dcf5aca00be091b900e6fcc06985e20c9400657",
+        "rule_digest": "13da9d7e578ac7c9ec56327424357a6368fcec7a133dbc256ba7e483937fae13"
+      },
+      "fingerprint": "cc4966356144029aa38fbe348edc1b8d60f0b463f692d7b05bf721235716b3d1",
+      "first_seen_at": "2026-11-11T13:24:45.007531+00:00",
+      "fixed_version": null,
+      "id": "6929805d-56ba-45db-abcb-fcf60ceeb746",
+      "last_seen_at": "2026-11-11T13:25:42.607162+00:00",
+      "last_verified_at": "2026-11-11T13:25:42.607162+00:00",
+      "location": "https://localhost:8443/health",
+      "owner": null,
+      "remediation": "Renew/replace the certificate and verify the full chain.",
+      "rule": "TLS-CERT-EXPIRING",
+      "severity": "HIGH",
+      "status": "NEW",
+      "title": "TLS certificate expires in 10.0 days"
+    },
+    {
+      "affected_version": "1.4.1",
+      "asset": "pilot-test-portal",
+      "asset_id": "031ac301-3fa1-4148-b3df-2331f1ee7bee",
+      "assignee": null,
+      "component": "@pilot-test/beta",
+      "cve": null,
+      "engine": "sbom",
+      "evidence": {
+        "confidence": "high",
+        "execution_id": "795fedf9-ed5e-43b1-9b95-7a79a2b92904",
+        "input_sha256": "7582166fde72243140e2824a40e18d2f468ab106ce8c1b1e5cdeddac948e1b90",
+        "observed_at": "2026-11-11T13:24:45.086251+00:00",
+        "output_sha256": "c6e3b0632d9a67fa75a6305a59fb44fc37d150cf2323c928c53576ab0f84f7e7",
+        "rule_digest": "b020b79b6f2d3f4c658399a18c4ba9ba6e116c849beed2efd0d1f07385759e29"
+      },
+      "fingerprint": "3f4a8062c01144e4c22d1353fc7db426fd2bd5549d8865060ab7afc7253e2cce",
+      "first_seen_at": "2026-11-11T13:24:45.091273+00:00",
+      "fixed_version": "1.4.2",
+      "id": "ac707310-2852-459b-b32a-470271bcc560",
+      "last_seen_at": "2026-11-11T13:24:45.091273+00:00",
+      "last_verified_at": "2026-11-11T13:24:45.091273+00:00",
+      "location": "pkg:npm/%40pilot-test/beta",
+      "owner": null,
+      "remediation": "Upgrade @pilot-test/beta to 1.4.2 or later.",
+      "rule": "PILOT-TEST-0002",
+      "severity": "MEDIUM",
+      "status": "NEW",
+      "title": "PILOT-TEST-0002: SYNTHETIC TEST ADVISORY: beta prototype pollution (@pilot-test/beta@1.4.1)"
+    },
+    {
+      "affected_version": "1.4.1",
+      "asset": "pilot-test-api",
+      "asset_id": "ae55b9f0-86ca-4190-9ef6-19c2ecf31fee",
+      "assignee": null,
+      "component": "@pilot-test/beta",
+      "cve": null,
+      "engine": "sbom",
+      "evidence": {
+        "confidence": "high",
+        "execution_id": "cfbb0a03-db38-40eb-8754-d924d62cd1de",
+        "input_sha256": "7582166fde72243140e2824a40e18d2f468ab106ce8c1b1e5cdeddac948e1b90",
+        "observed_at": "2026-11-11T13:24:44.911281+00:00",
+        "output_sha256": "4781fc9ad1891531f1f9f8de4264f9817fb30b18a1a6ea7e639fa883bccbd029",
+        "rule_digest": "b020b79b6f2d3f4c658399a18c4ba9ba6e116c849beed2efd0d1f07385759e29"
+      },
+      "fingerprint": "cd3ee9a4b10bac27c1bc4f46451d0f8ede047a1c5ab293e18f2dbc16b80e09db",
+      "first_seen_at": "2026-11-11T13:24:45.194673+00:00",
+      "fixed_version": "1.4.2",
+      "id": "8ea5266a-baa3-4f96-b2c4-10c5a6cc42b8",
+      "last_seen_at": "2026-11-11T13:24:45.194673+00:00",
+      "last_verified_at": "2026-11-11T13:24:45.194673+00:00",
+      "location": "pkg:npm/%40pilot-test/beta",
+      "owner": null,
+      "remediation": "Upgrade @pilot-test/beta to 1.4.2 or later.",
+      "rule": "PILOT-TEST-0002",
+      "severity": "MEDIUM",
+      "status": "NEW",
+      "title": "PILOT-TEST-0002: SYNTHETIC TEST ADVISORY: beta prototype pollution (@pilot-test/beta@1.4.1)"
+    },
+    {
+      "affected_version": "0.9.1",
+      "asset": "pilot-test-portal",
+      "asset_id": "031ac301-3fa1-4148-b3df-2331f1ee7bee",
+      "assignee": null,
+      "component": "pilot-test-delta",
+      "cve": null,
+      "engine": "sbom",
+      "evidence": {
+        "confidence": "high",
+        "execution_id": "795fedf9-ed5e-43b1-9b95-7a79a2b92904",
+        "input_sha256": "7582166fde72243140e2824a40e18d2f468ab106ce8c1b1e5cdeddac948e1b90",
+        "observed_at": "2026-11-11T13:24:45.086251+00:00",
+        "output_sha256": "c6e3b0632d9a67fa75a6305a59fb44fc37d150cf2323c928c53576ab0f84f7e7",
+        "rule_digest": "b020b79b6f2d3f4c658399a18c4ba9ba6e116c849beed2efd0d1f07385759e29"
+      },
+      "fingerprint": "13819c1fca0a20a87632522835799906f3b78728a753b0644e8ab1bdc0ed54a7",
+      "first_seen_at": "2026-11-11T13:24:45.091273+00:00",
+      "fixed_version": null,
+      "id": "ea551f99-670f-47ed-acc3-dd66a02c5f39",
+      "last_seen_at": "2026-11-11T13:24:45.091273+00:00",
+      "last_verified_at": "2026-11-11T13:24:45.091273+00:00",
+      "location": "pkg:pypi/pilot-test-delta",
+      "owner": null,
+      "remediation": "No fixed version published; mitigate or replace the component.",
+      "rule": "PILOT-TEST-0004",
+      "severity": "MEDIUM",
+      "status": "NEW",
+      "title": "PILOT-TEST-0004: SYNTHETIC TEST ADVISORY: delta single bad release (pilot-test-delta@0.9.1)"
+    },
+    {
+      "affected_version": "0.9.1",
+      "asset": "pilot-test-api",
+      "asset_id": "ae55b9f0-86ca-4190-9ef6-19c2ecf31fee",
+      "assignee": null,
+      "component": "pilot-test-delta",
+      "cve": null,
+      "engine": "sbom",
+      "evidence": {
+        "confidence": "high",
+        "execution_id": "cfbb0a03-db38-40eb-8754-d924d62cd1de",
+        "input_sha256": "7582166fde72243140e2824a40e18d2f468ab106ce8c1b1e5cdeddac948e1b90",
+        "observed_at": "2026-11-11T13:24:44.911281+00:00",
+        "output_sha256": "4781fc9ad1891531f1f9f8de4264f9817fb30b18a1a6ea7e639fa883bccbd029",
+        "rule_digest": "b020b79b6f2d3f4c658399a18c4ba9ba6e116c849beed2efd0d1f07385759e29"
+      },
+      "fingerprint": "8c0ca2da70547f8df5a812cee3d25fdc332937d5902811f4370b1433b177a161",
+      "first_seen_at": "2026-11-11T13:24:45.194673+00:00",
+      "fixed_version": null,
+      "id": "a0c655b2-b18c-4c5f-a75a-43eb516a5a84",
+      "last_seen_at": "2026-11-11T13:24:45.194673+00:00",
+      "last_verified_at": "2026-11-11T13:24:45.194673+00:00",
+      "location": "pkg:pypi/pilot-test-delta",
+      "owner": null,
+      "remediation": "No fixed version published; mitigate or replace the component.",
+      "rule": "PILOT-TEST-0004",
+      "severity": "MEDIUM",
+      "status": "NEW",
+      "title": "PILOT-TEST-0004: SYNTHETIC TEST ADVISORY: delta single bad release (pilot-test-delta@0.9.1)"
+    }
+  ],
+  "generated_at_local": "2026-11-11 20:33:32 ICT",
+  "generated_at_utc": "2026-11-11T13:33:32.451674+00:00",
+  "generated_by": "0f0f0f0f-0000-4000-8000-0000000000b1",
+  "redaction": "Query strings, bearer tokens, secrets, cookies and e-mail addresses are removed; response bodies and learner data are never stored.",
+  "scope": {
+    "asset_ids": [
+      "031ac301-3fa1-4148-b3df-2331f1ee7bee",
+      "ae55b9f0-86ca-4190-9ef6-19c2ecf31fee"
+    ],
+    "assets": [
+      {
+        "id": "ae55b9f0-86ca-4190-9ef6-19c2ecf31fee",
+        "module": "API_SERVICES",
+        "name": "pilot-test-api"
+      },
+      {
+        "id": "031ac301-3fa1-4148-b3df-2331f1ee7bee",
+        "module": "WEB_APPLICATION",
+        "name": "pilot-test-portal"
+      }
+    ],
+    "batch_id": "2adcf450-1379-4565-bbea-d45391d6ebda",
+    "kind": "run",
+    "window_days": null,
+    "window_from_utc": null
+  },
+  "template_version": "noospire-pilot-report/1.0",
+  "title": "Round B pilot-test report"
+}

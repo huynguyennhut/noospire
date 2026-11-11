@@ -61,38 +61,8 @@ import {
 
 type TimeRangeDays = 7 | 14 | 30;
 
-// Baseline Datasets for Empire Education Platform
-const EMPIRE_BASELINE_METRICS: OverviewMetrics = {
-  overall_risk_score: 100.0,
-  risk_posture: 'CRITICAL',
-  total_assets: 379,
-  targets_assessed_today: 379,
-  active_assessments: 0,
-  failed_assessments: 0,
-  critical_findings: 1,
-  high_findings: 56,
-  total_open_findings: 58,
-  fixed_findings: 40,
-  newly_discovered_cves: 24,
-  relevant_kev_count: 4,
-};
-
-const EMPIRE_SEVERITY_DIST: SeverityDistributionResponse = {
-  CRITICAL: 1,
-  HIGH: 56,
-  MEDIUM: 1,
-  LOW: 0,
-  INFO: 40,
-};
-
-const EMPIRE_MODULE_RISK: ModuleRiskItem[] = [
-  { module_key: 'API_SERVICES', module_name: 'Core API Gateway', risk_score: 95, critical_count: 1, high_count: 14, medium_count: 8, total_findings: 28 },
-  { module_key: 'STUDENT_MANAGEMENT', module_name: 'Student Management Portal', risk_score: 88, critical_count: 0, high_count: 12, medium_count: 10, total_findings: 24 },
-  { module_key: 'WEB_APPLICATION', module_name: 'Empire Main Web App', risk_score: 82, critical_count: 0, high_count: 10, medium_count: 4, total_findings: 14 },
-  { module_key: 'LEARNING_MATERIALS', module_name: 'Learning Materials Library', risk_score: 72, critical_count: 0, high_count: 8, medium_count: 6, total_findings: 18 },
-  { module_key: 'SUPPORTING_TOOLS', module_name: 'Supporting Exam Tools', risk_score: 65, critical_count: 0, high_count: 6, medium_count: 4, total_findings: 12 },
-  { module_key: 'SERVER_INFRASTRUCTURE', module_name: 'Server Infrastructure', risk_score: 50, critical_count: 0, high_count: 2, medium_count: 0, total_findings: 2 },
-];
+// No baseline/sample datasets: every number below comes from the API or is shown as unknown (—).
+const EMPTY_SEVERITY: SeverityDistributionResponse = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0, INFO: 0 };
 
 export default function DashboardPage() {
   const { t } = useI18n();
@@ -112,21 +82,16 @@ export default function DashboardPage() {
   const [ultraLaunching, setUltraLaunching] = useState<boolean>(false);
 
   // Core Telemetry Datasets
-  const [metrics, setMetrics] = useState<OverviewMetrics | null>(EMPIRE_BASELINE_METRICS);
-  const [severityDist, setSeverityDist] = useState<SeverityDistributionResponse>(EMPIRE_SEVERITY_DIST);
+  const [metrics, setMetrics] = useState<OverviewMetrics | null>(null);
+  const [severityDist, setSeverityDist] = useState<SeverityDistributionResponse>(EMPTY_SEVERITY);
   const [vulnTrend, setVulnTrend] = useState<VulnerabilityTrendItem[]>([]);
-  const [moduleRisk, setModuleRisk] = useState<ModuleRiskItem[]>(EMPIRE_MODULE_RISK);
+  const [moduleRisk, setModuleRisk] = useState<ModuleRiskItem[]>([]);
   const [coverage, setCoverage] = useState<AssessmentCoverageResponse | null>(null);
   const [riskTrend, setRiskTrend] = useState<RiskTrendItem[]>([]);
   const [scannerPerf, setScannerPerf] = useState<ScannerPerformanceItem[]>([]);
   const [intelActivity, setIntelActivity] = useState<IntelligenceActivityResponse | null>(null);
   const [remediationProg, setRemediationProg] = useState<RemediationProgressResponse>({
-    OPEN: 58,
-    IN_REMEDIATION: 12,
-    FIXED: 40,
-    REOPENED: 0,
-    ACCEPTED_RISK: 2,
-    FALSE_POSITIVE: 0,
+    OPEN: 0, IN_REMEDIATION: 0, FIXED: 0, REOPENED: 0, ACCEPTED_RISK: 0, FALSE_POSITIVE: 0,
   });
 
   // Concurrent Data Ingestion Engine
@@ -314,7 +279,7 @@ export default function DashboardPage() {
             className="bg-black/60 border border-white/10 rounded-lg px-2.5 py-2 text-xs text-white focus:outline-none focus:border-cyan-500/50 backdrop-blur-md"
             title="Select target asset or run estate-wide"
           >
-            <option value="ALL">Estate-Wide (All 379 Targets)</option>
+            <option value="ALL">{`All assets in scope (${assets.length})`}</option>
             {assets.map((a) => (
               <option key={a.id} value={a.id}>
                 {a.name || a.target_locator}
@@ -396,7 +361,7 @@ export default function DashboardPage() {
                 </Badge>
               </div>
               <h2 className="text-lg font-bold text-white tracking-tight">
-                {posture === 'OPTIMAL' && 'All Verified Targets Operating Within Secure Baseline'}
+                {posture === 'OPTIMAL' && 'No open findings in the latest measured data (see data state above)'}
                 {posture === 'MODERATE' && 'Low-Level Vulnerabilities Identified Across Perimeters'}
                 {posture === 'ELEVATED' && 'High-Priority Vulnerabilities Requiring Immediate Triage'}
                 {posture === 'CRITICAL' && 'Critical Security Exploits Detected — Urgent Action Required'}
@@ -409,9 +374,10 @@ export default function DashboardPage() {
 
           <div className="flex items-center gap-4 text-xs text-slate-400 border-t lg:border-t-0 lg:border-l border-white/10 pt-4 lg:pt-0 lg:pl-6 shrink-0">
             <div className="flex flex-col gap-1">
-              <span className="text-[11px] text-slate-500 uppercase tracking-wider font-semibold">Primary Target</span>
-              <span className="text-sm font-mono font-bold text-white">https://empire.edu.vn/</span>
-              <span className="text-[10px] text-slate-400">Strict Same-Origin Scope Policy</span>
+              <span className="text-[11px] text-slate-500 uppercase tracking-wider font-semibold">Selected scope</span>
+              <span className="text-sm font-mono font-bold text-white">
+                {selectedAssetId === 'ALL' ? `${assets.length} asset(s)` : (assets.find((a) => a.id === selectedAssetId)?.target_locator || '—')}
+              </span>
             </div>
             {lastSyncTime && (
               <div className="hidden sm:flex flex-col gap-1 border-l border-white/10 pl-4">
@@ -435,10 +401,9 @@ export default function DashboardPage() {
         <StatCard
           title={t('dashboard.totalTargets', 'Managed Targets')}
           value={metrics?.total_assets ?? 0}
-          subtitle="100% Verified Policy"
+          subtitle="In your scope"
           icon={<Server className="w-4 h-4" />}
           accent="slate"
-          trend={{ value: '+4% MoM', positive: true }}
         />
 
         {/* Card 2: Targets Assessed Today */}
@@ -466,11 +431,10 @@ export default function DashboardPage() {
         <StatCard
           title="Failed Scans"
           value={metrics?.failed_assessments ?? 0}
-          subtitle="Zero Degradation"
+          subtitle={metrics ? `${metrics.failed_assessments} failed` : 'unknown'}
           icon={<AlertTriangle className="w-4 h-4" />}
           accent={metrics && metrics.failed_assessments > 0 ? 'rose' : 'slate'}
           glow={metrics && metrics.failed_assessments > 0 ? 'rose' : 'none'}
-          trend={{ value: metrics?.failed_assessments === 0 ? 'Optimal' : 'Degraded', positive: metrics?.failed_assessments === 0 }}
         />
 
         {/* Card 5: Critical Findings */}
@@ -513,7 +477,6 @@ export default function DashboardPage() {
           icon={<CheckCircle2 className="w-4 h-4" />}
           accent="emerald"
           glow="emerald"
-          trend={{ value: '+12% Velocity', positive: true }}
         />
 
         {/* Card 9: Newly Discovered CVEs */}
@@ -523,7 +486,6 @@ export default function DashboardPage() {
           subtitle="NVD & OSV Feeds"
           icon={<Flame className="w-4 h-4" />}
           accent="slate"
-          trend={{ value: '+18 Feeds', positive: true }}
         />
 
         {/* Card 10: Relevant KEV Vulnerabilities */}

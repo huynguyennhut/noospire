@@ -56,6 +56,9 @@ async def trigger_threat_intel_sync(
     job_id = f"sync-{uuid.uuid4().hex[:8]}"
 
     if request.force_offline_fixtures:
+        from backend.app.core.config import settings
+        if settings.is_production:
+            raise HTTPException(status_code=403, detail="Offline (synthetic) threat-intel fixtures are disabled in production.")
         results = await sync_manager.seed_from_offline_fixtures(session)
     else:
         results = await sync_manager.sync_all(

@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { createPortal } from 'react-dom';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard,
@@ -168,6 +169,11 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const notificationsRef = useRef<HTMLDivElement>(null);
   const mobileNotificationsRef = useRef<HTMLDivElement>(null);
   const mobilePopoverRef = useRef<HTMLDivElement>(null);
+  const desktopPopoverRef = useRef<HTMLDivElement>(null);
+  // Pages render only after mount: the static export is built at a different time than it runs,
+  // so time-dependent text (countdowns, "as of", ICT clocks) would not match during hydration.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   // Session comes from the server (HttpOnly cookie). Nothing identity-related is kept in storage.
   useEffect(() => {
@@ -322,7 +328,8 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       const t = event.target as Node;
       const inside = (notificationsRef.current && notificationsRef.current.contains(t)) ||
         (mobileNotificationsRef.current && mobileNotificationsRef.current.contains(t)) ||
-        (mobilePopoverRef.current && mobilePopoverRef.current.contains(t));
+        (mobilePopoverRef.current && mobilePopoverRef.current.contains(t)) ||
+        (desktopPopoverRef.current && desktopPopoverRef.current.contains(t));
       if (!inside) {
         setNotificationsOpen(false);
       }
@@ -841,8 +848,9 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               </button>
 
               {/* Notification Center Popover */}
-              {notificationsOpen && (
-                <div role="dialog" aria-label="Notifications" className="absolute right-0 top-11 w-80 sm:w-96 rounded-2xl bg-nf-900/98 backdrop-blur-3xl border border-white/15 shadow-2xl p-3.5 z-50 specular-highlight">
+              {/* Portal to <body>: the header's backdrop-filter would otherwise become the containing block. */}
+              {notificationsOpen && mounted && createPortal(
+                <div ref={desktopPopoverRef} role="dialog" aria-label="Notifications" className="hidden md:block fixed right-4 top-16 w-80 sm:w-96 max-h-[75vh] overflow-y-auto rounded-2xl bg-nf-900/98 backdrop-blur-3xl border border-white/15 shadow-2xl p-3.5 z-50 specular-highlight">
                   <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/10">
                     <div className="flex items-center gap-2">
                       <Bell className="w-4 h-4 text-white" />
@@ -868,7 +876,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
                   <NotificationList items={alerts} error={alertsError} vi={locale === 'vi'} onOpen={openNotification} onDelete={deleteNotification} />
                 </div>
-              )}
+              , document.body)}
             </div>
 
             {/* Bilingual Segmented Locale Toggle Button */}
@@ -930,7 +938,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
         {/* Main Workspace Page Viewport */}
         <main className="relative z-10 flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          {children}
+          {mounted ? children : <div className="text-sm text-nf-500" role="status">…</div>}
         </main>
       </div>
     </div>

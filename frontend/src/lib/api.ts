@@ -99,7 +99,8 @@ export type ApiErrorKind =
   | 'upstream_timeout'
   | 'misrouted'
   | 'server'
-  | 'network';
+  | 'network'
+  | 'access_denied'; // Cloudflare Access at the gateway (missing/expired token) — sign in again via Access
 
 export type EngineName = 'sbom' | 'tls_health';
 
@@ -331,6 +332,7 @@ function kindFor(status: number, code?: string): ApiErrorKind {
   if (code === 'UPSTREAM_UNREACHABLE') return 'upstream_unreachable';
   if (code === 'UPSTREAM_TIMEOUT') return 'upstream_timeout';
   if (code === 'MISROUTED') return 'misrouted';
+  if (code && code.startsWith('ACCESS_')) return 'access_denied';
   if (status === 401) return 'unauthenticated';
   if (status === 403) return 'forbidden';
   if (status === 404) return 'not_found';
@@ -751,7 +753,8 @@ class ApiClient {
   }
 
   public async listRunsForDay(day?: string): Promise<RunsOfDay> {
-    return this.fetchJson<RunsOfDay>(day ? `/runs?day=${day}` : '/runs');
+    const q = day ? `?day=${encodeURIComponent(day)}` : '';
+    return this.fetchJson<RunsOfDay>(`/runs${q}`);
   }
 
   public async getRunTree(batchId: string): Promise<any> {
@@ -822,21 +825,22 @@ class ApiClient {
   }
 
 
-  // Threat Intel
+  // Threat Intel (contract: /threat-intel/*; the former /intel/* routes never existed on the server)
   public async getIntelStatus(): Promise<any> {
-    return this.fetchJson('/intel/status');
+    return this.fetchJson('/threat-intel/summary');
   }
 
-  public async syncIntel(): Promise<any> {
-    return this.fetchJson('/intel/sync', { method: 'POST' });
+  public async syncIntel(): Promise<{ job_id: string; status: string; results: Array<{ source: string; success: boolean }> }> {
+    return this.fetchJson('/threat-intel/sync', { method: 'POST', body: JSON.stringify({}) });
   }
 
   public async lookupCve(cveId: string): Promise<ThreatIntelItem> {
-    return this.fetchJson<ThreatIntelItem>(`/intel/cve/${encodeURIComponent(cveId)}`);
+    return this.fetchJson<ThreatIntelItem>(`/threat-intel/cve/${encodeURIComponent(cveId)}`);
   }
 
-  public async getKevCatalog(): Promise<{ items: ThreatIntelItem[]; total: number }> {
-    return this.fetchJson<{ items: ThreatIntelItem[]; total: number }>('/intel/kev');
+  public async getKevCatalog(limit = 200): Promise<{ items: ThreatIntelItem[]; total: number }> {
+    const items = await this.fetchJson<ThreatIntelItem[]>(`/threat-intel/kev?limit=${limit}`);
+    return { items, total: items.length };
   }
 
   // Detection Rules

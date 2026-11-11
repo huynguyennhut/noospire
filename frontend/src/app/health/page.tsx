@@ -109,7 +109,8 @@ export default function SystemHealthPage() {
   const displayEngines: any[] = Array.isArray(engineHealth?.engines) ? engineHealth!.engines : [];
   const apiReady = healthData?.status === 'ready';
   const dbState: string = healthData?.checks?.database || (healthData ? 'unknown' : 'checking');
-  const okEngines = displayEngines.filter((e: any) => ['ONLINE', 'OPERATIONAL', 'AVAILABLE'].includes(String(e.status || '').toUpperCase())).length;
+  const okEngines = displayEngines.filter((e: any) => e.status === 'OPERATIONAL').length;
+  const defensiveEngines = displayEngines.filter((e: any) => e.status !== 'NOT_INTEGRATED').length;
 
   return (
     <div className="space-y-6">
@@ -196,7 +197,7 @@ export default function SystemHealthPage() {
             <ShieldCheck className="w-4 h-4 text-emerald-400" />
           </div>
           <div className="text-xl font-black text-white mt-2 font-mono flex items-center gap-2">
-            <span>{engineHealth ? `${okEngines}/${displayEngines.length} AVAILABLE` : 'UNKNOWN'}</span>
+            <span>{engineHealth ? `${okEngines}/${defensiveEngines} OPERATIONAL` : 'UNKNOWN'}</span>
           </div>
           <div className="text-[11px] text-slate-400 mt-1">{engineHealth ? 'Per-engine status from /engines/health' : 'Engine health not loaded'}</div>
         </div>
@@ -232,32 +233,40 @@ export default function SystemHealthPage() {
               <tr>
                 <th className="py-3 px-4 font-bold">Subsystem Component</th>
                 <th className="py-3 px-3 font-bold">Driver / Adapter</th>
-                <th className="py-3 px-3 font-bold">Runtime Context / Path</th>
-                <th className="py-3 px-3 font-bold">Latency</th>
+                <th className="py-3 px-3 font-bold">Context / reason</th>
+                <th className="py-3 px-3 font-bold">Last success</th>
                 <th className="py-3 px-4 font-bold text-right">{t('common.status', 'Status')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
-              {displayEngines.map((row) => (
-                <tr key={row.id || row.name} className="hover:bg-white/[0.02] transition">
-                  <td className="py-3 px-4 font-bold text-white flex items-center gap-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
-                    <span>{row.name}</span>
-                  </td>
-                  <td className="py-3 px-3 text-cyan-400 font-mono text-[11px]">{row.driver}</td>
-                  <td className="py-3 px-3 text-slate-400 text-[11px] max-w-xs truncate" title={row.runtime_context}>
-                    {row.runtime_context}
-                  </td>
-                  <td className="py-3 px-3 font-mono text-[11px] text-slate-300">
-                    {row.latency_ms}ms
-                  </td>
-                  <td className="py-3 px-4 text-right">
-                    <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-950/80 text-emerald-400 border border-emerald-800 font-mono">
-                      {row.status}
-                    </span>
-                  </td>
-                </tr>
-              ))}
+              {displayEngines.map((row) => {
+                const tone = row.status === 'OPERATIONAL' ? 'emerald' : row.status === 'DEGRADED' ? 'amber' : row.status === 'NOT_INTEGRATED' ? 'slate' : 'rose';
+                const dot = { emerald: 'bg-emerald-400', amber: 'bg-amber-400', slate: 'bg-slate-500', rose: 'bg-rose-500' }[tone];
+                const badge = {
+                  emerald: 'bg-emerald-950/80 text-emerald-400 border-emerald-800',
+                  amber: 'bg-amber-950/80 text-amber-300 border-amber-800',
+                  slate: 'bg-slate-900 text-slate-400 border-slate-700',
+                  rose: 'bg-rose-950/80 text-rose-300 border-rose-800',
+                }[tone];
+                return (
+                  <tr key={row.id || row.name} className="hover:bg-white/[0.02] transition">
+                    <td className="py-3 px-4 font-bold text-white flex items-center gap-2">
+                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dot}`} aria-hidden />
+                      <span>{row.name}</span>
+                    </td>
+                    <td className="py-3 px-3 text-cyan-400 font-mono text-[11px]">{row.driver || '—'} {row.version || ''}</td>
+                    <td className="py-3 px-3 text-slate-400 text-[11px] max-w-xs" title={row.reason || row.runtime_context || ''}>
+                      {row.reason || row.runtime_context || '—'}
+                    </td>
+                    <td className="py-3 px-3 font-mono text-[11px] text-slate-300">
+                      {row.last_success_at ? new Date(row.last_success_at).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false }) + ' ICT' : '—'}
+                    </td>
+                    <td className="py-3 px-4 text-right">
+                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border font-mono ${badge}`}>{row.status}</span>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

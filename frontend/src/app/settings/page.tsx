@@ -105,7 +105,7 @@ export default function SettingsPage() {
       setShowResetConfirmModal(false);
       toast({
         title: 'System Restored to Baseline',
-        description: res.message || 'Restored 379 verified targets, 98 findings, and 50 baseline scans.',
+        description: res.message || 'Development reset completed.',
         duration: 5000,
       });
     } catch (err: unknown) {
@@ -166,8 +166,7 @@ export default function SettingsPage() {
       mimeType = 'application/json;charset=utf-8';
       filename += '.json';
     } else {
-      content = ['component,state,detail', ...rows.map((r) => `"${r.component}","${r.state}","${String(r.detail).replace(/"/g, "'")}"`)].join('
-');
+      content = ['component,state,detail', ...rows.map((r) => `"${r.component}","${r.state}","${String(r.detail).replace(/"/g, "'")}"`)].join('\n');
       mimeType = 'text/csv;charset=utf-8';
       filename += '.csv';
     }
@@ -502,7 +501,7 @@ export default function SettingsPage() {
                   </h3>
                 </div>
                 <p className="text-slate-400 text-xs mt-1.5 leading-relaxed max-w-2xl">
-                  Khôi phục toàn bộ nền tảng về trạng thái chuẩn đã được kiểm toán: nạp lại đầy đủ <strong>379 mục tiêu Empire</strong>, <strong>98 lỗ hổng đã xác thực</strong>, <strong>50 bản ghi quét ban đầu</strong>, và làm sạch bộ nhớ đệm tạm thời.
+                  Chỉ dùng ở môi trường phát triển (production từ chối). Xóa dữ liệu thử và chỉ nạp lại dữ liệu demo tổng hợp khi bật <strong>SENTINEL_SEED_DEMO_DATA</strong>; đây <strong>không</strong> phải dữ liệu đã kiểm toán.
                 </p>
               </div>
 
@@ -520,7 +519,7 @@ export default function SettingsPage() {
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-2 text-[11px] font-mono">
               <div className="p-2.5 rounded-lg bg-black/50 border border-white/5">
                 <span className="text-slate-400 block text-[10px]">TARGET PERIMETER</span>
-                <span className="font-bold text-white">379 Assets (empire.edu.vn)</span>
+                <span className="font-bold text-white">Synthetic demo data (dev only)</span>
               </div>
               <div className="p-2.5 rounded-lg bg-black/50 border border-white/5">
                 <span className="text-slate-400 block text-[10px]">FINDING REPOSITORY</span>
@@ -688,7 +687,7 @@ export default function SettingsPage() {
             <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-xs text-rose-200 leading-relaxed">
               Thao tác này sẽ đặt lại toàn bộ hệ thống về trạng thái ban đầu:
               <ul className="list-disc list-inside mt-2 space-y-1 text-slate-300">
-                <li>379 mục tiêu Empire Platform chuẩn</li>
+                <li>Dữ liệu demo tổng hợp (chỉ khi bật SENTINEL_SEED_DEMO_DATA)</li>
                 <li>98 lỗ hổng đã được xác minh</li>
                 <li>50 tác vụ quét baseline</li>
                 <li>3 lịch trình quét Asia/Ho_Chi_Minh</li>

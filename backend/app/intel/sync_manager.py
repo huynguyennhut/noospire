@@ -35,6 +35,13 @@ def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+
+def _require_fixture_mode() -> None:
+    """Synthetic offline fixtures may only be loaded on explicit request outside production."""
+    from backend.app.core.config import settings
+    if settings.is_production:
+        raise PermissionError("offline threat-intel fixtures are disabled in production")
+
 class ThreatIntelSyncManager:
     """Coordinator managing threat intel feeds, non-destructive upserts, and correlation."""
 
@@ -152,14 +159,14 @@ class ThreatIntelSyncManager:
 
         try:
             if force_offline:
+                _require_fixture_mode()
                 items = self.kev.load_offline_fixture()
                 used_offline = True
             else:
                 items, _ = await self.kev.fetch_catalog()
                 used_offline = False
                 if not items:
-                    items = self.kev.load_offline_fixture()
-                    used_offline = True
+                    raise RuntimeError("CISA KEV live feed returned no data; offline fixture NOT loaded")
 
             created_count = 0
             updated_count = 0
@@ -218,9 +225,12 @@ class ThreatIntelSyncManager:
                 res = await session.execute(stmt)
                 cve_list = list(res.scalars().all())
 
-            if force_offline or not cve_list:
+            if force_offline:
+                _require_fixture_mode()
                 scores = self.epss.load_offline_fixture()
                 used_offline = True
+            elif not cve_list:
+                scores, used_offline = {}, False  # no CVE in the database yet: nothing to score
             else:
                 scores = await self.epss.get_scores_batch(cve_list)
                 used_offline = False
@@ -274,6 +284,7 @@ class ThreatIntelSyncManager:
 
         try:
             if force_offline:
+                _require_fixture_mode()
                 items = self.nvd.load_offline_fixture()
                 used_offline = True
             else:
@@ -282,8 +293,7 @@ class ThreatIntelSyncManager:
                 items = await self.nvd.sync_incremental(start_date=start_date)
                 used_offline = False
                 if not items:
-                    items = self.nvd.load_offline_fixture()
-                    used_offline = True
+                    raise RuntimeError("NVD live feed returned no data; offline fixture NOT loaded")
 
             created_count = 0
             updated_count = 0
@@ -333,6 +343,10 @@ class ThreatIntelSyncManager:
         self._source_telemetry[source_key].status = "syncing"
 
         try:
+            if not force_offline:
+                raise NotImplementedError("live OSV sync is not configured in the pilot; the SBOM engine uses "
+                                          "owner-imported advisory snapshots instead")
+            _require_fixture_mode()
             records = self.osv.load_offline_fixture()
             created_count = 0
             updated_count = 0
@@ -410,6 +424,9 @@ class ThreatIntelSyncManager:
         self._source_telemetry[source_key].status = "syncing"
 
         try:
+            if not force_offline:
+                raise NotImplementedError("live GHSA sync is not configured in the pilot")
+            _require_fixture_mode()
             records = self.ghsa.load_offline_fixture()
             created_count = 0
             updated_count = 0

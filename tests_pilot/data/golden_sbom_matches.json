@@ -1,0 +1,135 @@
+[
+  {
+    "advisory": {
+      "advisory_id": "PILOT-TEST-0001",
+      "aliases": [
+        "CVE-2099-0001"
+      ],
+      "cvss_score": 9.8,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+      "fixed_versions": [
+        "2.0.0"
+      ],
+      "matched_by": "range:ECOSYSTEM",
+      "modified": "2026-10-01T00:00:00Z",
+      "published": "2026-09-01T00:00:00Z",
+      "range_events": [
+        {
+          "introduced": "0"
+        },
+        {
+          "fixed": "2.0.0"
+        }
+      ],
+      "references": [
+        "https://pilot-test.invalid/advisories/0001"
+      ],
+      "severity": "CRITICAL",
+      "severity_basis": "cvss_v3_vector",
+      "summary": "SYNTHETIC TEST ADVISORY: alpha deserialization flaw"
+    },
+    "component": {
+      "ecosystem": "PyPI",
+      "name": "pilot-test-alpha",
+      "purl": "pkg:pypi/pilot-test-alpha@1.5.0",
+      "ref": "alpha",
+      "version": "1.5.0"
+    },
+    "remediation": "Upgrade pilot-test-alpha to 2.0.0 or later."
+  },
+  {
+    "advisory": {
+      "advisory_id": "PILOT-TEST-0002",
+      "aliases": [],
+      "cvss_score": null,
+      "cvss_vector": null,
+      "fixed_versions": [
+        "1.4.2"
+      ],
+      "matched_by": "range:SEMVER",
+      "modified": "2026-10-02T00:00:00Z",
+      "published": null,
+      "range_events": [
+        {
+          "introduced": "1.0.0"
+        },
+        {
+          "fixed": "1.4.2"
+        }
+      ],
+      "references": [],
+      "severity": "MEDIUM",
+      "severity_basis": "database_specific.severity",
+      "summary": "SYNTHETIC TEST ADVISORY: beta prototype pollution"
+    },
+    "component": {
+      "ecosystem": "npm",
+      "name": "@pilot-test/beta",
+      "purl": "pkg:npm/%40pilot-test/beta@1.4.1",
+      "ref": "beta",
+      "version": "1.4.1"
+    },
+    "remediation": "Upgrade @pilot-test/beta to 1.4.2 or later."
+  },
+  {
+    "advisory": {
+      "advisory_id": "PILOT-TEST-0003",
+      "aliases": [
+        "CVE-2099-0003"
+      ],
+      "cvss_score": 10.0,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H",
+      "fixed_versions": [
+        "2.15.0"
+      ],
+      "matched_by": "range:ECOSYSTEM",
+      "modified": "2026-10-03T00:00:00Z",
+      "published": null,
+      "range_events": [
+        {
+          "introduced": "2.0-beta9"
+        },
+        {
+          "fixed": "2.15.0"
+        }
+      ],
+      "references": [],
+      "severity": "CRITICAL",
+      "severity_basis": "cvss_v3_vector",
+      "summary": "SYNTHETIC TEST ADVISORY: gamma lookup injection"
+    },
+    "component": {
+      "ecosystem": "Maven",
+      "name": "org.pilottest:gamma",
+      "purl": "pkg:maven/org.pilottest/gamma@2.14.1",
+      "ref": "gamma",
+      "version": "2.14.1"
+    },
+    "remediation": "Upgrade org.pilottest:gamma to 2.15.0 or later."
+  },
+  {
+    "advisory": {
+      "advisory_id": "PILOT-TEST-0004",
+      "aliases": [],
+      "cvss_score": null,
+      "cvss_vector": null,
+      "fixed_versions": [],
+      "matched_by": "versions",
+      "modified": "2026-10-04T00:00:00Z",
+      "published": null,
+      "range_events": [],
+      "references": [],
+      "severity": "MEDIUM",
+      "severity_basis": "unrated_default",
+      "summary": "SYNTHETIC TEST ADVISORY: delta single bad release"
+    },
+    "component": {
+      "ecosystem": "PyPI",
+      "name": "pilot-test-delta",
+      "purl": "pkg:pypi/pilot-test-delta@0.9.1",
+      "ref": "delta",
+      "version": "0.9.1"
+    },
+    "remediation": "No fixed version published; mitigate or replace the component."
+  }
+]

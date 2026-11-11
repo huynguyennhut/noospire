@@ -105,7 +105,10 @@ body {
   box-shadow: 0 10px 32px rgba(0, 0, 0, 0.5), inset 0 1px 0 0 rgba(255, 255, 255, 0.1);
 }
 
-.specular-highlight {
+/* Zero specificity: positioning utilities (fixed/absolute/sticky) on the same element must win.
+   The previous `.specular-highlight { position: relative }` silently turned popovers and the
+   sticky sidebar into relatively positioned boxes. */
+:where(.specular-highlight) {
   position: relative;
 }
 
