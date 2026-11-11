@@ -1,0 +1,29 @@
+rule_id: sentinel-det-2023-4966
+test_cases:
+  - name: Positive Test - Accessing vulnerable OpenID configuration path
+    expected_match: true
+    input:
+      request:
+        method: GET
+        path: /oauth/idp/.well-known/openid-configuration
+        headers:
+          Host: target.example.com
+        body: ""
+      response:
+        status_code: 200
+        headers: {}
+        body: '{"issuer":"https://target.example.com"}'
+
+  - name: Negative Test - Accessing standard login path
+    expected_match: false
+    input:
+      request:
+        method: GET
+        path: /vpn/index.html
+        headers:
+          Host: target.example.com
+        body: ""
+      response:
+        status_code: 200
+        headers: {}
+        body: "<html>Citrix Gateway Login</html>"

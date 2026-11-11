@@ -1,0 +1,55 @@
+id: sentinel-det-2026-0042
+name: Apache Log4j JNDI Remote Code Execution
+description: |
+  Detects remote code execution attempts exploiting Apache Log4j2 JNDI lookup vulnerability
+  via HTTP headers or payload parameters.
+version: 1.2.0
+author: Sentinel Security Research Team
+severity: critical
+status: active
+
+target_types:
+  - web_application
+  - api_endpoint
+
+metadata:
+  cve:
+    - CVE-2021-44228
+    - CVE-2021-45046
+  cwe:
+    - CWE-20
+    - CWE-917
+  cvss_score: 10.0
+  tags:
+    - rce
+    - jndi
+    - cisa-kev
+    - zero-day
+
+detection:
+  engine: pattern_match
+  condition: any_of_matchers
+  matchers:
+    - id: jndi_syntax_regex
+      type: regex
+      part: all
+      regex:
+        - '\$\{(?:jndi|base64|date|lower|upper|env|sys):(?:[^}]*)\}'
+        - '\$\{\$\{(?:lower|upper):j\}\$\{(?:lower|upper):n\}\$\{(?:lower|upper):d\}\$\{(?:lower|upper):i\}'
+      case_insensitive: true
+
+    - id: ldap_rmi_dns_callback
+      type: word
+      part: body
+      words:
+        - "ldap://"
+        - "rmi://"
+        - "dns://"
+      condition: or
+
+remediation:
+  guidance: |
+    Upgrade Apache Log4j2 to version 2.17.1 or higher. Alternatively, remove JndiLookup class from classpath.
+  reference_urls:
+    - https://logging.apache.org/log4j/2.x/security.html
+    - https://www.cisa.gov/known-exploited-vulnerabilities-catalog

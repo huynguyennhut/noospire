@@ -1,0 +1,374 @@
+{
+  "timestamp": "2026-11-08T20:17:33.025Z",
+  "verdict": "APPROVE",
+  "totalTests": 42,
+  "passCount": 42,
+  "failCount": 0,
+  "failures": [],
+  "testLog": [
+    {
+      "category": "Tooltip",
+      "name": "Interior coordinate places tooltip to the right",
+      "status": "PASS",
+      "detail": {
+        "leftPos": 112,
+        "topPos": 76,
+        "isRightEdge": false
+      }
+    },
+    {
+      "category": "Tooltip",
+      "name": "Right edge auto-flip flips tooltip to the left",
+      "status": "PASS",
+      "detail": {
+        "leftPos": 328,
+        "topPos": 76,
+        "isRightEdge": true
+      }
+    },
+    {
+      "category": "Tooltip",
+      "name": "Extreme right edge flips without overflowing container",
+      "status": "PASS",
+      "detail": {
+        "leftPos": 427,
+        "topPos": 76,
+        "isRightEdge": true
+      }
+    },
+    {
+      "category": "Tooltip",
+      "name": "Top boundary clamped to minimum 8px to prevent offscreen clipping",
+      "status": "PASS",
+      "detail": {
+        "leftPos": 112,
+        "topPos": 8,
+        "isRightEdge": false
+      }
+    },
+    {
+      "category": "Tooltip",
+      "name": "Negative y coordinate clamped to 8px gracefully",
+      "status": "PASS",
+      "detail": {
+        "leftPos": 112,
+        "topPos": 8,
+        "isRightEdge": false
+      }
+    },
+    {
+      "category": "Tooltip",
+      "name": "10,000 rapid coordinate calculations survive with zero NaN/crashes",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "category": "Dashboard",
+      "name": "Time range switch to 14D correctly fetches parameterized trend data",
+      "status": "PASS",
+      "detail": {
+        "days": 14,
+        "vulnItems": 14,
+        "riskItems": 14
+      }
+    },
+    {
+      "category": "Dashboard",
+      "name": "Time range switch to 7D correctly fetches parameterized trend data",
+      "status": "PASS",
+      "detail": {
+        "days": 7,
+        "vulnItems": 7,
+        "riskItems": 7
+      }
+    },
+    {
+      "category": "Dashboard",
+      "name": "Time range switch to 30D correctly fetches parameterized trend data",
+      "status": "PASS",
+      "detail": {
+        "days": 30,
+        "vulnItems": 30,
+        "riskItems": 30
+      }
+    },
+    {
+      "category": "Dashboard",
+      "name": "Time range switch to 7D correctly fetches parameterized trend data",
+      "status": "PASS",
+      "detail": {
+        "days": 7,
+        "vulnItems": 7,
+        "riskItems": 7
+      }
+    },
+    {
+      "category": "Dashboard",
+      "name": "API handles invalid non-integer days parameter safely (status 422 or fallback)",
+      "status": "PASS",
+      "detail": {
+        "status": 422
+      }
+    },
+    {
+      "category": "Dashboard",
+      "name": "Concurrent telemetry refresh (5 endpoints) succeeded in 40ms",
+      "status": "PASS",
+      "detail": {
+        "elapsedMs": 40,
+        "statuses": [
+          200,
+          200,
+          200,
+          200,
+          200
+        ]
+      }
+    },
+    {
+      "category": "Sorting",
+      "name": "Live findings retrieved from backend for sorting verification",
+      "status": "PASS",
+      "detail": {
+        "count": 50
+      }
+    },
+    {
+      "category": "Sorting",
+      "name": "Severity sorting ASC orders ranks 1 through 5 (INFO to CRITICAL)",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "category": "Sorting",
+      "name": "Severity sorting DESC orders ranks 5 down to 1 (CRITICAL to INFO)",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "category": "Sorting",
+      "name": "Title alphabetical sorting ASC and DESC are strictly ordered",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "category": "Sorting",
+      "name": "Date sorting ASC chronological orders oldest to newest",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "category": "Sorting",
+      "name": "3-State sort toggle (asc -> desc -> default first_seen_at desc) transitions correctly",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "category": "Filtering",
+      "name": "Filter severity=HIGH matches only HIGH items",
+      "status": "PASS",
+      "detail": {
+        "count": 35
+      }
+    },
+    {
+      "category": "Filtering",
+      "name": "Filter module=API_SERVICES matches only API_SERVICES",
+      "status": "PASS",
+      "detail": {
+        "count": 37
+      }
+    },
+    {
+      "category": "Filtering",
+      "name": "Combined filter (HIGH + API_SERVICES) yields precise intersection",
+      "status": "PASS",
+      "detail": {
+        "count": 33
+      }
+    },
+    {
+      "category": "Filtering",
+      "name": "Search query \"Authentication\" filters accurately across title, location, desc, comp, CVE, rule",
+      "status": "PASS",
+      "detail": {
+        "count": 35
+      }
+    },
+    {
+      "category": "Filtering",
+      "name": "Impossible filter combination produces clean empty list (0 items) without crashing",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "category": "Filtering",
+      "name": "Resetting all filters restores full dataset count",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "category": "BulkTriage",
+      "name": "Bulk triage API mutations dispatched for 3 selected rows",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "category": "BulkTriage",
+      "name": "Refreshed items confirm persistent status=IN_REMEDIATION and assignee in DB",
+      "status": "PASS",
+      "detail": {
+        "items": [
+          {
+            "id": "8c2f3140-f806-465a-aa29-797468e1a39c",
+            "status": "IN_REMEDIATION",
+            "assignee": "challenger-test@empire.edu.vn"
+          },
+          {
+            "id": "8ef47c9f-962f-4f15-bbf1-43df6e26b343",
+            "status": "IN_REMEDIATION",
+            "assignee": "challenger-test@empire.edu.vn"
+          },
+          {
+            "id": "7c6df9c4-b076-44f2-9a62-a7ec3012ab01",
+            "status": "IN_REMEDIATION",
+            "assignee": "challenger-test@empire.edu.vn"
+          }
+        ]
+      }
+    },
+    {
+      "category": "BulkTriage",
+      "name": "Clean rollback of test triage states executed",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "category": "EvidenceViewer",
+      "name": "Sample finding available for 5-tab forensic verification",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "category": "EvidenceViewer",
+      "name": "Tab 1: Matched proof extracted cleanly",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "category": "EvidenceViewer",
+      "name": "Tab 2: HTTP Request stream formatted with method and Host",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "category": "EvidenceViewer",
+      "name": "Tab 3: HTTP Response formatted with HTTP status line",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "category": "EvidenceViewer",
+      "name": "Tab 4: Headers table contains structured key-value pairs",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "category": "EvidenceViewer",
+      "name": "Tab 5: Replay cURL command contains curl invocation and target URL",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "category": "EvidenceViewer",
+      "name": "Copy-to-clipboard simulation succeeds across all 5 tabs",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "category": "LiveRetest",
+      "name": "Live retest probe triggered on finding ID 8c2f3140-f806-465a-aa29-797468e1a39c",
+      "status": "PASS",
+      "detail": {
+        "status": 200,
+        "retest_status": "RETEST_ERROR",
+        "notes": "Could not reach target during retest: All connection attempts failed"
+      }
+    },
+    {
+      "category": "LiveRetest",
+      "name": "Retest result yields structured verdict and explanatory note",
+      "status": "PASS",
+      "detail": {
+        "finding_id": "8c2f3140-f806-465a-aa29-797468e1a39c",
+        "status": "REOPENED",
+        "retest_status": "RETEST_ERROR",
+        "notes": "Could not reach target during retest: All connection attempts failed"
+      }
+    },
+    {
+      "category": "LiveRetest",
+      "name": "Target finding in database reflects updated retest_status",
+      "status": "PASS",
+      "detail": {
+        "id": "8c2f3140-f806-465a-aa29-797468e1a39c",
+        "retest_status": "RETEST_ERROR"
+      }
+    },
+    {
+      "category": "SLA",
+      "name": "Critical finding older than 48h marked as SLA Breached",
+      "status": "PASS",
+      "detail": {
+        "badgeClass": "bg-rose-950/90 text-rose-300 border-rose-800 animate-pulse font-bold",
+        "text": "SLA Breached (0d overdue)",
+        "isBreached": true,
+        "diffDays": 0
+      }
+    },
+    {
+      "category": "SLA",
+      "name": "Fresh Critical finding within 48h marked as On Track or Due Soon (not breached)",
+      "status": "PASS",
+      "detail": {
+        "badgeClass": "bg-amber-950/80 text-amber-300 border-amber-800 font-semibold",
+        "text": "SLA Due Soon (47h left)",
+        "isBreached": false,
+        "diffDays": 2
+      }
+    },
+    {
+      "category": "SLA",
+      "name": "High finding older than 7 days marked as SLA Breached",
+      "status": "PASS",
+      "detail": {
+        "badgeClass": "bg-rose-950/90 text-rose-300 border-rose-800 animate-pulse font-bold",
+        "text": "SLA Breached (3d overdue)",
+        "isBreached": true,
+        "diffDays": -3
+      }
+    },
+    {
+      "category": "SLA",
+      "name": "Medium finding within 30 days marked as SLA On Track",
+      "status": "PASS",
+      "detail": {
+        "badgeClass": "bg-emerald-950/60 text-emerald-300 border-emerald-800/80",
+        "text": "SLA On Track (28d left)",
+        "isBreached": false,
+        "diffDays": 28
+      }
+    },
+    {
+      "category": "SLA",
+      "name": "Missing date falls back to Date.now() without throwing",
+      "status": "PASS",
+      "detail": {
+        "badgeClass": "bg-emerald-950/60 text-emerald-300 border-emerald-800/80",
+        "text": "SLA On Track (90d left)",
+        "isBreached": false,
+        "diffDays": 90
+      }
+    }
+  ]
+}

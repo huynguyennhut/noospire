@@ -1,0 +1,57 @@
+[
+  {
+    "ghsa_id": "GHSA-jfh8-c2jp-5v3q",
+    "cve_id": "CVE-2021-44228",
+    "url": "https://github.com/advisories/GHSA-jfh8-c2jp-5v3q",
+    "summary": "Remote code injection in Log4j",
+    "description": "Apache Log4j2 versions 2.0-beta9 through 2.15.0 JNDI features used in configuration, log messages, and parameters do not protect against attacker controlled LDAP.",
+    "severity": "critical",
+    "type": "reviewed",
+    "cwes": [
+      { "cwe_id": "CWE-20", "name": "Improper Input Validation" },
+      { "cwe_id": "CWE-917", "name": "Improper Neutralization of Special Elements used in an Expression Language Statement" }
+    ],
+    "cvss": {
+      "vector_string": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H",
+      "score": 10.0
+    },
+    "published_at": "2021-12-10T10:15:09Z",
+    "updated_at": "2026-08-11T19:33:44Z"
+  },
+  {
+    "ghsa_id": "GHSA-r64q-w8jr-g9qp",
+    "cve_id": "CVE-2023-34362",
+    "url": "https://github.com/advisories/GHSA-r64q-w8jr-g9qp",
+    "summary": "SQL Injection in Progress MOVEit Transfer",
+    "description": "SQL injection in MOVEit Transfer web application enables unauthenticated remote database access.",
+    "severity": "critical",
+    "type": "reviewed",
+    "cwes": [
+      { "cwe_id": "CWE-89", "name": "Improper Neutralization of Special Elements used in an SQL Command" }
+    ],
+    "cvss": {
+      "vector_string": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+      "score": 9.8
+    },
+    "published_at": "2023-06-02T14:15:09Z",
+    "updated_at": "2026-05-15T12:00:00Z"
+  },
+  {
+    "ghsa_id": "GHSA-72p3-wx4g-jm58",
+    "cve_id": "CVE-2023-4966",
+    "url": "https://github.com/advisories/GHSA-72p3-wx4g-jm58",
+    "summary": "Citrix NetScaler ADC and Gateway Sensitive Information Disclosure (CitrixBleed)",
+    "description": "Sensitive information disclosure vulnerability in Citrix NetScaler ADC and Gateway.",
+    "severity": "high",
+    "type": "reviewed",
+    "cwes": [
+      { "cwe_id": "CWE-119", "name": "Improper Restriction of Operations within the Bounds of a Memory Buffer" }
+    ],
+    "cvss": {
+      "vector_string": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+      "score": 7.5
+    },
+    "published_at": "2023-10-10T12:15:00Z",
+    "updated_at": "2026-04-10T11:00:00Z"
+  }
+]

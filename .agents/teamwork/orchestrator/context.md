@@ -1,0 +1,2 @@
+# Orchestrator Context
+This directory is designated for the Project Orchestrator.

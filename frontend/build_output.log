@@ -1,0 +1,38 @@
+
+> noosforge-sentinel-frontend@1.0.0 build
+> next build
+
+  ▲ Next.js 14.2.35
+
+   Creating an optimized production build ...
+<w> [webpack.cache.PackFileCacheStrategy] Caching failed for pack: Error: ENOENT: no such file or directory, rename 'C:\Users\nguye\Desktop\noospire\frontend\.next\cache\webpack\server-production\0.pack_' -> 'C:\Users\nguye\Desktop\noospire\frontend\.next\cache\webpack\server-production\0.pack'
+ ✓ Compiled successfully
+   Linting and checking validity of types ...
+
+./src/components/verification/TargetVerificationModal.tsx
+161:6  Warning: React Hook useEffect has a missing dependency: 'initialSteps'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+
+info  - Need to disable some ESLint rules? Learn more here: https://nextjs.org/docs/basic-features/eslint#disabling-rules
+   Collecting page data ...
+   Generating static pages (0/18) ...
+   Generating static pages (4/18) 
+   Generating static pages (8/18) 
+   Generating static pages (13/18) 
+ ✓ Generating static pages (18/18)
+
+> Build error occurred
+Error: ENOENT: no such file or directory, rename 'C:\Users\nguye\Desktop\noospire\frontend\.next\export\500.html' -> 'C:\Users\nguye\Desktop\noospire\frontend\.next\server\pages\500.html'
+    at async Object.rename (node:internal/fs/promises:842:10)
+    at async C:\Users\nguye\Desktop\noospire\frontend\node_modules\next\dist\build\index.js:1873:33
+    at async Span.traceAsyncFn (C:\Users\nguye\Desktop\noospire\frontend\node_modules\next\dist\trace\trace.js:154:20)
+    at async C:\Users\nguye\Desktop\noospire\frontend\node_modules\next\dist\build\index.js:1924:25
+    at async Span.traceAsyncFn (C:\Users\nguye\Desktop\noospire\frontend\node_modules\next\dist\trace\trace.js:154:20)
+    at async C:\Users\nguye\Desktop\noospire\frontend\node_modules\next\dist\build\index.js:1546:17
+    at async Span.traceAsyncFn (C:\Users\nguye\Desktop\noospire\frontend\node_modules\next\dist\trace\trace.js:154:20)
+    at async build (C:\Users\nguye\Desktop\noospire\frontend\node_modules\next\dist\build\index.js:368:9) {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'rename',
+  path: 'C:\\Users\\nguye\\Desktop\\noospire\\frontend\\.next\\export\\500.html',
+  dest: 'C:\\Users\\nguye\\Desktop\\noospire\\frontend\\.next\\server\\pages\\500.html'
+}

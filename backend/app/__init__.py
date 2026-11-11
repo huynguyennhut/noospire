@@ -1,0 +1,1 @@
+"""Noosforge Sentinel application package."""

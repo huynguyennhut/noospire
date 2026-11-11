@@ -1,0 +1,47 @@
+id: sentinel-det-2023-4966
+name: CitrixBleed Sensitive Information Disclosure
+description: |
+  Detects exploitation attempts for CitrixBleed (CVE-2023-4966) buffer overflow in NetScaler ADC and Gateway
+  management endpoints (/oauth/idp/.well-known/openid-configuration) leaking session tokens.
+version: 1.1.0
+author: Sentinel Security Research Team
+severity: high
+status: active
+
+target_types:
+  - web_application
+
+metadata:
+  cve:
+    - CVE-2023-4966
+  cwe:
+    - CWE-119
+  cvss_score: 7.5
+  tags:
+    - citrix
+    - info-leak
+    - cisa-kev
+
+detection:
+  engine: pattern_match
+  condition: any_of_matchers
+  matchers:
+    - id: citrix_oauth_path
+      type: word
+      part: path
+      words:
+        - "/oauth/idp/.well-known/openid-configuration"
+      condition: or
+
+    - id: oversized_host_header
+      type: regex
+      part: header
+      regex:
+        - 'Host:\s*[a-zA-Z0-9.-]{64,}'
+      case_insensitive: true
+
+remediation:
+  guidance: |
+    Apply vendor hotfix CTX579459 immediately and terminate all active NetScaler ICA and Gateway sessions.
+  reference_urls:
+    - https://support.citrix.com/article/CTX579459

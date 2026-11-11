@@ -1,0 +1,129 @@
+from enum import Enum
+from typing import Generic, List, Optional, TypeVar
+from pydantic import BaseModel
+
+T = TypeVar("T")
+
+
+class AssetType(str, Enum):
+    DOMAIN = "DOMAIN"
+    WEB_APP = "WEB_APP"
+    API_ENDPOINT = "API_ENDPOINT"
+    PROJECT_ARCHIVE = "PROJECT_ARCHIVE"
+    CONTAINER_IMAGE = "CONTAINER_IMAGE"
+    OBJECT_STORAGE = "OBJECT_STORAGE"
+    SERVER = "SERVER"
+
+
+class EmpireModule(str, Enum):
+    STUDENT_MANAGEMENT = "STUDENT_MANAGEMENT"
+    LEARNING_MATERIALS = "LEARNING_MATERIALS"
+    SUPPORTING_TOOLS = "SUPPORTING_TOOLS"
+    API_SERVICES = "API_SERVICES"
+    WEB_APPLICATION = "WEB_APPLICATION"
+    SERVER_INFRASTRUCTURE = "SERVER_INFRASTRUCTURE"
+
+
+class VerificationStatus(str, Enum):
+    PENDING = "PENDING"
+    VERIFIED = "VERIFIED"
+    FAILED = "FAILED"
+    REVOKED = "REVOKED"
+
+
+class VerificationType(str, Enum):
+    NONE = "NONE"
+    DNS_TXT = "DNS_TXT"
+    HTTP_WELL_KNOWN = "HTTP_WELL_KNOWN"
+    ADMIN_OVERRIDE = "ADMIN_OVERRIDE"
+
+
+class Criticality(str, Enum):
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+    CRITICAL = "CRITICAL"
+
+
+class Exposure(str, Enum):
+    INTERNET = "INTERNET"
+    INTERNAL = "INTERNAL"
+    ISOLATED = "ISOLATED"
+
+
+class ScanStatus(str, Enum):
+    PENDING = "PENDING"
+    QUEUED = "QUEUED"
+    INITIALIZING = "INITIALIZING"
+    RUNNING = "RUNNING"
+    COMPLETING = "COMPLETING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
+    TIMED_OUT = "TIMED_OUT"
+
+
+class ScanQualityStatus(str, Enum):
+    SCANNED_SUCCESSFULLY = "SCANNED_SUCCESSFULLY"
+    PARTIAL_COVERAGE = "PARTIAL_COVERAGE"
+    AUTH_REQUIRED = "AUTH_REQUIRED"
+    SCANNER_FAILED = "SCANNER_FAILED"
+    TARGET_UNAVAILABLE = "TARGET_UNAVAILABLE"
+
+
+class ScanProfile(str, Enum):
+    QUICK = "QUICK"
+    DAILY_SECURITY = "DAILY_SECURITY"
+    STANDARD = "STANDARD"
+    AUTHENTICATED = "AUTHENTICATED"
+    API_ASSESSMENT = "API_ASSESSMENT"
+    THOROUGH = "THOROUGH"
+    INFRASTRUCTURE = "INFRASTRUCTURE"
+    LIGHT_PASSIVE = "LIGHT_PASSIVE"
+    BASELINE = "BASELINE"
+    DEEP_ACTIVE = "DEEP_ACTIVE"
+    SCA_CONTAINER = "SCA_CONTAINER"
+
+
+class FindingSeverity(str, Enum):
+    INFO = "INFO"
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+    CRITICAL = "CRITICAL"
+
+
+class FindingStatus(str, Enum):
+    NEW = "NEW"
+    POTENTIAL = "POTENTIAL"
+    CONFIRMED = "CONFIRMED"
+    OPEN = "OPEN"
+    IN_REMEDIATION = "IN_REMEDIATION"
+    FIXED = "FIXED"
+    REOPENED = "REOPENED"
+    ACCEPTED_RISK = "ACCEPTED_RISK"
+    FALSE_POSITIVE = "FALSE_POSITIVE"
+    NOT_AFFECTED = "NOT_AFFECTED"
+    RESOLVED = "RESOLVED"
+    MUTED = "MUTED"
+
+
+class ExposureClassification(str, Enum):
+    PUBLIC_BY_DESIGN = "PUBLIC_BY_DESIGN"
+    PUBLIC_SENSITIVE_CONTENT = "PUBLIC_SENSITIVE_CONTENT"
+    UNEXPECTED_PUBLIC_FILE = "UNEXPECTED_PUBLIC_FILE"
+    PRIVATE_ACCESS_CONTROL_FAILURE = "PRIVATE_ACCESS_CONTROL_FAILURE"
+    MISCONFIGURED_MEDIA_STORAGE = "MISCONFIGURED_MEDIA_STORAGE"
+
+
+class MessageResponse(BaseModel):
+    message: str
+    detail: Optional[str] = None
+
+
+class PaginatedResponse(BaseModel, Generic[T]):
+    items: List[T]
+    total: int
+    page: int
+    size: int
+    pages: int

@@ -1,0 +1,41 @@
+rule_id: sentinel-det-generic-sqli
+test_cases:
+  - name: Positive Test - UNION SELECT Injection in Query Parameter
+    expected_match: true
+    input:
+      request:
+        method: GET
+        path: /api/products?category=1%20UNION%20SELECT%20username,%20password%20FROM%20users
+        headers: {}
+        body: ""
+      response:
+        status_code: 200
+        headers: {}
+        body: "[]"
+
+  - name: Positive Test - SQL Database Error in Response Body
+    expected_match: true
+    input:
+      request:
+        method: GET
+        path: /items/42'
+        headers: {}
+        body: ""
+      response:
+        status_code: 500
+        headers: {}
+        body: "Database exception: You have an error in your SQL syntax near '42'' at line 1"
+
+  - name: Negative Test - Clean Product Query
+    expected_match: false
+    input:
+      request:
+        method: GET
+        path: /api/products?category=electronics&sort=asc
+        headers: {}
+        body: ""
+      response:
+        status_code: 200
+        headers:
+          Content-Type: application/json
+        body: '{"results": [{"id": 1, "name": "Laptop"}]}'

@@ -1,0 +1,54 @@
+id: sentinel-det-generic-sqli
+name: Generic SQL Injection Pattern Detection
+description: |
+  Detects classic SQL injection attempt patterns including UNION SELECT, boolean tautologies,
+  and database error signatures in responses.
+version: 1.0.0
+author: Sentinel Research
+severity: high
+status: active
+
+target_types:
+  - web_application
+  - api_endpoint
+
+metadata:
+  cve:
+    - CVE-2023-34362
+  cwe:
+    - CWE-89
+  cvss_score: 8.5
+  tags:
+    - sqli
+    - injection
+    - database
+
+detection:
+  engine: pattern_match
+  condition: any_of_matchers
+  matchers:
+    - id: sqli_syntax_patterns
+      type: regex
+      part: all
+      regex:
+        - '(?i)(?:union\s+(?:all\s+)?select\s+[\w\s,]+from)'
+        - "(?i)(?:(?:or|and)\\s+['\"]?\\d+['\"]?\\s*=\\s*['\"]?\\d+['\"])"
+        - "(?i)(?:sleep\\(\\s*\\d+\\s*\\)|waitfor\\s+delay\\s+['\"]\\d+)"
+      case_insensitive: true
+
+    - id: sql_error_signatures
+      type: word
+      part: body
+      words:
+        - "You have an error in your SQL syntax"
+        - "supplied argument is not a valid MySQL result resource"
+        - "Microsoft OLE DB Provider for SQL Server"
+        - "PostgreSQL query failed: ERROR"
+        - "ORA-01756: quoted string not properly terminated"
+      condition: or
+
+remediation:
+  guidance: |
+    Use parameterized queries or prepared statements for all database interactions. Never concatenate user input directly into SQL strings.
+  reference_urls:
+    - https://owasp.org/www-community/attacks/SQL_Injection
