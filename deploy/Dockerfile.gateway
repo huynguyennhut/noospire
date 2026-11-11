@@ -1,0 +1,29 @@
+# Noospire gateway image: clean static export of the console + fixed-origin API proxy.
+# Stage 1 builds frontend/out from a clean checkout (npm ci on the lockfile).
+FROM node:20-alpine AS console
+WORKDIR /src
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY frontend/ ./
+ENV NEXT_TELEMETRY_DISABLED=1
+ARG NOOSPIRE_BUILD_ID=dev
+ENV NEXT_PUBLIC_BUILD_ID=${NOOSPIRE_BUILD_ID}
+RUN rm -rf out .next && npm run build && test -f out/index.html \
+    && rm -f out/_worker.js out/_routes.json out/_redirects
+
+# Stage 2: Python gateway (same pinned deps as API: starlette, httpx, uvicorn).
+FROM python:3.12-slim AS gateway
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 PYTHONPATH=/app
+WORKDIR /app
+COPY backend/requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt && useradd --system --uid 10002 gateway
+COPY deploy/__init__.py /app/deploy/__init__.py
+COPY deploy/gateway/ /app/deploy/gateway/
+COPY --from=console /src/out /srv/console
+ARG NOOSPIRE_BUILD_ID=dev
+ENV NOOSPIRE_STATIC_DIR=/srv/console NOOSPIRE_BUILD_ID=${NOOSPIRE_BUILD_ID}
+USER gateway
+EXPOSE 8080
+HEALTHCHECK --interval=15s --timeout=5s --retries=3 \
+  CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/gateway/live',timeout=4).status==200 else 1)"
+CMD ["python", "-m", "uvicorn", "deploy.gateway.gateway:app", "--host", "0.0.0.0", "--port", "8080"]

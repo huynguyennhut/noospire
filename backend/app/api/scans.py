@@ -10,7 +10,16 @@ from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.api.deps import get_authorized_asset_ids, require_admin, require_operator, require_viewer
+from backend.app.api.deps import (
+    get_authorized_asset_ids,
+    is_sole_owner,
+    load_scope,
+    require_admin,
+    require_operator,
+    require_owner,
+    require_viewer,
+    session_still_valid,
+)
 from backend.app.core.config import settings
 from backend.app.core.database import AsyncSessionLocal, get_db
 from backend.app.core.dispatcher import get_dispatcher, log_buffer
@@ -49,6 +58,26 @@ from backend.app.schemas.scan import (
     UltraScanResponse,
 )
 
+AUTH_REVOKED_FRAME = 'event: auth_revoked\ndata: {"detail": "session or grant revoked"}\n\n'
+
+
+async def _scoped_scan(db: AsyncSession, user: User, scan_id: uuid.UUID, action: str = "READ") -> Scan:
+    """Load a scan and enforce object scope (404 when unreadable, 403 when action missing)."""
+    scan = (await db.execute(select(Scan).where(Scan.id == scan_id))).scalars().first()
+    if not scan:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found")
+    (await load_scope(user, db)).require(scan.asset_id, action)
+    return scan
+
+
+async def _scoped_batch_filter(stmt, db: AsyncSession, user: User):
+    scope = await load_scope(user, db)
+    if scope.asset_ids is None:
+        return stmt
+    visible = select(Scan.batch_id).where(Scan.asset_id.in_(scope.asset_ids), Scan.batch_id.is_not(None))
+    return stmt.where(ScanBatch.id.in_(visible))
+
+
 router = APIRouter(prefix="/scans", tags=["Scan Center"])
 
 
@@ -65,6 +94,9 @@ async def list_scans(
     db: AsyncSession = Depends(get_db),
 ) -> Any:
     stmt = select(Scan)
+    _scope = await load_scope(current_user, db)
+    if _scope.asset_ids is not None:
+        stmt = stmt.where(Scan.asset_id.in_(_scope.asset_ids))
     if asset_id:
         stmt = stmt.where(Scan.asset_id == asset_id)
     if status_filter:
@@ -108,9 +140,7 @@ async def create_scan(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
 
     # Developer Scoping Enforcement (R5)
-    allowed_ids = await get_authorized_asset_ids(current_user, db)
-    if allowed_ids is not None and scan_in.asset_id not in allowed_ids:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied to this target asset")
+    (await load_scope(current_user, db)).require(scan_in.asset_id, "SCAN")
 
     # 2. Scope and Emergency Stop Check (F13 - kill switch takes precedence)
     scope_res = await db.execute(select(AssetAssessmentScope).where(AssetAssessmentScope.asset_id == asset.id))
@@ -188,13 +218,7 @@ async def create_batch_scan(
 
     if is_estate_wide:
         # Enforce R5: Estate-wide scan is restricted solely to the system owner
-        user_role = (current_user.role or "").upper()
-        is_owner = (
-            user_role == UserRole.OWNER.value
-            or (current_user.email and current_user.email.lower() == settings.SOLE_OWNER_EMAIL.lower())
-            or str(current_user.id) == settings.SOLE_OWNER_ACCOUNT_ID
-        )
-        if not is_owner and not current_user.is_superuser:
+        if not is_sole_owner(current_user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Launching estate-wide Ultra Scan across the entire inventory is restricted solely to the system owner.",
@@ -216,9 +240,9 @@ async def create_batch_scan(
             )
 
         # Developer Scoping Enforcement (R5)
-        allowed_ids = await get_authorized_asset_ids(current_user, db)
-        if allowed_ids is not None:
-            unauthorized = [tid for tid in target_uuids if tid not in allowed_ids]
+        _scope = await load_scope(current_user, db)
+        if not _scope.estate_wide:
+            unauthorized = [tid for tid in target_uuids if not _scope.can(tid, "SCAN")]
             if unauthorized:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
@@ -353,7 +377,7 @@ async def create_batch_scan(
 
 @router.get("/ultra/fixture-379", response_model=UltraScanFixtureResponse)
 async def get_ultra_scan_fixture(
-    current_user: User = Depends(require_viewer),
+    current_user: User = Depends(require_owner),
 ) -> Any:
     """Returns the synthetic 379-item inventory plan and classification breakdown
     for continuous security assessment validation.
@@ -418,13 +442,7 @@ async def launch_ultra_scan(
         or (isinstance(ultra_in.scope, str) and ultra_in.scope.upper() in ("ALL", "EMPIRE_ESTATE_379", "FIXTURE_379"))
     )
     if is_estate_wide:
-        user_role = (current_user.role or "").upper()
-        is_owner = (
-            user_role == UserRole.OWNER.value
-            or (current_user.email and current_user.email.lower() == settings.SOLE_OWNER_EMAIL.lower())
-            or str(current_user.id) == settings.SOLE_OWNER_ACCOUNT_ID
-        )
-        if not is_owner and not current_user.is_superuser:
+        if not is_sole_owner(current_user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Launching estate-wide Ultra Scan across the entire inventory is restricted solely to the system owner.",
@@ -588,7 +606,7 @@ async def list_batches(
     current_user: User = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
-    stmt = select(ScanBatch)
+    stmt = await _scoped_batch_filter(select(ScanBatch), db, current_user)
     count_stmt = select(func.count()).select_from(stmt.subquery())
     total_res = await db.execute(count_stmt)
     total = total_res.scalar() or 0
@@ -613,8 +631,8 @@ async def get_batch(
     current_user: User = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
-    result = await db.execute(select(ScanBatch).where(ScanBatch.id == batch_id))
-    batch = result.scalars().first()
+    stmt = await _scoped_batch_filter(select(ScanBatch).where(ScanBatch.id == batch_id), db, current_user)
+    batch = (await db.execute(stmt)).scalars().first()
     if not batch:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan batch not found")
     return batch
@@ -623,7 +641,7 @@ async def get_batch(
 @router.post("/batch/{batch_id}/cancel")
 async def cancel_batch(
     batch_id: uuid.UUID,
-    current_user: User = Depends(require_operator),
+    current_user: User = Depends(require_owner),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
     result = await db.execute(select(ScanBatch).where(ScanBatch.id == batch_id))
@@ -645,7 +663,7 @@ async def cancel_batch(
 
 @router.post("/stop-all")
 async def stop_all_scans(
-    current_user: User = Depends(require_operator),
+    current_user: User = Depends(require_owner),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
     """Platform-wide emergency stop halting all running scans, sub-processes, and queued tasks."""
@@ -661,7 +679,7 @@ async def stop_all_scans(
 @router.get("/trackcurrent", response_model=TrackCurrentResponse)
 @router.get("/telemetry", response_model=TrackCurrentResponse)
 async def get_trackcurrent(
-    current_user: User = Depends(require_viewer),
+    current_user: User = Depends(require_owner),
 ) -> Any:
     """Provides real-time telemetry on active worker threads, queue depth, and host resources."""
     dispatcher = get_dispatcher()
@@ -678,10 +696,7 @@ async def get_scan(
     current_user: User = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
-    result = await db.execute(select(Scan).where(Scan.id == scan_id))
-    scan = result.scalars().first()
-    if not scan:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found")
+    scan = await _scoped_scan(db, current_user, scan_id, "READ")
     return scan
 
 
@@ -691,10 +706,7 @@ async def delete_scan(
     current_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> None:
-    result = await db.execute(select(Scan).where(Scan.id == scan_id))
-    scan = result.scalars().first()
-    if not scan:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found")
+    scan = await _scoped_scan(db, current_user, scan_id, "READ")
 
     await db.delete(scan)
     await db.commit()
@@ -706,10 +718,7 @@ async def cancel_scan(
     current_user: User = Depends(require_operator),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
-    result = await db.execute(select(Scan).where(Scan.id == scan_id))
-    scan = result.scalars().first()
-    if not scan:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found")
+    scan = await _scoped_scan(db, current_user, scan_id, "SCAN")
 
     dispatcher = get_dispatcher()
     success = await dispatcher.cancel_scan(scan_id)
@@ -735,6 +744,7 @@ async def get_scan_logs(
     current_user: User = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
+    await _scoped_scan(db, current_user, scan_id, "READ")
     stmt = select(ScanLog).where(ScanLog.scan_id == scan_id)
 
     if days is not None:
@@ -795,8 +805,12 @@ async def stream_scan_events(
     last_event_id: Optional[str] = Header(None, alias="Last-Event-ID"),
     cursor: Optional[int] = Query(None, description="Monotonic integer event cursor"),
     current_user: User = Depends(require_viewer),
+    db: AsyncSession = Depends(get_db),
 ) -> StreamingResponse:
-    """Server-Sent Events (SSE) stream supporting Last-Event-ID cursor replay and DB gap detection."""
+    """SSE stream with Last-Event-ID replay and gap detection. Authorization is
+    re-validated every heartbeat: logout, disable or grant revocation ends the stream."""
+    scoped_scan = await _scoped_scan(db, current_user, scan_id, "READ")
+    stream_asset_id = scoped_scan.asset_id
     start_id = 0
     if last_event_id:
         try:
@@ -838,8 +852,11 @@ async def stream_scan_events(
             while True:
                 if await request.is_disconnected():
                     break
+                if not await session_still_valid(request, stream_asset_id):
+                    yield AUTH_REVOKED_FRAME
+                    break
                 try:
-                    evt = await asyncio.wait_for(live_gen.__anext__(), timeout=15.0)
+                    evt = await asyncio.wait_for(live_gen.__anext__(), timeout=10.0)
 
                     # Deduplicate against Phase 1 replay
                     if evt.id <= last_emitted_id:
@@ -911,6 +928,7 @@ async def get_scan_events(
     db: AsyncSession = Depends(get_db),
 ) -> Any:
     """Bounded incremental event polling endpoint with cursor pagination for events 101+."""
+    await _scoped_scan(db, current_user, scan_id, "READ")
     stmt = (
         select(ScanEvent)
         .where(ScanEvent.scan_id == scan_id)
@@ -981,7 +999,7 @@ class LoopTestResponse(BaseModel):
 async def run_loop_test(
     payload: Optional[LoopTestRequest] = None,
     target_locator: Optional[str] = Query(None),
-    current_user: User = Depends(require_operator),
+    current_user: User = Depends(require_owner),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
     """Execute sequential multi-pass assessment on the target to track stability, finding drift, and emit lifecycle alerts."""

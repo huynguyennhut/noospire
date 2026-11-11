@@ -27,18 +27,10 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
 
-  // Check if already authenticated
+  // Already signed in (server-side session)? Go straight to the dashboard.
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const user = localStorage.getItem('sentinel_user');
-      if (user) {
-        try {
-          const parsed = JSON.parse(user);
-          if (parsed.email) setEmail(parsed.email);
-        } catch (_) {}
-      }
-    }
-  }, []);
+    api.me().then(() => router.push('/dashboard/')).catch(() => {});
+  }, [router]);
 
   const handleLogin = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -49,26 +41,21 @@ export default function LoginPage() {
 
     try {
       // Call backend API /api/v1/auth/login
-      const res = await api.login(cleanEmail, password);
-      const sessionUser = {
-        email: res.user?.username || cleanEmail,
-        name: res.user?.name || res.user?.username || 'Authorized Security Operator',
-        role: res.user?.role || 'viewer',
-        login_time: new Date().toISOString(),
-        is_superuser: res.user?.is_superuser || false,
-      };
-
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('sentinel_jwt_token', res.access_token);
-        localStorage.setItem('sentinel_user', JSON.stringify(sessionUser));
-      }
+      // Server sets the HttpOnly session cookie; nothing is written to browser storage.
+      await api.login(cleanEmail, password);
 
       setSuccess(true);
       setTimeout(() => {
         router.push('/dashboard');
       }, 500);
     } catch (err: any) {
+      const outage = ['network', 'upstream_unreachable', 'upstream_timeout', 'misrouted'].includes(err?.kind);
       const errorMsg =
+        (outage
+          ? (locale === 'vi'
+              ? `Không kết nối được máy chủ API (${err.kind}${err.requestId ? ' · ' + err.requestId : ''}).`
+              : `API is unreachable (${err.kind}${err.requestId ? ' · ' + err.requestId : ''}).`)
+          : null) ||
         err?.detail ||
         err?.message ||
         (locale === 'vi'

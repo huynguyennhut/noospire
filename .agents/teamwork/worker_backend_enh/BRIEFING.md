@@ -25,7 +25,7 @@ Implement backend enhancements for NOOSFORGE: Ultra Admin seeding & auth, log li
 
 ## Task Summary
 - **What was built**:
-  1. Ultra Admin seeding (`dangnhutnguyen0910@gmail.com` / `Hahanguyen09@` / `SUPER_ADMIN`), SQLite auto-migration, flexible username/email login with real signed JWT with role claims, and admin action audit tracking (`admin_audit_logs`).
+  1. Ultra Admin seeding (`dangnhutnguyen0910@gmail.com` / `REDACTED-ROTATE-ME` / `SUPER_ADMIN`), SQLite auto-migration, flexible username/email login with real signed JWT with role claims, and admin action audit tracking (`admin_audit_logs`).
   2. Complete log lifecycle & system state reset:
      - Log querying with date/range filters (`GET /api/v1/scans/{id}/logs`, `GET /api/v1/logs`).
      - Log export: `GET /api/v1/logs/export` (JSON / CSV).

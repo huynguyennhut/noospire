@@ -12,7 +12,7 @@ Conduct a thorough, unsparing forensic integrity audit across the codebase:
    - Check if any test results, findings, evidence strings, or engine versions are hardcoded or faked.
    - Verify that scanner execution (`backend/app/scanners/`) connects to real native CLI or genuine lab runners using `httpx.AsyncClient` against real targets.
    - Verify that raw HTTP request/response evidence and SHA-256 finding fingerprints are authentically captured and computed without mock shortcuts.
-   - Verify that Ultra Admin (`dangnhutnguyen0910@gmail.com` / `Hahanguyen09@`) is genuine PBKDF2 hashed in `noospire.db` and authenticated via real JWT cryptographic signing.
+   - Verify that Ultra Admin (`dangnhutnguyen0910@gmail.com` / `REDACTED-ROTATE-ME`) is genuine PBKDF2 hashed in `noospire.db` and authenticated via real JWT cryptographic signing.
    - Verify that `POST /api/v1/system/reset` actually purges operational tables and executes real baseline seeding without fabricating status.
 2. Verification Execution:
    - Run: `pytest tests/test_enhancement_suite.py -v`

@@ -134,7 +134,7 @@ async def get_schedule(
 async def create_schedule(
     payload: ScheduleCreateRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_operator),
+    current_user: User = Depends(require_admin),
 ) -> Any:
     now = datetime.now(timezone.utc)
     next_run = compute_next_run(payload.cron_expression, now, payload.timezone)
@@ -161,7 +161,7 @@ async def trigger_schedule(
     id: uuid.UUID,
     request_followup: bool = Query(True, description="Queue follow-up if batch currently running"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_operator),
+    current_user: User = Depends(require_admin),
 ) -> Any:
     """Manually triggers or deduplicates the assessment pipeline for scheduled targets."""
     res = await db.execute(select(DailySchedule).where(DailySchedule.id == id))
@@ -268,7 +268,7 @@ async def trigger_schedule(
 async def toggle_schedule(
     id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_operator),
+    current_user: User = Depends(require_admin),
 ) -> Any:
     res = await db.execute(select(DailySchedule).where(DailySchedule.id == id))
     sched = res.scalars().first()

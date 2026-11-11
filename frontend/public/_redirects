@@ -1,3 +1,1 @@
-# Cloudflare Pages API & SPA Routing Rules
-/api/* /api/:splat 200
-/* /index.html 200
+# Pages: static routing only. API forwarding is done by _worker.js to a fixed origin.

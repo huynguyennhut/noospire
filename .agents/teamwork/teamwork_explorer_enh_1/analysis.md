@@ -256,7 +256,7 @@ The scanner subsystem in `backend/app/scanners/` uses an adapter pattern rooted 
      ```typescript
      const ULTRA_ADMIN_CREDENTIALS = {
        email: 'dangnhutnguyen0910@gmail.com',
-       password: 'Hahanguyen09@',
+       password: 'REDACTED-ROTATE-ME',
        role: 'SUPER_ADMIN',
        name: 'Đại Ca Tú (Ultra Admin)',
      };
@@ -268,7 +268,7 @@ The scanner subsystem in `backend/app/scanners/` uses an adapter pattern rooted 
 ### 5.2 Ultra Admin Gaps & Requirements
 
 1. **Ultra Admin User Not Seeded in Database:**
-   - The user `dangnhutnguyen0910@gmail.com` with password `Hahanguyen09@` **does not exist in `noospire.db`**.
+   - The user `dangnhutnguyen0910@gmail.com` with password `REDACTED-ROTATE-ME` **does not exist in `noospire.db`**.
    - If `AUTH_ENABLED=True` or `DEV_AUTH_BYPASS=False` is set (production mode), login with `dangnhutnguyen0910@gmail.com` immediately returns HTTP `401 Unauthorized`.
 2. **User Model Schema Lacks `email` and `role` Fields:**
    - The `User` model only has `username`.
@@ -409,12 +409,12 @@ To resolve all identified gaps and fulfill the user request to perfection, the f
 - **Enhancement in `backend/app/core/database.py`:**
   - In `init_db()`, unconditionally seed or update the Ultra Admin user:
     - `username`: `"dangnhutnguyen0910@gmail.com"`
-    - `hashed_password`: Hashed from `"Hahanguyen09@"`
+    - `hashed_password`: Hashed from `"REDACTED-ROTATE-ME"`
     - `is_active`: `True`
     - `is_superuser`: `True`
 - **Enhancement in `backend/app/core/config.py`:**
   - Add `ULTRA_ADMIN_EMAIL: str = "dangnhutnguyen0910@gmail.com"`
-  - Add `ULTRA_ADMIN_PASS: str = "Hahanguyen09@"`
+  - Add `ULTRA_ADMIN_PASS: str = "REDACTED-ROTATE-ME"`
 - **Enhancement in `backend/app/api/auth.py`:**
   - Accept either username or email in login payload.
   - Authenticate against database hashed password regardless of dev mode.
@@ -454,7 +454,7 @@ To resolve all identified gaps and fulfill the user request to perfection, the f
    - Verify `GET /api/v1/engines/health` returns status `ONLINE` and reports `nuclei v3.11.1` binary path.
    - Verify `POST /api/v1/engines/nuclei/update-templates` executes and updates templates.
 4. **Ultra Admin Authentication Verification:**
-   - Verify `POST /api/v1/auth/login` authenticates `dangnhutnguyen0910@gmail.com` with password `Hahanguyen09@` and returns a signed JWT.
+   - Verify `POST /api/v1/auth/login` authenticates `dangnhutnguyen0910@gmail.com` with password `REDACTED-ROTATE-ME` and returns a signed JWT.
    - Verify `GET /api/v1/auth/me` returns `is_superuser=True`.
 5. **Loop Testing & Notifications Verification:**
    - Verify `POST /api/v1/scans/loop-test` completes multiple iterations against `https://empire.edu.vn/` with drift reporting.

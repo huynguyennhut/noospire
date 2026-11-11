@@ -8,7 +8,7 @@ You MUST read:
 
 Review all frontend enhancements:
 1. Shell route protection and auth: Check `frontend/src/components/layout/Shell.tsx` to confirm no auto-seeding of fake session on cold mount, standalone unauthenticated layout for `/login`, and clean logout without instant re-seeding.
-2. Login Page: Check `frontend/src/app/login/page.tsx` for Ultra Admin credentials (`dangnhutnguyen0910@gmail.com` / `Hahanguyen09@`), backend API login invocation, and dev tracking indicator.
+2. Login Page: Check `frontend/src/app/login/page.tsx` for Ultra Admin credentials (`dangnhutnguyen0910@gmail.com` / `REDACTED-ROTATE-ME`), backend API login invocation, and dev tracking indicator.
 3. Terminal Auto-scroll behavior: Check `frontend/src/app/active-assessments/page.tsx` to confirm removal of window-level `scrollIntoView()`, container-scoped `scrollTop`, default frozen logs (`autoScroll = false`), toggle switch, and "Scroll to Bottom" button ("Không auto scroll, check UI").
 4. Day/Date tracking, log export, and Baseline Reset UI in `active-assessments` and `settings/page.tsx`.
 5. Schedules UI: Delete button and link to execution logs in `schedules/page.tsx`.

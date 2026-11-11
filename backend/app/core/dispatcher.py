@@ -52,7 +52,7 @@ def check_system_resources() -> Dict[str, Any]:
         mem_avail = round(float(mem.available) / (1024 * 1024), 2)
         mem_used = round(float(mem.used) / (1024 * 1024), 2)
         cpu_count = psutil.cpu_count() or 4
-        is_throttled = bool(cpu_pct > 90.0 or mem_pct > 95.0)
+        is_throttled = bool(cpu_pct > settings.THROTTLE_CPU_PCT or mem_pct > settings.THROTTLE_MEM_PCT)
         return {
             "cpu_percent": cpu_pct,
             "memory_percent": mem_pct,
@@ -241,6 +241,8 @@ class AsyncWorkerDispatcher(ITaskDispatcher):
         self._is_running = False
         self._thread_counter = 0
         self._completed_count = 0
+        self._inflight = 0  # claimed by this worker and not finished (bounded by max_concurrent)
+        self._cap_cache: tuple = (0.0, None)
 
     def _ensure_active_loop(self) -> None:
         try:
@@ -485,9 +487,37 @@ class AsyncWorkerDispatcher(ITaskDispatcher):
             "trackcurrent": active_list[0] if active_list else None,
         }
 
+    async def _beat(self) -> None:
+        """Worker readiness signal persisted in DB (separate from API readiness)."""
+        import socket as _socket
+        from backend.app.models.defensive import WorkerHeartbeat
+        now = datetime.now(timezone.utc)
+        try:
+            async with AsyncSessionLocal() as session:
+                hb = await session.get(WorkerHeartbeat, self.worker_id)
+                if hb is None:
+                    hb = WorkerHeartbeat(worker_id=self.worker_id, pid=os.getpid(), hostname=_socket.gethostname(),
+                                         engines=["sbom", "tls_health"], started_at=now)
+                    session.add(hb)
+                hb.last_seen_at = now
+                hb.active_executions = self._inflight
+                res = check_system_resources()
+                hb.throttle_reason = (
+                    f"host load CPU {res.get('cpu_percent')}% / RAM {res.get('memory_percent')}% above "
+                    f"{settings.THROTTLE_CPU_PCT:g}% / {settings.THROTTLE_MEM_PCT:g}%; not claiming new jobs"
+                    if res.get("is_throttled") else None)
+                await session.commit()
+        except Exception as e:
+            logger.debug("worker heartbeat failed: %s", e)
+
     async def _worker_loop(self) -> None:
+        last_beat = 0.0
         while self._is_running:
             try:
+                loop_now = asyncio.get_event_loop().time()
+                if loop_now - last_beat >= 10.0:
+                    last_beat = loop_now
+                    await self._beat()
                 # Dynamic resource throttling check
                 res_info = check_system_resources()
                 if res_info.get("is_throttled", False):
@@ -500,13 +530,19 @@ class AsyncWorkerDispatcher(ITaskDispatcher):
 
                 scan_id = None
                 from backend.app.core.queue import IDBDurableQueue
+                # Never hold more leases than local slots: a claimed-but-waiting job would sit
+                # on a lease with no heartbeat and be reaped mid-flight.
+                if self._inflight >= self.max_concurrent:
+                    await asyncio.sleep(0.2)
+                    continue
                 # First check in-memory queue
                 try:
                     scan_id = self.queue.get_nowait()
                 except asyncio.QueueEmpty:
                     # If in-memory queue is empty, attempt claiming from DB
                     async with AsyncSessionLocal() as session:
-                        claimed = await IDBDurableQueue.claim_next_job(session, self.worker_id)
+                        claimed = await IDBDurableQueue.claim_next_job(
+                            session, self.worker_id, max_running=await self._estate_cap())
                         if claimed:
                             scan_id = claimed.id
                         else:
@@ -516,6 +552,7 @@ class AsyncWorkerDispatcher(ITaskDispatcher):
                                 continue
 
                 if scan_id:
+                    self._inflight += 1
                     asyncio.create_task(self._execute_scan_guarded(scan_id))
             except asyncio.CancelledError:
                 break
@@ -523,7 +560,29 @@ class AsyncWorkerDispatcher(ITaskDispatcher):
                 logger.error(f"Error in dispatcher worker loop: {e}", exc_info=True)
                 await asyncio.sleep(0.5)
 
+    async def _estate_cap(self) -> Optional[int]:
+        """Owner-set estate-wide limit on running executions (cached 5 s)."""
+        loop_now = asyncio.get_event_loop().time()
+        if loop_now - self._cap_cache[0] < 5.0:
+            return self._cap_cache[1]
+        cap = None
+        try:
+            from backend.app.models.operations import CapacitySettings
+            async with AsyncSessionLocal() as session:
+                cs = await session.get(CapacitySettings, 1)
+                cap = cs.max_running_executions if cs else None
+        except Exception:
+            logger.debug("capacity lookup failed", exc_info=True)
+        self._cap_cache = (loop_now, cap)
+        return cap
+
     async def _execute_scan_guarded(self, scan_id: uuid.UUID) -> None:
+        try:
+            await self._execute_scan_guarded_inner(scan_id)
+        finally:
+            self._inflight = max(0, self._inflight - 1)
+
+    async def _execute_scan_guarded_inner(self, scan_id: uuid.UUID) -> None:
         from backend.app.core.queue import IDBDurableQueue
         fencing_token = 0
 
@@ -589,7 +648,11 @@ class AsyncWorkerDispatcher(ITaskDispatcher):
                 heartbeat_task = asyncio.create_task(heartbeat_loop())
 
                 try:
-                    await self._run_scan(scan_id, cancel_token, thread_id, fencing_token)
+                    from backend.app.engines import runner as defensive_runner
+                    if await defensive_runner.has_execution(scan_id):
+                        await defensive_runner.run_execution(scan_id, fencing_token, self.worker_id, cancel_token)
+                    else:
+                        await self._run_scan(scan_id, cancel_token, thread_id, fencing_token)
                 except Exception as e:
                     logger.error(f"Unhandled error executing scan {scan_id}: {e}", exc_info=True)
                     async with AsyncSessionLocal() as session:

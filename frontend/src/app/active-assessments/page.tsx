@@ -313,9 +313,8 @@ function ActiveAssessmentsContent() {
         eventSourceRef.current.close();
       }
 
-      const token = api.getToken();
+      // Same-origin EventSource sends the HttpOnly session cookie; no credential in the URL.
       const params = new URLSearchParams();
-      if (token) params.set('token', token);
       if (lastEventIdRef.current > 0) params.set('cursor', String(lastEventIdRef.current));
 
       const sseUrl = `/api/v1/scans/${activeScanId}/events/stream?${params.toString()}`;

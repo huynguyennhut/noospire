@@ -1,184 +1,176 @@
-"""API Dependency Providers for Noosforge Sentinel.
+"""API dependency providers: authentication, sole-owner enforcement, object scope, CSRF.
 
-Exposes standard FastAPI dependency callables for database sessions,
-authentication, active user validation, scoped RBAC, and CSRF protection.
+Authorization model (pilot):
+- FastAPI is the only issuer of identity and permissions. JWT claims are never
+  trusted for authorization; the user row and asset grants are re-read per request.
+- OWNER: exactly one account, bound to SOLE_OWNER_ACCOUNT_ID + SOLE_OWNER_EMAIL.
+  Only the owner manages users/grants and launches estate-wide runs.
+- Every other role sees and acts only on assets explicitly granted to it
+  (UserAssetGrant.permissions, e.g. "READ,SCAN,TRIAGE").
+- Browser sessions use an HttpOnly cookie; cookie-authenticated mutations require a
+  double-submit CSRF token. Bearer tokens are accepted only in the Authorization
+  header (never in URL query strings).
 """
 
+from __future__ import annotations
+
 import hashlib
-from datetime import datetime, timezone
-from typing import Any, List, Optional
+import hmac
+import uuid
+from dataclasses import dataclass, field
+from datetime import timezone
+from typing import FrozenSet, List, Optional
+
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
-from backend.app.core.security import decode_access_token, oauth2_scheme
-from backend.app.models.user import RevokedToken, User, UserRole
+from backend.app.core.security import decode_access_token, token_issued_at_ms
+from backend.app.models.user import RevokedToken, User, UserAssetGrant, UserRole
+
+MUTATING_METHODS = ("POST", "PUT", "DELETE", "PATCH")
+
+
+def _unauthorized(detail: str) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail=detail,
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+def extract_token(request: Request) -> tuple[Optional[str], bool]:
+    """Return (token, via_cookie). Only Authorization header or the session cookie."""
+    auth_header = request.headers.get("authorization") or ""
+    if auth_header.lower().startswith("bearer "):
+        tok = auth_header[7:].strip()
+        if tok:
+            return tok, False
+    cookie_tok = request.cookies.get(settings.SESSION_COOKIE_NAME)
+    if cookie_tok:
+        return cookie_tok, True
+    return None, False
+
+
+def enforce_csrf(request: Request) -> None:
+    """Strict double-submit CSRF check for cookie-authenticated mutations."""
+    header = request.headers.get(settings.CSRF_HEADER_NAME) or ""
+    cookie = request.cookies.get(settings.CSRF_COOKIE_NAME) or ""
+    if not header or not cookie or not hmac.compare_digest(header, cookie):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="CSRF validation failed for cookie-authenticated mutation",
+        )
 
 
 async def get_current_user(
     request: Request,
-    token: Optional[str] = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db),
 ) -> Optional[User]:
-    """Resolves authenticated user from JWT bearer token or session cookie. Returns None if unauthenticated."""
-    auth_via_cookie = False
-    if not token:
-        token = request.cookies.get("sentinel_access_token") or request.cookies.get("access_token")
-        if token:
-            auth_via_cookie = True
-
-    # Allow query parameter token for native EventSource and stream connections
-    if not token and request.query_params.get("token"):
-        token = request.query_params.get("token")
-
+    """Resolve the authenticated user, or None when no credential is presented."""
+    token, via_cookie = extract_token(request)
     if not token:
         return None
 
-    # If authenticated via cookie on mutation, enforce CSRF (F07)
-    if auth_via_cookie and request.method in ("POST", "PUT", "DELETE", "PATCH"):
-        csrf_header = request.headers.get("x-csrf-token") or request.headers.get("x-requested-with")
-        csrf_cookie = request.cookies.get("csrf_token") or request.cookies.get("sentinel_csrf_token")
-        if not csrf_header or (csrf_cookie and csrf_header != csrf_cookie):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="CSRF validation failed for cookie-authenticated mutation",
-            )
+    if via_cookie and request.method.upper() in MUTATING_METHODS:
+        enforce_csrf(request)
 
     payload = decode_access_token(token)
     if not payload:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise _unauthorized("Could not validate credentials")
 
-    # Check revoked tokens in database (F03)
     jti = payload.get("jti")
     token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    conds = [RevokedToken.token_hash == token_hash]
     if jti:
-        revoked = await db.execute(
-            select(RevokedToken).where(
-                or_(RevokedToken.token_jti == jti, RevokedToken.token_hash == token_hash)
-            )
-        )
-        if revoked.scalars().first():
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token has been revoked",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+        conds.append(RevokedToken.token_jti == jti)
+    revoked = await db.execute(select(RevokedToken.id).where(or_(*conds)).limit(1))
+    if revoked.first() is not None:
+        raise _unauthorized("Token has been revoked")
 
-    username = payload.get("sub") or payload.get("username")
-    if not username:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    subject = payload.get("sub")
+    if not subject:
+        raise _unauthorized("Could not validate credentials")
 
-    result = await db.execute(
-        select(User).where(or_(User.username == username, User.email == username))
-    )
-    user = result.scalars().first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    user: Optional[User] = None
+    try:
+        user = await db.get(User, uuid.UUID(str(subject)))
+    except (ValueError, TypeError):
+        user = None
+    if user is None:
+        raise _unauthorized("User not found")
 
+    # Session invalidation (logout everywhere / disable / role change).
+    if user.tokens_valid_after is not None:
+        issued_ms = token_issued_at_ms(payload)
+        tva = user.tokens_valid_after
+        if tva.tzinfo is None:
+            tva = tva.replace(tzinfo=timezone.utc)
+        if issued_ms is None or issued_ms < int(tva.timestamp() * 1000):
+            raise _unauthorized("Session expired/revoked")
+
+    request.state.token_payload = payload
+    request.state.token_hash = token_hash
+    request.state.auth_via_cookie = via_cookie
     return user
+
+
+async def session_still_valid(request: Request, asset_id: Optional[uuid.UUID] = None) -> bool:
+    """Re-check a long-lived request (SSE stream) against current server state:
+    token not revoked, user active, session not invalidated, asset still granted."""
+    from backend.app.core.database import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as db:
+        try:
+            user = await get_current_user(request, db)
+        except HTTPException:
+            return False
+        if user is None or not user.is_active:
+            return False
+        if asset_id is not None:
+            return (await load_scope(user, db)).can(asset_id, "READ")
+        return True
 
 
 async def get_current_active_user(
-    request: Request,
     user: Optional[User] = Depends(get_current_user),
 ) -> User:
-    """Dependency that ensures the authenticated user is present, active, and unexpired."""
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    # Enforce active user status in DB (F03) - Immediate invalidation
+    if user is None:
+        raise _unauthorized("Not authenticated")
     if not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Inactive user account",
-        )
-
-    # Extract token from header or cookie for session expiry check
-    token = None
-    auth_header = request.headers.get("authorization")
-    if auth_header and auth_header.lower().startswith("bearer "):
-        token = auth_header[7:].strip()
-    if not token:
-        token = request.cookies.get("sentinel_access_token") or request.cookies.get("access_token")
-    if not token and request.query_params.get("token"):
-        token = request.query_params.get("token")
-
-    # Enforce session expiry via tokens_valid_after timestamp (F03)
-    if token and hasattr(user, "tokens_valid_after") and user.tokens_valid_after:
-        payload = decode_access_token(token)
-        if payload:
-            iat = payload.get("iat")
-            if iat:
-                if isinstance(iat, (int, float)):
-                    token_issued_at = datetime.fromtimestamp(iat, tz=timezone.utc)
-                elif isinstance(iat, datetime):
-                    token_issued_at = iat.replace(tzinfo=timezone.utc) if iat.tzinfo is None else iat.astimezone(timezone.utc)
-                else:
-                    token_issued_at = None
-
-                tokens_valid_after = user.tokens_valid_after
-                if tokens_valid_after is not None:
-                    if tokens_valid_after.tzinfo is None:
-                        tokens_valid_after = tokens_valid_after.replace(tzinfo=timezone.utc)
-                    else:
-                        tokens_valid_after = tokens_valid_after.astimezone(timezone.utc)
-
-                if token_issued_at and tokens_valid_after and token_issued_at < tokens_valid_after:
-                    raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="Session expired/revoked",
-                        headers={"WWW-Authenticate": "Bearer"},
-                    )
-
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Inactive user account")
     return user
 
 
+def is_sole_owner(user: Optional[User]) -> bool:
+    """True only for the single bootstrapped owner (immutable ID + verified email + role)."""
+    if user is None or not user.is_active:
+        return False
+    return (
+        str(user.id) == settings.SOLE_OWNER_ACCOUNT_ID
+        and (user.role or "").upper() == UserRole.OWNER.value
+        and (user.email or "").lower() == settings.SOLE_OWNER_EMAIL.lower()
+    )
+
+
 def require_roles(allowed_roles: List[str]):
-    """Scoped RBAC dependency factory (F04)."""
-    async def role_checker(
-        current_user: User = Depends(get_current_active_user)
-    ) -> User:
-        user_role = (current_user.role or "").upper()
-        allowed = [r.upper() for r in allowed_roles]
-        if current_user.is_superuser or user_role in ("OWNER", "SUPER_ADMIN", "ADMIN"):
+    """Role gate. The sole owner always passes; nobody else gets an implicit bypass."""
+    allowed = {r.upper() for r in allowed_roles}
+
+    async def role_checker(current_user: User = Depends(get_current_active_user)) -> User:
+        if is_sole_owner(current_user):
             return current_user
-        if user_role not in allowed:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Not enough permissions",
-            )
+        if (current_user.role or "").upper() not in allowed:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions")
         return current_user
 
     return role_checker
 
 
 async def require_owner(current_user: User = Depends(get_current_active_user)) -> User:
-    """Sole Owner Enforcement (R5)."""
-    user_role = (current_user.role or "").upper()
-    is_owner = (
-        user_role == UserRole.OWNER.value
-        or (current_user.email and current_user.email.lower() == settings.SOLE_OWNER_EMAIL.lower())
-        or str(current_user.id) == settings.SOLE_OWNER_ACCOUNT_ID
-    )
-    if not is_owner:
+    if not is_sole_owner(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Operation restricted solely to the system owner.",
@@ -186,42 +178,104 @@ async def require_owner(current_user: User = Depends(get_current_active_user)) -
     return current_user
 
 
+# ---------------------------------------------------------------------------
+# Object scope (asset grants)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class AccessScope:
+    """Resolved per-request object scope. `estate_wide` only for the sole owner."""
+    user: User
+    estate_wide: bool
+    grants: dict = field(default_factory=dict)  # asset_id -> frozenset(perms)
+
+    @property
+    def asset_ids(self) -> Optional[List[uuid.UUID]]:
+        return None if self.estate_wide else list(self.grants.keys())
+
+    def can(self, asset_id: Optional[uuid.UUID], action: str = "READ") -> bool:
+        if self.estate_wide:
+            return True
+        if asset_id is None:
+            return False
+        perms: FrozenSet[str] = self.grants.get(asset_id, frozenset())
+        return action.upper() in perms
+
+    def ids_with(self, action: str) -> Optional[List[uuid.UUID]]:
+        if self.estate_wide:
+            return None
+        return [a for a, p in self.grants.items() if action.upper() in p]
+
+    def require(self, asset_id: Optional[uuid.UUID], action: str = "READ") -> None:
+        """Raise 404 for unreadable objects (no existence leak), 403 for missing action."""
+        if self.estate_wide:
+            return
+        if not self.can(asset_id, "READ"):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+        if action.upper() != "READ" and not self.can(asset_id, action):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Missing '{action.upper()}' grant for this asset",
+            )
+
+
+async def load_scope(user: User, db: AsyncSession) -> AccessScope:
+    if is_sole_owner(user):
+        return AccessScope(user=user, estate_wide=True)
+    res = await db.execute(
+        select(UserAssetGrant.asset_id, UserAssetGrant.permissions).where(UserAssetGrant.user_id == user.id)
+    )
+    grants: dict = {}
+    for asset_id, perms in res.all():
+        p = {x.strip().upper() for x in (perms or "").split(",") if x.strip()}
+        p.add("READ")  # any grant implies read
+        grants[asset_id] = frozenset(grants.get(asset_id, frozenset()) | p)
+    return AccessScope(user=user, estate_wide=False, grants=grants)
+
+
+async def get_scope(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> AccessScope:
+    return await load_scope(current_user, db)
+
+
 async def get_authorized_asset_ids(user: User, db: AsyncSession) -> Optional[List[uuid.UUID]]:
-    """Returns list of allowed asset IDs for scoped developer, or None if user has estate-wide access."""
-    user_role = (user.role or "").upper()
-    if user.is_superuser or user_role in ("OWNER", "SUPER_ADMIN", "ADMIN", "SECURITY_LEAD"):
-        return None  # Full estate-wide access
-    if user_role == UserRole.DEVELOPER.value:
-        from backend.app.models.user import UserAssetGrant
-        res = await db.execute(select(UserAssetGrant.asset_id).where(UserAssetGrant.user_id == user.id))
-        return res.scalars().all()
-    return None
+    """Backward-compatible helper: None = estate-wide (owner only), else granted IDs."""
+    return (await load_scope(user, db)).asset_ids
 
 
-require_admin = require_roles(["OWNER", "SUPER_ADMIN", "ADMIN"])
-require_operator = require_roles(["OWNER", "SUPER_ADMIN", "ADMIN", "OPERATOR", "SECURITY_LEAD"])
-require_viewer = require_roles(["OWNER", "SUPER_ADMIN", "ADMIN", "OPERATOR", "SECURITY_LEAD", "DEVELOPER", "VIEWER", "USER"])
+require_admin = require_roles([UserRole.OWNER.value])
+require_operator = require_roles(
+    [UserRole.OWNER.value, UserRole.OPERATOR.value, UserRole.SECURITY_LEAD.value, UserRole.DEVELOPER.value]
+)
+require_viewer = require_roles(
+    [
+        UserRole.OWNER.value,
+        UserRole.OPERATOR.value,
+        UserRole.SECURITY_LEAD.value,
+        UserRole.DEVELOPER.value,
+        UserRole.VIEWER.value,
+    ]
+)
 
 
 async def verify_csrf(request: Request) -> None:
-    """CSRF protection on mutations (F07).
-    Validates CSRF tokens or custom headers when browser session cookies are present.
-    """
-    if request.method in ("POST", "PUT", "DELETE", "PATCH"):
-        if request.cookies.get("sentinel_session") or request.cookies.get("access_token"):
-            csrf_header = request.headers.get("x-csrf-token") or request.headers.get("x-requested-with")
-            csrf_cookie = request.cookies.get("csrf_token")
-            if not csrf_header or (csrf_cookie and csrf_header != csrf_cookie):
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="CSRF verification failed",
-                )
+    """Explicit dependency variant (kept for existing callers)."""
+    if request.method.upper() in MUTATING_METHODS and request.cookies.get(settings.SESSION_COOKIE_NAME):
+        if not (request.headers.get("authorization") or "").lower().startswith("bearer "):
+            enforce_csrf(request)
 
 
 __all__ = [
+    "AccessScope",
+    "extract_token",
     "get_current_user",
     "get_current_active_user",
     "get_db",
+    "get_scope",
+    "is_sole_owner",
+    "load_scope",
     "require_roles",
     "require_owner",
     "require_admin",

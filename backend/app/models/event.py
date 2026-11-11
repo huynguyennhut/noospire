@@ -87,8 +87,7 @@ class ScanEvent(Base):
         UTCDateTime,
         default=lambda: datetime.now(timezone.utc),
         nullable=False,
-        index=True,
-    )
+    )  # indexed via ix_scan_events_occurred_at in __table_args__ (one definition only)
 
     # Structured Sanitized Payload
     details_json: Mapped[Optional[Dict[str, Any]]] = mapped_column(

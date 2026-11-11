@@ -137,47 +137,40 @@ export default function SettingsPage() {
     }
   };
 
-  const handleExportSystemLogs = (format: 'json' | 'csv') => {
-    const logSummary = {
-      export_timestamp: new Date().toISOString(),
-      platform: 'NOOSFORGE Security Intelligence',
-      target: 'https://empire.edu.vn/',
-      time_filter: logTimeFilter,
-      subsystems: [
-        { name: 'Core API Gateway', status: 'OPERATIONAL', driver: 'FastAPI / Uvicorn', latency: '2ms' },
-        { name: 'Database Persistence Engine', status: 'OPERATIONAL', driver: 'SQLAlchemy 2.0 Async', latency: '4ms' },
-        { name: 'Task Dispatcher Pool', status: 'OPERATIONAL', driver: 'AsyncWorkerDispatcher', workers: 4 },
-        { name: 'Nuclei Scanner Adapter', status: 'OPERATIONAL', driver: 'Binary CLI (nuclei.exe v3.11.1)' },
-        { name: 'Empire Assessment Engine', status: 'OPERATIONAL', driver: 'EmpireAssessmentEngine' },
-        { name: 'OWASP ZAP Core Adapter', status: 'OPERATIONAL', driver: 'ZAPLabRunner' },
-        { name: 'Aqua Trivy Container & SBOM', status: 'OPERATIONAL', driver: 'TrivyLabRunner' },
-        { name: 'Two-Tier SSRF Gatekeeper', status: 'OPERATIONAL', driver: 'SSRFProtector' },
-        { name: 'Continuous Daily Scheduler', status: 'OPERATIONAL', driver: 'APScheduler Cron (Asia/Ho_Chi_Minh)' },
-      ],
-      baseline_summary: {
-        total_assets: 379,
-        verified_findings: 98,
-        active_schedules: 3,
-      },
-    };
-
+  // Exports the server's own operational snapshot (Milestone 5). No component is reported
+  // "operational" unless the server measured it; failures are reported, not filled in.
+  const handleExportSystemLogs = async (format: 'json' | 'csv') => {
+    let ov: any;
+    try {
+      ov = await api.getOperationsOverview();
+    } catch (err: any) {
+      toast({ title: 'Export failed', description: err?.message || String(err), duration: 5000 });
+      return;
+    }
+    const rows = [
+      ...Object.entries(ov.engines).map(([name, e]: [string, any]) => ({
+        component: `engine:${name}`,
+        state: e.stale ? 'stale' : 'fresh',
+        detail: `last success ${e.last_success_at || 'never'}; queued ${e.queued}; running ${e.running}`,
+      })),
+      ...ov.workers.map((w: any) => ({ component: `worker:${w.worker_id}`, state: w.state, detail: w.throttle_reason || `seen ${w.age_seconds}s ago` })),
+      { component: 'advisory_feed', state: ov.feed ? 'imported' : 'missing', detail: ov.feed ? `${ov.feed.version} age ${ov.feed.age_hours}h` : 'no snapshot' },
+    ];
+    const logSummary = { exported_at_utc: new Date().toISOString(), server_as_of: ov.as_of, display_timezone: ov.display_timezone,
+      time_filter: logTimeFilter, overdue: ov.overdue, errors_24h: ov.errors_24h, capacity: ov.capacity, components: rows };
     let content = '';
     let mimeType = 'text/plain;charset=utf-8';
-    let filename = `noosforge_system_audit_${logTimeFilter.toLowerCase()}_${Date.now()}`;
-
+    let filename = `noospire_operations_${logTimeFilter.toLowerCase()}_${Date.now()}`;
     if (format === 'json') {
       content = JSON.stringify(logSummary, null, 2);
       mimeType = 'application/json;charset=utf-8';
       filename += '.json';
     } else {
-      content = [
-        'Component,Driver,Status,Latency',
-        ...logSummary.subsystems.map((s) => `"${s.name}","${s.driver}","${s.status}","${s.latency || 'N/A'}"`),
-      ].join('\n');
+      content = ['component,state,detail', ...rows.map((r) => `"${r.component}","${r.state}","${String(r.detail).replace(/"/g, "'")}"`)].join('
+');
       mimeType = 'text/csv;charset=utf-8';
       filename += '.csv';
     }
-
     const blob = new Blob([content], { type: mimeType });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -185,12 +178,7 @@ export default function SettingsPage() {
     link.download = filename;
     link.click();
     URL.revokeObjectURL(url);
-
-    toast({
-      title: 'Logs Exported',
-      description: `Saved system telemetry export as ${filename}`,
-      duration: 3000,
-    });
+    toast({ title: 'Exported', description: `Saved ${filename}`, duration: 3000 });
   };
 
   const handleTestAllEnginesQuick = async () => {

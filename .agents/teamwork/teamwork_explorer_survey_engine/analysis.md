@@ -222,7 +222,7 @@ This investigation conducted a rigorous, evidence-driven audit of all execution 
   - Clears in-memory log buffer (`log_buffer.clear_all()`).
   - Deletes all rows from `ScanLog`, `Scan`, `ScanBatch`, `NormalizedFinding`, `SecurityAlert`, `AdminAuditLog`, `BaselineException`, `DailySchedule`, `SyntheticIdentity`, `Asset`.
   - Re-seeds Empire ecosystem primary target (`https://empire.edu.vn/`) and 6 functional modules via `seed_empire_ecosystem()`.
-  - Re-seeds Ultra Admin (`dangnhutnguyen0910@gmail.com` with `Hahanguyen09@`).
+  - Re-seeds Ultra Admin (`dangnhutnguyen0910@gmail.com` with `REDACTED-ROTATE-ME`).
   - Adds audit trail entry and baseline alert.
   - Fully fulfills user directive: "xóa logs- kiểm tra kỹ, đdầyddur, hoàn toàn - lưu logs, xóa logs, quay về trạng thái ban đầu, track by days...".
 

@@ -19,7 +19,7 @@ DO NOT modify any files in `frontend/`.
 
 YOUR IMPLEMENTATION TASKS:
 1. Ultra Admin Seeding & Authentication:
-   - In `backend/app/core/database.py` (`init_db()`), seed Ultra Admin user with username/email `dangnhutnguyen0910@gmail.com`, password `Hahanguyen09@`, and role `SUPER_ADMIN`.
+   - In `backend/app/core/database.py` (`init_db()`), seed Ultra Admin user with username/email `dangnhutnguyen0910@gmail.com`, password `REDACTED-ROTATE-ME`, and role `SUPER_ADMIN`.
    - Update `backend/app/api/auth.py` and `security.py` so login accepts either username or email, authenticates against `noospire.db`, returns real signed JWT token with role claims, and supports admin tracking.
 2. Complete Log Lifecycle & State Reset:
    - In `backend/app/api/scans.py` and/or a new `backend/app/api/logs.py` (mounted in `backend/main.py` under `/api/v1/logs`):

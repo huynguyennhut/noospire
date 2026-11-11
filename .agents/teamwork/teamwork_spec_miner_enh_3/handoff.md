@@ -30,7 +30,7 @@
    - `frontend/src/app/active-assessments/page.tsx:84,317-321`: Auto-scroll defaults to disabled (`const [autoScroll, setAutoScroll] = useState(false)`). When false, the log view does not jump on incoming SSE events.
    - `frontend/src/app/active-assessments/page.tsx:85,463-471`: Implements "track by days" (`timeFilter` supporting '1D', '7D', '14D', '30D', 'ALL').
    - `frontend/src/app/active-assessments/page.tsx:351-399`: Implements log clearing (`handleClearTerminal`), baseline reset (`handleResetBaseline`), and log export (`handleExportLogs`).
-   - `frontend/src/app/login/page.tsx:23-123`: Defines `ULTRA_ADMIN_CREDENTIALS` (`dangnhutnguyen0910@gmail.com` / `Hahanguyen09@`, role: `SUPER_ADMIN`).
+   - `frontend/src/app/login/page.tsx:23-123`: Defines `ULTRA_ADMIN_CREDENTIALS` (`dangnhutnguyen0910@gmail.com` / `REDACTED-ROTATE-ME`, role: `SUPER_ADMIN`).
 
 4. **Harness Execution**:
    - Tool command `python -u scripts/verify_empire_e2e.py` executed successfully to completion (exit code 0).
@@ -69,7 +69,7 @@
      - *Scan Schedules*: Schedule API exists, but cron validation and toggle persistence need automated test coverage.
      - *Disabling Auto-Scroll*: `autoScroll` defaults to `false` in `active-assessments/page.tsx`, but lacks a dedicated automated test confirming viewport stability.
      - *Complete Log Lifecycle*: Client supports export/clear/reset, but backend lacks a dedicated `DELETE /api/v1/scans/{id}/logs` and REST reset-baseline endpoint.
-     - *Ultra Admin Auth*: Frontend defines `dangnhutnguyen0910@gmail.com` / `Hahanguyen09@`, but backend `auth.py` checks `ADMIN_USERNAME` (`admin`) unless `is_development` is on; backend needs explicit Ultra Admin authentication support.
+     - *Ultra Admin Auth*: Frontend defines `dangnhutnguyen0910@gmail.com` / `REDACTED-ROTATE-ME`, but backend `auth.py` checks `ADMIN_USERNAME` (`admin`) unless `is_development` is on; backend needs explicit Ultra Admin authentication support.
      - *Engine Health & Update*: Backend has generic `/health`, but needs per-engine health (`/api/v1/settings/engines`) and template update endpoints.
      - *Loop Testing & Notification Tracking*: Needs an automated sequential loop test harness running multi-pass scans and tracking alert emissions.
 
@@ -90,7 +90,7 @@ To achieve complete alignment with `ORIGINAL_REQUEST.md`, downstream workers sho
 1. Scan schedule cron validation & toggle tests
 2. Auto-scroll disabled default UI contract test
 3. Complete log lifecycle (export, delete, reset-baseline, day tracking) endpoints & tests
-4. Ultra Admin explicit backend authentication (`dangnhutnguyen0910@gmail.com` / `Hahanguyen09@`) & dev tracking
+4. Ultra Admin explicit backend authentication (`dangnhutnguyen0910@gmail.com` / `REDACTED-ROTATE-ME`) & dev tracking
 5. Granular per-engine health (`/api/v1/settings/engines`) and update trigger endpoints
 6. Multi-pass loop testing and notification tracking test harness
 

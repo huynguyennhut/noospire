@@ -39,12 +39,18 @@ export default function SystemHealthPage() {
   const fetchHealth = async () => {
     try {
       setLoading(true);
+      // No synthesized "healthy": a failed probe renders as offline with its reason.
       const [rootHealth, engines] = await Promise.all([
-        fetch('/health').then((r) => r.json()).catch(() => ({ status: 'healthy', version: '2.0.0' })),
+        api.ready().catch((err: any) => ({
+          status: 'offline',
+          reason: err?.kind || 'unknown',
+          request_id: err?.requestId || null,
+          version: null,
+        })),
         api.getEngineHealth().catch(() => null),
       ]);
       setHealthData(rootHealth);
-      if (engines) setEngineHealth(engines);
+      setEngineHealth(engines);
     } finally {
       setLoading(false);
     }
@@ -98,21 +104,12 @@ export default function SystemHealthPage() {
     }
   };
 
-  const defaultEngines = [
-    { id: 'core-gateway', name: 'Core API Gateway', driver: 'FastAPI / Uvicorn', runtime_context: 'REST & SSE Event Streaming', version: '2.0.0', latency_ms: 2, status: 'OPERATIONAL' as const, update_available: false, capabilities: ['OpenAPI 3.1', 'CORS', 'SSRF Guard'], last_tested: 'Just now' },
-    { id: 'db-engine', name: 'Database Persistence Engine', driver: 'SQLAlchemy 2.0 Async', runtime_context: 'sqlite+aiosqlite:///./noospire.db', version: '2.0.36', latency_ms: 4, status: 'OPERATIONAL' as const, update_available: false, capabilities: ['Async Engine', 'WAL Mode', 'Foreign Keys'], last_tested: 'Just now' },
-    { id: 'dispatcher', name: 'Task Dispatcher & Worker Pool', driver: 'AsyncWorkerDispatcher', runtime_context: 'Concurrency Semaphores (Max 4)', version: '1.4.0', latency_ms: 1, status: 'OPERATIONAL' as const, update_available: false, capabilities: ['psutil Throttling', 'Batch Queue', 'Cooperative Cancel'], last_tested: 'Just now' },
-    { id: 'nuclei', name: 'Nuclei Scanner CLI', driver: 'Binary CLI (nuclei.exe)', runtime_context: 'PATH: C:\\Users\\nguye\\go\\bin\\nuclei.exe', version: '3.11.1', latency_ms: 18, status: 'OPERATIONAL' as const, update_available: false, capabilities: ['CVE Templates', 'Misconfiguration', 'Exposed Panels'], last_tested: 'Just now' },
-    { id: 'empire', name: 'Empire Assessment Engine', driver: 'EmpireAssessmentEngine', runtime_context: 'Better-Auth /media Policy & BOLA Probes', version: '2.4.0', latency_ms: 6, status: 'OPERATIONAL' as const, update_available: false, capabilities: ['BOLA Detection', 'Public Media Baseline', 'RBAC Probing'], last_tested: 'Just now' },
-    { id: 'zap', name: 'OWASP ZAP Core Adapter', driver: 'ZAPLabRunner', runtime_context: 'High-Fidelity Lab Baseline Runner', version: '2.14.0', latency_ms: 24, status: 'OPERATIONAL' as const, update_available: false, capabilities: ['Active Spider', 'XSS Passive', 'CSRF Scan'], last_tested: 'Just now' },
-    { id: 'trivy', name: 'Aqua Trivy Container & SBOM', driver: 'TrivyLabRunner', runtime_context: 'SBOM & Secret Detection Runner', version: '0.49.1', latency_ms: 31, status: 'OPERATIONAL' as const, update_available: false, capabilities: ['Secret Detection', 'Container Audit', 'Vulnerability DB'], last_tested: 'Just now' },
-    { id: 'ssrf', name: 'Two-Tier SSRF Gatekeeper', driver: 'SSRFProtector', runtime_context: 'Zero-Trust RFC1918 & Cloud Metadata Filter', version: '1.8.0', latency_ms: 1, status: 'OPERATIONAL' as const, update_available: false, capabilities: ['IPv4/IPv6 CIDR Filtering', 'Cloud Metadata Trap', 'DNS Pinning'], last_tested: 'Just now' },
-    { id: 'scheduler', name: 'Continuous Daily Scheduler', driver: 'APScheduler Cron', runtime_context: 'Asia/Ho_Chi_Minh Pipeline at 02:00 AM ICT', version: '3.10.4', latency_ms: 2, status: 'OPERATIONAL' as const, update_available: false, capabilities: ['APScheduler Cron', 'Asia/Ho_Chi_Minh UTC+7', 'Auto Retries'], last_tested: 'Just now' },
-  ];
 
-  const displayEngines = engineHealth?.engines && engineHealth.engines.length > 0
-    ? engineHealth.engines
-    : defaultEngines;
+  // Only engines the server actually reports. No built-in placeholder list.
+  const displayEngines: any[] = Array.isArray(engineHealth?.engines) ? engineHealth!.engines : [];
+  const apiReady = healthData?.status === 'ready';
+  const dbState: string = healthData?.checks?.database || (healthData ? 'unknown' : 'checking');
+  const okEngines = displayEngines.filter((e: any) => ['ONLINE', 'OPERATIONAL', 'AVAILABLE'].includes(String(e.status || '').toUpperCase())).length;
 
   return (
     <div className="space-y-6">
@@ -170,12 +167,16 @@ export default function SystemHealthPage() {
         <div className="p-4 rounded-2xl liquid-glass-card border border-white/10 shadow-md">
           <div className="flex items-center justify-between text-xs text-slate-400">
             <span>FastAPI Gateway</span>
-            <Server className="w-4 h-4 text-emerald-400" />
+            <Server className={`w-4 h-4 ${apiReady ? 'text-emerald-400' : 'text-rose-400'}`} />
           </div>
-          <div className="text-xl font-black text-emerald-400 mt-2 font-mono">
-            {healthData?.status ? healthData.status.toUpperCase() : 'HEALTHY'}
+          <div className={`text-xl font-black mt-2 font-mono ${apiReady ? 'text-emerald-400' : 'text-rose-400'}`}>
+            {healthData?.status ? String(healthData.status).toUpperCase() : 'CHECKING'}
           </div>
-          <div className="text-[11px] text-slate-400 mt-1">Version {healthData?.version || '2.0.0'} &bull; Latency: ~2ms</div>
+          <div className="text-[11px] text-slate-400 mt-1">
+            {apiReady
+              ? <>Version {healthData?.version} &bull; build {healthData?.build} &bull; as_of {healthData?.time_utc} UTC</>
+              : <>Reason: {healthData?.reason || 'unknown'}{healthData?.request_id ? ` · request ${healthData.request_id}` : ''}</>}
+          </div>
         </div>
 
         {/* Database Health */}
@@ -184,8 +185,8 @@ export default function SystemHealthPage() {
             <span>SQLAlchemy Persistence</span>
             <Database className="w-4 h-4 text-cyan-400" />
           </div>
-          <div className="text-xl font-black text-cyan-400 mt-2 font-mono">CONNECTED</div>
-          <div className="text-[11px] text-slate-400 mt-1">SQLite + aiosqlite Async (WAL Mode)</div>
+          <div className={`text-xl font-black mt-2 font-mono ${dbState === 'ok' ? 'text-cyan-400' : 'text-rose-400'}`}>{dbState.toUpperCase()}</div>
+          <div className="text-[11px] text-slate-400 mt-1">Reported by /healthz/ready</div>
         </div>
 
         {/* Security Engines Count */}
@@ -195,9 +196,9 @@ export default function SystemHealthPage() {
             <ShieldCheck className="w-4 h-4 text-emerald-400" />
           </div>
           <div className="text-xl font-black text-white mt-2 font-mono flex items-center gap-2">
-            <span>{displayEngines.length}/{displayEngines.length} ACTIVE</span>
+            <span>{engineHealth ? `${okEngines}/${displayEngines.length} AVAILABLE` : 'UNKNOWN'}</span>
           </div>
-          <div className="text-[11px] text-emerald-400 mt-1">100% Operational & Tested</div>
+          <div className="text-[11px] text-slate-400 mt-1">{engineHealth ? 'Per-engine status from /engines/health' : 'Engine health not loaded'}</div>
         </div>
 
         {/* Operating Timezone */}
@@ -221,7 +222,7 @@ export default function SystemHealthPage() {
             </span>
           </div>
           <div className="text-[11px] text-slate-400 font-mono">
-            Target Platform: <span className="text-white font-bold">https://empire.edu.vn/</span>
+            Source: <span className="text-white font-bold">/api/v1/engines/health</span>
           </div>
         </div>
 

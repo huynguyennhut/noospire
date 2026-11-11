@@ -59,6 +59,9 @@ async def init_db() -> None:
     import backend.app.models.rule
     import backend.app.models.intelligence
     import backend.app.models.event
+    import backend.app.models.defensive
+    import backend.app.models.operations  # noqa: F401
+    import backend.app.models.lifecycle  # noqa: F401
     import backend.app.reporting.generator
     from backend.app.core.empire_seeder import seed_empire_ecosystem
 
@@ -156,8 +159,8 @@ async def init_db() -> None:
             except Exception:
                 pass
 
-    # Invariant (R5): NEVER seed default passwords or reset accounts on server boot!
-    # Initial administrator onboarding is handled exclusively via one-time bootstrap (F02).
-    async with AsyncSessionLocal() as session:
-        # Seed Empire ecosystem targets, findings, baselines, and schedules
-        await seed_empire_ecosystem(session)
+    # Invariant: boot NEVER creates users, assets, findings or schedules. An empty
+    # production DB stays empty. Fixture/demo data only for an isolated demo env.
+    if settings.SEED_DEMO_DATA and not settings.is_production:
+        async with AsyncSessionLocal() as session:
+            await seed_empire_ecosystem(session)

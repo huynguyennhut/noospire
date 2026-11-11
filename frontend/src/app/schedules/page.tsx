@@ -1,365 +1,600 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import Link from 'next/link';
-import {
-  CalendarClock,
-  Play,
-  Plus,
-  RefreshCw,
-  Clock,
-  CheckCircle2,
-  AlertCircle,
-  X,
-  Server,
-  Layers,
-  Power,
-  Trash2,
-  FileText,
-} from 'lucide-react';
+/**
+ * Milestone 4 · Schedules & capacity.
+ * - "Run whole system" and the hourly schedule use the same server planner (preview -> confirm -> 202).
+ * - Countdown ticks every second from `next_run_at` + server clock offset; a tick never calls the API.
+ * - Data refreshes on real change events from the shared stream (one EventSource per browser),
+ *   with a bounded 60 s fallback refresh.
+ */
 
-import { api } from '@/lib/api';
-import { DailyScheduleItem } from '@/lib/types';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
+import { Activity, AlertTriangle, CalendarClock, Gauge, Pause, Play, PlayCircle, Plus, RefreshCw, Server } from 'lucide-react';
+import {
+  api,
+  ApiError,
+  CapacityInfo,
+  EngineName,
+  MonitorSchedule,
+  OperationsOverview,
+  RunPlan,
+  RunStatus,
+  ScheduleSlotInfo,
+} from '@/lib/api';
+import { LiveEvent, StreamState, subscribeEvents } from '@/lib/events';
 import { useI18n } from '@/lib/i18n';
-import { useToast } from '@/components/ui/toast';
+
+const TZ = 'Asia/Ho_Chi_Minh';
+const ENGINES: EngineName[] = ['tls_health', 'sbom'];
+
+function ict(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString('vi-VN', { timeZone: TZ, hour12: false }) + ' ICT';
+}
+
+function dur(seconds: number | null | undefined): string {
+  if (seconds === null || seconds === undefined) return '—';
+  const s = Math.max(0, Math.round(seconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const r = s % 60;
+  return h ? `${h}h ${String(m).padStart(2, '0')}m` : m ? `${m}m ${String(r).padStart(2, '0')}s` : `${r}s`;
+}
+
+function errText(e: any, vi: boolean): string {
+  if (e instanceof ApiError || e?.kind) {
+    const rid = e.requestId ? ` · request ${e.requestId}` : '';
+    if (e.kind === 'forbidden') return (vi ? 'Không đủ quyền: ' : 'Not permitted: ') + e.message + rid;
+    if (['network', 'upstream_unreachable', 'upstream_timeout', 'misrouted'].includes(e.kind))
+      return (vi ? 'Không kết nối được API (' : 'API unreachable (') + e.kind + ')' + rid;
+    return e.message + rid;
+  }
+  return String(e?.message || e);
+}
+
+const RESULT_STYLE: Record<string, string> = {
+  completed: 'text-emerald-300 border-emerald-700 bg-emerald-950',
+  partial: 'text-amber-300 border-amber-700 bg-amber-950',
+  failed: 'text-rose-300 border-rose-700 bg-rose-950',
+  no_work: 'text-slate-300 border-slate-600 bg-slate-800',
+  launched: 'text-cyan-300 border-cyan-700 bg-cyan-950',
+  coalesced: 'text-amber-300 border-amber-700 bg-amber-950',
+};
+
+function Badge({ value }: { value: string | null | undefined }) {
+  if (!value) return <span className="text-slate-500">—</span>;
+  return (
+    <span className={`px-2 py-0.5 rounded border text-[11px] font-mono ${RESULT_STYLE[value] || 'text-slate-300 border-slate-600 bg-slate-800'}`}>
+      {value}
+    </span>
+  );
+}
+
+function newKey(): string {
+  return typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+}
 
 export default function SchedulesPage() {
-  const { t } = useI18n();
-  const { toast } = useToast();
-  const [schedules, setSchedules] = useState<DailyScheduleItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [triggeringId, setTriggeringId] = useState<string | null>(null);
+  const { locale } = useI18n();
+  const vi = locale === 'vi';
+  const L = (a: string, b: string) => (vi ? a : b);
 
-  // Form State
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [name, setName] = useState('');
-  const [profile, setProfile] = useState('DAILY_SECURITY');
-  const [cron, setCron] = useState('0 2 * * *');
-  const [tz, setTz] = useState('Asia/Ho_Chi_Minh');
-  const [submitting, setSubmitting] = useState(false);
+  const [overview, setOverview] = useState<OperationsOverview | null>(null);
+  const [metrics, setMetrics] = useState<any | null>(null);
+  const [slots, setSlots] = useState<Record<string, ScheduleSlotInfo[]>>({});
+  const [openSlots, setOpenSlots] = useState<string | null>(null);
+  const [offsetMs, setOffsetMs] = useState(0); // server_time - client time
+  const [now, setNow] = useState(Date.now());
+  const [stream, setStream] = useState<StreamState>('connecting');
+  const [events, setEvents] = useState<LiveEvent[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [plan, setPlan] = useState<RunPlan | null>(null);
+  const [planEngines, setPlanEngines] = useState<EngineName[]>(ENGINES);
+  const [planProfile, setPlanProfile] = useState<'light' | 'slow'>('light');
+  const [accepted, setAccepted] = useState<RunStatus | null>(null);
+  const [cap, setCap] = useState<CapacityInfo | null>(null);
+  const [form, setForm] = useState({ name: '', profile: 'light' as 'light' | 'slow', interval: 60, workers: 2 });
+  const runKey = useRef<string | null>(null);
+  const refreshTimer = useRef<any>(null);
 
-  const fetchSchedules = async () => {
+  const load = useCallback(async () => {
     try {
-      setLoading(true);
-      const res = await api.listSchedules();
-      const scheduleItems = Array.isArray(res) ? res : ((res as any)?.items || []);
-      setSchedules(scheduleItems);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
+      const ov = await api.getOperationsOverview();
+      setOverview(ov);
+      setCap(ov.capacity);
+      setOffsetMs(new Date(ov.server_time).getTime() - Date.now());
+      setError(null);
+      if (ov.schedules_visible) {
+        setMetrics(await api.getOperationsMetrics(24).catch(() => null));
+      }
+    } catch (e) {
+      setError(errText(e, vi));
     }
-  };
+  }, [vi]);
+
+  const loadSlots = useCallback(async (id: string) => {
+    try {
+      const rows = await api.listScheduleSlots(id, 24);
+      setSlots((s) => ({ ...s, [id]: rows }));
+    } catch (e) {
+      setError(errText(e, vi));
+    }
+  }, [vi]);
+
+  // Debounced refresh driven by real events.
+  const scheduleRefresh = useCallback(() => {
+    if (refreshTimer.current) return;
+    refreshTimer.current = setTimeout(() => {
+      refreshTimer.current = null;
+      void load();
+      if (openSlots) void loadSlots(openSlots);
+    }, 1000);
+  }, [load, loadSlots, openSlots]);
 
   useEffect(() => {
-    fetchSchedules();
-  }, []);
+    void load();
+    const fallback = setInterval(() => void load(), 60_000);
+    const tick = setInterval(() => setNow(Date.now()), 1000); // countdown only; never fetches
+    return () => {
+      clearInterval(fallback);
+      clearInterval(tick);
+    };
+  }, [load]);
 
-  const handleTrigger = async (id: string) => {
+  useEffect(
+    () =>
+      subscribeEvents((m) => {
+        if (m.kind === 'state') {
+          setStream(m.state);
+          if (m.serverTime) setOffsetMs(new Date(m.serverTime).getTime() - Date.now());
+        } else if (m.kind === 'event') {
+          setEvents((ev) => [m.event, ...ev.filter((x) => x.id !== m.event.id)].slice(0, 25));
+          scheduleRefresh();
+        } else if (m.kind === 'reset') {
+          scheduleRefresh();
+        }
+      }),
+    [scheduleRefresh],
+  );
+
+  const serverNow = now + offsetMs;
+  const owner = overview?.schedules_visible ?? false;
+
+  async function preview() {
+    setBusy(true);
+    setAccepted(null);
+    setError(null);
     try {
-      setTriggeringId(id);
-      const res = await api.triggerSchedule(id);
-      await fetchSchedules();
-      toast({
-        title: 'Schedule Dispatched',
-        description: `Daily assessment pipeline successfully triggered for target perimeter!`,
-        variant: 'default',
-        duration: 4000,
-      });
-    } catch (err) {
-      toast({
-        title: 'Trigger Failed',
-        description: String(err),
-        variant: 'destructive',
-      });
+      runKey.current = newKey();
+      setPlan(await api.previewPlan({ selection: { kind: 'all' }, engines: planEngines, profile: planProfile }));
+    } catch (e) {
+      setError(errText(e, vi));
     } finally {
-      setTriggeringId(null);
+      setBusy(false);
     }
-  };
+  }
 
-  const handleToggle = async (id: string) => {
+  async function confirmRun() {
+    if (!runKey.current) runKey.current = newKey();
+    setBusy(true);
     try {
-      const updated = await api.toggleSchedule(id);
-      await fetchSchedules();
-      toast({
-        title: 'Schedule Status Updated',
-        description: `Schedule is now ${updated?.is_active ? 'ACTIVE' : 'PAUSED'}.`,
-        variant: 'default',
-        duration: 3000,
-      });
-    } catch (err) {
-      toast({
-        title: 'Toggle Failed',
-        description: String(err),
-        variant: 'destructive',
-      });
+      const res = await api.launchRun({ selection: { kind: 'all' }, engines: planEngines, profile: planProfile }, runKey.current);
+      setAccepted(res);
+      setPlan(null);
+      runKey.current = null;
+      void load();
+    } catch (e) {
+      setError(errText(e, vi));
+    } finally {
+      setBusy(false);
     }
-  };
+  }
 
-  const handleDeleteSchedule = async (id: string, schedName: string) => {
-    if (!confirm(`Are you sure you want to permanently delete schedule "${schedName}"?`)) return;
+  async function toggle(s: MonitorSchedule) {
+    setBusy(true);
     try {
-      await api.deleteSchedule(id);
-      await fetchSchedules();
-      toast({
-        title: 'Schedule Deleted',
-        description: `Schedule "${schedName}" was permanently removed.`,
-        duration: 3000,
-      });
-    } catch (err) {
-      toast({
-        title: 'Delete Failed',
-        description: String(err),
-        variant: 'destructive',
-      });
+      await api.updateMonitorSchedule(s.id, { is_active: !s.is_active, expected_revision: s.revision });
+      await load();
+    } catch (e) {
+      setError(errText(e, vi));
+    } finally {
+      setBusy(false);
     }
-  };
+  }
 
+  async function setProfile(s: MonitorSchedule, profile: 'light' | 'slow') {
+    setBusy(true);
+    try {
+      await api.updateMonitorSchedule(s.id, { profile, expected_revision: s.revision });
+      await load();
+    } catch (e) {
+      setError(errText(e, vi));
+    } finally {
+      setBusy(false);
+    }
+  }
 
-  const handleCreateSchedule = async (e: React.FormEvent) => {
+  async function create(e: React.FormEvent) {
     e.preventDefault();
-    if (!name.trim()) return;
+    setBusy(true);
     try {
-      setSubmitting(true);
-      await api.createSchedule({
-        name,
-        profile,
-        cron_expression: cron,
-        timezone: tz,
+      await api.createMonitorSchedule({
+        name: form.name || L('Kiểm tra mỗi giờ', 'Hourly checks'),
+        selection: { kind: 'all' },
+        engines: ENGINES,
+        profile: form.profile,
+        interval_minutes: form.interval,
+        max_workers: form.workers,
         is_active: true,
-        target_ids: ['ALL'],
       });
-      setIsModalOpen(false);
-      setName('');
-      await fetchSchedules();
-      toast({
-        title: 'Schedule Created',
-        description: `New recurring schedule "${name}" successfully registered.`,
-        variant: 'default',
-        duration: 4000,
-      });
+      setNotice(L('Đã tạo lịch. Lượt đầu chạy ở slot kế tiếp.', 'Schedule created. First run at the next slot.'));
+      await load();
     } catch (err) {
-      toast({
-        title: 'Create Failed',
-        description: String(err),
-        variant: 'destructive',
-      });
+      setError(errText(err, vi));
     } finally {
-      setSubmitting(false);
+      setBusy(false);
     }
-  };
+  }
+
+  async function saveCapacity(e: React.FormEvent) {
+    e.preventDefault();
+    if (!cap) return;
+    setBusy(true);
+    try {
+      setCap(
+        await api.putCapacity({
+          max_running_executions: cap.max_running_executions,
+          per_host_hourly_quota: cap.per_host_hourly_quota,
+          per_host_egress_bytes_hourly: cap.per_host_egress_bytes_hourly,
+        }),
+      );
+      setNotice(L('Đã lưu giới hạn công suất.', 'Capacity limits saved.'));
+    } catch (err) {
+      setError(errText(err, vi));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const streamLabel = useMemo(() => {
+    const m: Record<StreamState, [string, string, string]> = {
+      connecting: ['Đang kết nối luồng sự kiện', 'Connecting event stream', 'text-slate-300'],
+      live: ['Trực tiếp', 'Live', 'text-emerald-300'],
+      polling: ['Dự phòng: hỏi lại mỗi 10 giây', 'Fallback: polling every 10 s', 'text-amber-300'],
+      offline: ['Mất kết nối, đang thử lại', 'Disconnected, retrying', 'text-rose-300'],
+      auth_revoked: ['Phiên đã kết thúc, hãy đăng nhập lại', 'Session ended, sign in again', 'text-rose-300'],
+    };
+    const [a, b, c] = m[stream];
+    return <span className={`text-xs ${c}`}>{L(a, b)}</span>;
+  }, [stream, vi]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-white/10">
+      <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2">
-            <CalendarClock className="w-6 h-6 text-cyan-400" />
-            <h1 className="text-2xl font-black tracking-tight text-white">
-              {t('schedules.title', 'DAILY ASSESSMENT SCHEDULES')}
-            </h1>
-          </div>
+          <h1 className="text-xl font-semibold text-slate-100 flex items-center gap-2">
+            <CalendarClock className="w-5 h-5 text-cyan-400" />
+            {L('Lịch kiểm tra & công suất', 'Schedules & capacity')}
+          </h1>
           <p className="text-xs text-slate-400 mt-1">
-            {t('schedules.subtitle', 'Automated continuous security monitoring pipeline configured in Asia/Ho_Chi_Minh (ICT) timezone.')}
+            {L('Giờ server', 'Server time')}: {ict(new Date(serverNow).toISOString())} · {L('lưu UTC, hiển thị', 'stored UTC, shown in')} {TZ} · {streamLabel}
           </p>
         </div>
-
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-cyan-400 text-slate-950 text-xs font-bold shadow-lg shadow-cyan-950/60 hover:from-cyan-400 hover:to-cyan-300 transition"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>{t('schedules.createButton', 'Create Schedule')}</span>
-          </button>
-        </div>
+        <button onClick={() => void load()} className="px-3 py-1.5 rounded border border-slate-600 text-slate-200 text-sm flex items-center gap-1">
+          <RefreshCw className="w-4 h-4" /> {L('Tải lại', 'Reload')}
+        </button>
       </div>
 
-      {/* Information Box */}
-      <div className="p-4 rounded-2xl liquid-glass-card border border-white/10 shadow-md text-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div>
-          <div className="font-bold text-white flex items-center gap-2">
-            <Clock className="w-4 h-4 text-cyan-400" />
-            <span>Configured Operating Timezone: <strong className="text-cyan-400 font-mono">Asia/Ho_Chi_Minh (UTC+7)</strong></span>
-          </div>
-          <p className="text-slate-400 text-[11px] mt-1">
-            The daily pipeline verifies target availability, updates asset inventories, assesses Better-Auth routes, verifies the /media baseline, and correlates newly disclosed CVEs.
-          </p>
-        </div>
-        <div className="px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/10 font-mono text-emerald-400 font-bold">
-          Cron Daemon: ACTIVE
-        </div>
-      </div>
-
-      {/* Schedules List */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-        {schedules.map((sched) => (
-          <div key={sched.id} className="rounded-2xl liquid-glass-card border border-white/10 p-5 shadow-xl flex flex-col justify-between">
-            <div>
-              <div className="flex items-center justify-between pb-3 border-b border-white/10">
-                <div>
-                  <h2 className="text-sm font-bold text-white">{sched.name}</h2>
-                  <div className="text-[11px] text-cyan-400 font-mono mt-0.5">Profile: {sched.profile}</div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => handleToggle(sched.id)}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 border transition ${
-                      sched.is_active
-                        ? 'bg-emerald-950/80 text-emerald-400 border-emerald-800'
-                        : 'bg-white/[0.04] text-slate-500 border-white/10'
-                    }`}
-                  >
-                    <Power className="w-3 h-3" />
-                    <span>{sched.is_active ? 'ACTIVE' : 'PAUSED'}</span>
-                  </button>
-                  <button
-                    onClick={() => handleDeleteSchedule(sched.id, sched.name)}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 border border-white/10 hover:border-rose-500/30 transition cursor-pointer"
-                    title="Delete Schedule"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-
-              <div className="mt-4 space-y-2 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Cron Schedule:</span>
-                  <span className="font-mono text-white font-bold">{sched.cron_expression} (02:00 AM ICT)</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Target Scope:</span>
-                  <strong className="text-cyan-400">
-                    {sched.target_ids && sched.target_ids.length > 0 ? sched.target_ids.join(', ') : 'All 368 Targets'} (Entire Portfolio)
-                  </strong>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Timezone:</span>
-                  <span className="text-slate-300 font-mono">{sched.timezone}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Last Execution:</span>
-                  <strong className="text-slate-300">
-                    {sched.last_run_at ? new Date(sched.last_run_at).toLocaleString() : 'Pending Next Window'}
-                  </strong>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Pipeline Status:</span>
-                  <span className="px-2 py-0.2 rounded-md bg-white/[0.04] border border-white/10 text-emerald-400 font-mono text-[11px] font-bold">
-                    {sched.last_status || 'READY'}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div className="pt-4 border-t border-white/10 mt-4 flex flex-wrap items-center justify-between gap-2 text-xs">
-              <Link
-                href="/active-assessments"
-                className="px-3 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-slate-300 hover:text-white transition flex items-center gap-1.5 text-xs font-semibold"
-                title="View execution logs for scheduled runs"
-              >
-                <FileText className="w-3.5 h-3.5 text-cyan-400" />
-                <span>View Execution Logs</span>
-              </Link>
-              <button
-                onClick={() => handleTrigger(sched.id)}
-                disabled={triggeringId === sched.id}
-                className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-cyan-400 hover:from-cyan-400 hover:to-cyan-300 text-slate-950 font-bold transition flex items-center gap-1.5 shadow-md"
-              >
-                <Play className="w-3.5 h-3.5 fill-slate-950" />
-                <span>{triggeringId === sched.id ? 'Launching Pipeline...' : 'Run Daily Pipeline Now'}</span>
-              </button>
-            </div>
-
-          </div>
-        ))}
-      </div>
-
-      {/* Modal: Create Schedule */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="w-full max-w-lg rounded-2xl liquid-glass-modal p-6 shadow-2xl border border-white/15">
-            <div className="flex items-center justify-between pb-4 border-b border-white/10">
-              <h2 className="text-base font-bold text-white">Create Assessment Schedule</h2>
-              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-white/[0.06]">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleCreateSchedule} className="space-y-4 mt-4 text-xs">
-              <div>
-                <label className="block text-slate-300 font-semibold mb-1">Schedule Name</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Daily Asia/Ho_Chi_Minh Pipeline"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-cyber-950 border border-white/10 text-white focus:outline-none focus:border-cyan-500"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-300 font-semibold mb-1">Assessment Profile</label>
-                  <select
-                    value={profile}
-                    onChange={(e) => setProfile(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-cyber-950 border border-white/10 text-white focus:outline-none focus:border-cyan-500"
-                  >
-                    <option value="DAILY_SECURITY">Daily Security Profile</option>
-                    <option value="STANDARD">Standard Profile</option>
-                    <option value="QUICK">Quick Profile</option>
-                    <option value="AUTHENTICATED">Authenticated Profile</option>
-                    <option value="INFRASTRUCTURE">Infrastructure Profile</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-slate-300 font-semibold mb-1">Cron Expression</label>
-                  <input
-                    type="text"
-                    required
-                    value={cron}
-                    onChange={(e) => setCron(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-cyber-950 border border-white/10 text-white focus:outline-none focus:border-cyan-500 font-mono"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-slate-300 font-semibold mb-1">Timezone</label>
-                <input
-                  type="text"
-                  required
-                  value={tz}
-                  onChange={(e) => setTz(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-cyber-950 border border-white/10 text-white focus:outline-none focus:border-cyan-500 font-mono"
-                />
-              </div>
-
-              <div className="flex justify-end gap-3 pt-3 border-t border-white/10">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 rounded-xl bg-white/[0.04] text-slate-300 hover:text-white border border-white/10"
-                >
-                  {t('common.cancel', 'Cancel')}
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-cyan-400 hover:from-cyan-400 hover:to-cyan-300 text-slate-950 font-bold transition shadow-md"
-                >
-                  {submitting ? 'Saving...' : 'Register Schedule'}
-                </button>
-              </div>
-            </form>
-          </div>
+      {error && (
+        <div role="alert" className="p-3 rounded border border-rose-700 bg-rose-950 text-rose-200 text-sm flex justify-between gap-3">
+          <span>{error}</span>
+          <button onClick={() => void load()} className="underline">{L('Thử lại', 'Retry')}</button>
         </div>
       )}
+      {notice && <div className="p-3 rounded border border-emerald-700 bg-emerald-950 text-emerald-200 text-sm">{notice}</div>}
+
+      {/* Run whole system: same planner as the schedule */}
+      <section className="p-4 rounded border border-slate-700 bg-slate-900 space-y-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <PlayCircle className="w-5 h-5 text-cyan-400" />
+          <h2 className="text-slate-100 font-medium">{L('Chạy kiểm tra toàn hệ thống', 'Run whole-system check')}</h2>
+          <span className="text-xs text-slate-400">{L('Trong phạm vi quyền của bạn', 'Within your scope')}</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-4 text-sm text-slate-300">
+          {ENGINES.map((e) => (
+            <label key={e} className="flex items-center gap-1">
+              <input
+                type="checkbox"
+                checked={planEngines.includes(e)}
+                onChange={(ev) => setPlanEngines((cur) => (ev.target.checked ? [...cur, e] : cur.filter((x) => x !== e)))}
+              />
+              {e}
+            </label>
+          ))}
+          <select value={planProfile} onChange={(e) => setPlanProfile(e.target.value as any)} className="bg-slate-800 border border-slate-600 rounded px-2 py-1">
+            <option value="light">{L('Nhẹ (kiểm tra nhanh)', 'Light (quick checks)')}</option>
+            <option value="slow">{L('Chậm (1 worker, giãn cách theo host)', 'Slow (1 worker, host spacing)')}</option>
+          </select>
+          <button disabled={busy || !planEngines.length} onClick={() => void preview()} className="px-3 py-1.5 rounded bg-cyan-700 text-white disabled:opacity-50">
+            {L('Xem trước tác động', 'Preview impact')}
+          </button>
+        </div>
+        {plan && (
+          <div className="p-3 rounded border border-cyan-800 bg-slate-950 text-sm text-slate-200 space-y-2">
+            <p>
+              {L('Trong phạm vi', 'In scope')}: <b>{plan.summary.assets_in_scope}</b> asset · {plan.summary.pairs} {L('cặp asset/engine', 'asset/engine pairs')} ·{' '}
+              <b className="text-emerald-300">{plan.summary.queue}</b> {L('chạy ngay', 'run now')} · <b className="text-amber-300">{plan.summary.defer}</b>{' '}
+              {L('dời lịch', 'deferred')} · <b className="text-slate-400">{plan.summary.skip}</b> {L('bỏ qua', 'skipped')}
+            </p>
+            {Object.keys(plan.summary.reasons).length > 0 && (
+              <p className="text-xs text-slate-400">
+                {L('Lý do', 'Reasons')}: {Object.entries(plan.summary.reasons).map(([k, v]) => `${k} × ${v}`).join(' · ')}
+              </p>
+            )}
+            <p className="text-xs text-slate-400">
+              {L('Ước tính xong lúc', 'Estimated finish')} {ict(plan.summary.estimated_finish_at)} ({plan.summary.slots} slot,{' '}
+              {L('backlog trước đó', 'prior backlog')} {dur(plan.summary.backlog_seconds_before)}) ·{' '}
+              {plan.summary.fits_window ? L('vừa trong cửa sổ 1 giờ', 'fits the 1-hour window') : L('vượt cửa sổ: việc dài chuyển sang hàng đợi dài', 'exceeds window: long work moved to the long lane')}
+              {plan.summary.deferred_resume_at ? ` · ${L('tiếp tục lúc', 'resumes at')} ${ict(plan.summary.deferred_resume_at)}` : ''}
+            </p>
+            <div className="flex gap-2">
+              <button disabled={busy || plan.summary.queue + plan.summary.defer === 0} onClick={() => void confirmRun()} className="px-3 py-1.5 rounded bg-emerald-700 text-white disabled:opacity-50">
+                {L('Xác nhận chạy', 'Confirm run')}
+              </button>
+              <button onClick={() => setPlan(null)} className="px-3 py-1.5 rounded border border-slate-600 text-slate-300">{L('Hủy', 'Cancel')}</button>
+            </div>
+          </div>
+        )}
+        {accepted && (
+          <div className="p-3 rounded border border-emerald-700 bg-emerald-950 text-sm text-emerald-100">
+            {accepted.replayed ? L('Yêu cầu đã được nhận trước đó', 'Already accepted earlier') : L('Đã nhận', 'Accepted')} · batch <code>{accepted.batch_id}</code> ·{' '}
+            {ict(accepted.accepted_at)} · {L('mã tương quan', 'correlation')} <code>{accepted.correlation_id}</code> ·{' '}
+            <Link className="underline" href={`/engine-runs/?run=${accepted.batch_id}`}>{L('Theo dõi', 'Track')}</Link>
+          </div>
+        )}
+      </section>
+
+      {/* Schedules */}
+      {owner ? (
+        <section className="space-y-3">
+          <h2 className="text-slate-100 font-medium flex items-center gap-2"><Activity className="w-4 h-4 text-cyan-400" />{L('Lịch định kỳ', 'Recurring schedules')}</h2>
+          {overview && overview.schedules.length === 0 && (
+            <p className="text-sm text-slate-400">{L('Chưa có lịch. Tạo lịch đầu tiên bên dưới.', 'No schedule yet. Create the first one below.')}</p>
+          )}
+          {overview?.schedules.map((s) => {
+            const next = s.next_run_at ? new Date(s.next_run_at).getTime() : null;
+            const left = next !== null ? (next - serverNow) / 1000 : null;
+            return (
+              <div key={s.id} className="p-4 rounded border border-slate-700 bg-slate-900 text-sm text-slate-200 space-y-2">
+                <div className="flex flex-wrap items-center gap-3">
+                  <b>{s.name}</b>
+                  <span className="text-xs text-slate-400">{L('mỗi', 'every')} {s.interval_minutes} {L('phút', 'min')} · {s.engines.join(', ')} · {L('tối đa', 'max')} {s.max_workers} worker</span>
+                  <select disabled={busy} value={s.profile} onChange={(e) => void setProfile(s, e.target.value as any)} className="bg-slate-800 border border-slate-600 rounded px-2 py-0.5 text-xs">
+                    <option value="light">{L('nhẹ', 'light')}</option>
+                    <option value="slow">{L('chậm', 'slow')}</option>
+                  </select>
+                  <button disabled={busy} onClick={() => void toggle(s)} className="ml-auto px-2 py-1 rounded border border-slate-600 text-xs flex items-center gap-1">
+                    {s.is_active ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
+                    {s.is_active ? L('Tạm dừng', 'Pause') : L('Bật lại', 'Resume')}
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
+                  <div>
+                    <div className="text-slate-400">{L('Lần dự kiến tiếp theo', 'Next run')}</div>
+                    <div>{s.is_active ? ict(s.next_run_at) : L('đang tạm dừng', 'paused')}</div>
+                    {s.is_active && left !== null && (
+                      <div className="font-mono text-cyan-300" aria-live="off">
+                        {left > 0 ? `${L('còn', 'in')} ${dur(left)}` : L('đến hạn, chờ scheduler', 'due, waiting for scheduler')}
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <div className="text-slate-400">{L('Lần chạy trước', 'Last run')}</div>
+                    <div>{ict(s.last_run_at)}</div>
+                    <div className="text-slate-400 mt-1">{L('Thành công đầy đủ gần nhất', 'Last full success')}</div>
+                    <div>{ict(s.last_full_success_at)}</div>
+                  </div>
+                  <div>
+                    <div className="text-slate-400">{L('Kết quả mới nhất (kể cả partial)', 'Latest result (incl. partial)')}</div>
+                    <div className="flex items-center gap-2"><Badge value={s.latest_result.status} /> {ict(s.latest_result.at)}</div>
+                    {s.latest_result.batch_id && (
+                      <Link className="underline text-cyan-300" href={`/engine-runs/?run=${s.latest_result.batch_id}`}>{L('Xem lượt chạy', 'Open run')}</Link>
+                    )}
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-4 text-xs text-slate-300">
+                  <span>{s.running ? L('Đang chạy', 'Running') : L('Không có lượt đang chạy', 'Idle')}</span>
+                  <span>{L('Slot bị lỡ/gộp', 'Missed/coalesced slots')}: <b>{s.missed_slots}</b>{s.pending_catchup ? ` · ${L('1 lượt bù đang chờ', '1 catch-up pending')}` : ''}</span>
+                  <span>Backlog: <b>{s.backlog}</b>{s.estimated_drain_at ? ` · ${L('ước tính xong', 'est. drain')} ${ict(s.estimated_drain_at)}` : ''}</span>
+                  <span>{L('Công suất lý thuyết', 'Theoretical capacity')}: {s.theoretical_hourly_capacity.toLocaleString()} / {L('giờ', 'hour')}</span>
+                </div>
+                {s.overdue_reason && (
+                  <p className="text-xs text-amber-300 flex items-center gap-1"><AlertTriangle className="w-3 h-3" />{s.overdue_reason}</p>
+                )}
+                <button
+                  className="text-xs underline text-slate-300"
+                  onClick={() => {
+                    const next = openSlots === s.id ? null : s.id;
+                    setOpenSlots(next);
+                    if (next) void loadSlots(next);
+                  }}
+                >
+                  {openSlots === s.id ? L('Ẩn slot', 'Hide slots') : L('Xem các slot gần đây', 'Show recent slots')}
+                </button>
+                {openSlots === s.id && (
+                  <table className="w-full text-xs mt-2">
+                    <thead className="text-slate-400 text-left">
+                      <tr><th>Slot (ICT)</th><th>{L('Loại', 'Kind')}</th><th>{L('Trạng thái', 'Status')}</th><th>{L('Lỡ trước đó', 'Missed before')}</th><th>{L('Gộp', 'Coalesced')}</th><th>{L('Kế hoạch', 'Plan')}</th><th>{L('Kết quả', 'Result')}</th></tr>
+                    </thead>
+                    <tbody>
+                      {(slots[s.id] || []).map((x) => (
+                        <tr key={x.id} className="border-t border-slate-800 align-top">
+                          <td>{ict(x.slot_at)}</td>
+                          <td>{x.kind}</td>
+                          <td><Badge value={x.status} />{x.reason ? <div className="text-slate-500">{x.reason}</div> : null}</td>
+                          <td>{x.missed_before}</td>
+                          <td>{x.coalesced_slots}</td>
+                          <td>{'queue' in x.plan_summary ? `${x.plan_summary.queue}/${x.plan_summary.defer}/${x.plan_summary.skip}` : '—'}</td>
+                          <td>{x.result_summary.by_status ? Object.entries(x.result_summary.by_status).map(([k, v]) => `${k}:${v}`).join(' ') : '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            );
+          })}
+          <form onSubmit={create} className="p-4 rounded border border-dashed border-slate-600 flex flex-wrap items-end gap-3 text-sm text-slate-200">
+            <label className="flex flex-col text-xs">{L('Tên', 'Name')}
+              <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="bg-slate-800 border border-slate-600 rounded px-2 py-1" maxLength={200} />
+            </label>
+            <label className="flex flex-col text-xs">{L('Chu kỳ (phút)', 'Interval (min)')}
+              <select value={form.interval} onChange={(e) => setForm({ ...form, interval: Number(e.target.value) })} className="bg-slate-800 border border-slate-600 rounded px-2 py-1">
+                {[15, 30, 60, 120, 240].map((m) => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col text-xs">Profile
+              <select value={form.profile} onChange={(e) => setForm({ ...form, profile: e.target.value as any })} className="bg-slate-800 border border-slate-600 rounded px-2 py-1">
+                <option value="light">{L('nhẹ', 'light')}</option>
+                <option value="slow">{L('chậm', 'slow')}</option>
+              </select>
+            </label>
+            <label className="flex flex-col text-xs">{L('Số worker tối đa', 'Max workers')}
+              <input type="number" min={1} max={32} value={form.workers} onChange={(e) => setForm({ ...form, workers: Number(e.target.value) })} className="bg-slate-800 border border-slate-600 rounded px-2 py-1 w-20" />
+            </label>
+            <button disabled={busy} className="px-3 py-1.5 rounded bg-cyan-700 text-white flex items-center gap-1 disabled:opacity-50"><Plus className="w-4 h-4" />{L('Tạo lịch', 'Create schedule')}</button>
+          </form>
+        </section>
+      ) : (
+        overview && <p className="text-sm text-slate-400">{L('Chỉ chủ hệ thống xem và chỉnh lịch định kỳ.', 'Only the system owner sees and edits recurring schedules.')}</p>
+      )}
+
+      {/* Engines: staleness and queue age */}
+      {overview && (
+        <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="p-4 rounded border border-slate-700 bg-slate-900 text-sm text-slate-200">
+            <h2 className="font-medium mb-2 flex items-center gap-2"><Gauge className="w-4 h-4 text-cyan-400" />{L('Theo engine', 'Per engine')}</h2>
+            <table className="w-full text-xs">
+              <thead className="text-slate-400 text-left"><tr><th>Engine</th><th>{L('Thành công cuối', 'Last success')}</th><th>{L('Kết quả mới nhất', 'Latest')}</th><th>{L('Hàng đợi', 'Queue')}</th><th>{L('Tuổi hàng đợi', 'Queue age')}</th></tr></thead>
+              <tbody>
+                {ENGINES.map((e) => {
+                  const x = overview.engines[e];
+                  return (
+                    <tr key={e} className="border-t border-slate-800">
+                      <td className="font-mono">{e}</td>
+                      <td>
+                        {ict(x.last_success_at)}
+                        {x.stale && <span className="ml-1 text-amber-300">({L('cũ', 'stale')})</span>}
+                      </td>
+                      <td>{x.latest_result ? <Badge value={x.latest_result.status} /> : '—'}</td>
+                      <td>{x.queued} {L('chờ', 'queued')} · {x.running} {L('chạy', 'running')}</td>
+                      <td>{dur(x.queue_age_seconds)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <p className="text-[11px] text-slate-500 mt-2">{L('Ngưỡng cũ', 'Stale threshold')}: {dur(overview.stale_threshold_seconds)} · {L('bằng chứng mới nhất', 'newest evidence')} {ict(overview.evidence.newest_observation_at)}</p>
+          </div>
+
+          <div className="p-4 rounded border border-slate-700 bg-slate-900 text-sm text-slate-200 space-y-1">
+            <h2 className="font-medium mb-2 flex items-center gap-2"><Server className="w-4 h-4 text-cyan-400" />{L('Vận hành', 'Operations')}</h2>
+            <p>Worker online: <b>{overview.workers_online}</b> / {overview.workers.length}</p>
+            {overview.workers.map((w) => (
+              <p key={w.worker_id} className="text-xs text-slate-400">
+                <code>{w.worker_id}</code> · {w.state} · {L('thấy cách đây', 'seen')} {dur(w.age_seconds)} · {w.active_executions} {L('đang chạy', 'active')}
+                {w.throttle_reason && <span className="block text-amber-300">{w.throttle_reason}</span>}
+              </p>
+            ))}
+            <p>{L('Job quá hạn', 'Overdue jobs')}: {overview.overdue.queued_over_10m} {L('chờ > 10 phút', 'queued > 10 min')} · {overview.overdue.running_lease_expired} {L('mất lease', 'lease expired')}</p>
+            <p>{L('Trong 24 giờ', 'Last 24 h')}: {overview.errors_24h.parse_errors} {L('lỗi parse', 'parse errors')} · {overview.errors_24h.dead_letters} dead letter</p>
+            <p>{L('Nguồn advisory', 'Advisory feed')}: {overview.feed ? `${overview.feed.source} · ${overview.feed.version} · ${L('tuổi', 'age')} ${overview.feed.age_hours} h` : L('chưa nhập', 'not imported')}</p>
+          </div>
+        </section>
+      )}
+
+      {/* Capacity & metrics (owner) */}
+      {owner && cap && (
+        <section className="p-4 rounded border border-slate-700 bg-slate-900 text-sm text-slate-200 space-y-3">
+          <h2 className="font-medium">{L('Công suất và số đo', 'Capacity and measurements')}</h2>
+          <form onSubmit={saveCapacity} className="flex flex-wrap items-end gap-3">
+            <label className="flex flex-col text-xs">{L('Tối đa job chạy đồng thời', 'Max running executions')}
+              <input type="number" min={1} max={64} value={cap.max_running_executions} onChange={(e) => setCap({ ...cap, max_running_executions: Number(e.target.value) })} className="bg-slate-800 border border-slate-600 rounded px-2 py-1 w-24" />
+            </label>
+            <label className="flex flex-col text-xs">{L('Quota mỗi host / giờ', 'Per-host quota / hour')}
+              <input type="number" min={1} max={3600} value={cap.per_host_hourly_quota} onChange={(e) => setCap({ ...cap, per_host_hourly_quota: Number(e.target.value) })} className="bg-slate-800 border border-slate-600 rounded px-2 py-1 w-24" />
+            </label>
+            <label className="flex flex-col text-xs">{L('Ngân sách egress mỗi host / giờ (byte)', 'Per-host egress / hour (bytes)')}
+              <input type="number" min={10000} value={cap.per_host_egress_bytes_hourly} onChange={(e) => setCap({ ...cap, per_host_egress_bytes_hourly: Number(e.target.value) })} className="bg-slate-800 border border-slate-600 rounded px-2 py-1 w-36" />
+            </label>
+            <button disabled={busy} className="px-3 py-1.5 rounded bg-cyan-700 text-white disabled:opacity-50">{L('Lưu', 'Save')}</button>
+          </form>
+          {metrics && (
+            <>
+              <table className="w-full text-xs">
+                <thead className="text-slate-400 text-left">
+                  <tr><th>Engine</th><th>{L('Lượt (24h)', 'Attempts (24h)')}</th><th>{L('Retry', 'Retries')}</th><th>p50 / p95 engine</th><th>p50 / p95 slot</th><th>{L('Trễ hàng đợi', 'Queue delay')} p50 / p95</th><th>CPU {L('TB', 'avg')}</th><th>RAM max</th><th>Byte in / out / egress</th><th>{L('Công suất lý thuyết / giờ', 'Theoretical / hour')}</th></tr>
+                </thead>
+                <tbody>
+                  {ENGINES.map((e) => {
+                    const m = metrics.engines[e];
+                    return (
+                      <tr key={e} className="border-t border-slate-800">
+                        <td className="font-mono">{e}</td>
+                        <td>{m.attempts}</td>
+                        <td>{m.retries}</td>
+                        <td>{m.duration_p50_s ?? '—'} / {m.duration_p95_s ?? '—'} s</td>
+                        <td>{m.slot_p50_s ?? '—'} / {m.slot_p95_s ?? '—'} s</td>
+                        <td>{m.queue_delay_p50_s ?? '—'} / {m.queue_delay_p95_s ?? '—'} s</td>
+                        <td>{m.cpu_ms_avg ?? '—'} ms</td>
+                        <td>{m.rss_bytes_max ? `${Math.round(m.rss_bytes_max / 1048576)} MB` : '—'}</td>
+                        <td>{m.input_bytes} / {m.output_bytes} / {m.egress_bytes}</td>
+                        <td>{m.theoretical_hourly_capacity?.toLocaleString() ?? '—'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              <p className="text-[11px] text-slate-500">{metrics.capacity_formula}. {metrics.cpu_rss_note}.</p>
+              {Object.keys(metrics.hosts_last_hour).length > 0 && (
+                <table className="w-full text-xs">
+                  <thead className="text-slate-400 text-left"><tr><th>Host</th><th>{L('Yêu cầu / quota (1 giờ)', 'Requests / quota (1 h)')}</th><th>Egress / {L('ngân sách', 'budget')}</th></tr></thead>
+                  <tbody>
+                    {Object.entries(metrics.hosts_last_hour).map(([h, v]: [string, any]) => (
+                      <tr key={h} className={`border-t border-slate-800 ${v.over_budget ? 'text-amber-300' : ''}`}>
+                        <td className="font-mono">{h}</td>
+                        <td>{v.requests} / {v.quota}</td>
+                        <td>{v.egress_bytes} / {v.egress_budget_bytes}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </>
+          )}
+        </section>
+      )}
+
+      {/* Live events */}
+      <section className="p-4 rounded border border-slate-700 bg-slate-900 text-xs text-slate-300">
+        <h2 className="font-medium text-sm text-slate-100 mb-2">{L('Sự kiện gần đây', 'Recent events')}</h2>
+        {events.length === 0 && <p className="text-slate-500">{L('Chưa có sự kiện mới từ khi mở trang.', 'No new events since this page opened.')}</p>}
+        <ul className="space-y-1">
+          {events.map((e) => (
+            <li key={e.id} className="flex flex-wrap gap-2">
+              <span className="text-slate-500">#{e.id}</span>
+              <span>{ict(e.occurred_at)}</span>
+              <span className="font-mono">{e.type}</span>
+              <span>{e.message}</span>
+              {e.batch_id && <Link className="underline text-cyan-300" href={`/engine-runs/?run=${e.batch_id}`}>{L('lượt chạy', 'run')}</Link>}
+              {e.correlation_id && <span className="text-slate-500">corr {e.correlation_id}</span>}
+            </li>
+          ))}
+        </ul>
+      </section>
     </div>
   );
 }

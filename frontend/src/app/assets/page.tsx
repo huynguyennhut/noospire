@@ -639,7 +639,7 @@ function TargetsContent() {
       try {
         setLoadingDrawerData(true);
         const [scansRes, findingsRes] = await Promise.all([
-          fetch(`/api/v1/scans?asset_id=${selectedAssetForDrawer.id}&size=20`).then((r) => r.json()).catch(() => ({ items: [] })),
+          api.request(`/scans?asset_id=${selectedAssetForDrawer.id}&size=20`).catch(() => ({ items: [] })),
           api.listFindings({ assetId: selectedAssetForDrawer.id }).catch(() => ({ items: [] })),
         ]);
         setDrawerScans(scansRes.items || []);
@@ -766,20 +766,13 @@ function TargetsContent() {
     if (!bulkContent.trim()) return;
     try {
       setPreviewingBulk(true);
-      const response = await fetch('/api/v1/assets/bulk-preview', {
+      const data = await api.request('/assets/bulk-preview', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           import_type: bulkImportType,
           raw_content: bulkContent,
         }),
       });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const data = await response.json();
       setBulkPreviewData(data);
     } catch (err: unknown) {
       alert(`Bulk preview error: ${err instanceof Error ? err.message : String(err)}`);

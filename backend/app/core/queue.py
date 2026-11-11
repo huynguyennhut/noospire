@@ -11,7 +11,8 @@ import random
 from typing import List, Optional
 import uuid
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, true, update
+from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.finding import NormalizedFinding
@@ -29,6 +30,7 @@ class IDBDurableQueue:
         session: AsyncSession,
         worker_id: str,
         lease_duration_seconds: int = 60,
+        max_running: Optional[int] = None,
     ) -> Optional[Scan]:
         """Atomically claims the next eligible QUEUED job.
 
@@ -38,6 +40,18 @@ class IDBDurableQueue:
         now = datetime.now(timezone.utc)
         dialect = session.bind.dialect.name if session.bind else "sqlite"
         is_sqlite = dialect == "sqlite"
+        # Estate-wide capacity: count live leases across every worker process.
+        _live = aliased(Scan)
+        running_now = (
+            select(func.count()).select_from(_live)
+            .where(_live.status.in_((ScanStatus.RUNNING.value, ScanStatus.INITIALIZING.value,
+                                     ScanStatus.COMPLETING.value)),
+                   _live.lease_expires_at != None, _live.lease_expires_at > now)
+            .scalar_subquery()
+        )
+        if max_running is not None and not is_sqlite:
+            if ((await session.execute(select(running_now))).scalar() or 0) >= max_running:
+                return None
 
         if not is_sqlite:
             # PostgreSQL: lock-free FOR UPDATE SKIP LOCKED
@@ -89,6 +103,8 @@ class IDBDurableQueue:
                         (Scan.id == cand_id)
                         & (Scan.status == ScanStatus.QUEUED.value)
                         & (Scan.fencing_token == old_tok)
+                        # SQLite serialises writers, so this cap check and the claim are one atomic step.
+                        & ((running_now < max_running) if max_running is not None else true())
                     )
                     .values(
                         status=ScanStatus.RUNNING.value,
@@ -128,7 +144,10 @@ class IDBDurableQueue:
             .where(
                 (Scan.id == scan_id)
                 & (Scan.fencing_token == fencing_token)
-                & (Scan.status == ScanStatus.RUNNING.value)
+                # Every phase that still holds the lease (legacy dispatcher moves
+                # RUNNING -> INITIALIZING -> COMPLETING); otherwise long jobs self-cancel.
+                & (Scan.status.in_((ScanStatus.RUNNING.value, ScanStatus.INITIALIZING.value,
+                                    ScanStatus.COMPLETING.value)))
             )
             .values(
                 heartbeat_at=now,
@@ -250,7 +269,8 @@ class IDBDurableQueue:
         stmt = (
             select(Scan)
             .where(
-                (Scan.status == ScanStatus.RUNNING.value)
+                (Scan.status.in_((ScanStatus.RUNNING.value, ScanStatus.INITIALIZING.value,
+                                  ScanStatus.COMPLETING.value)))
                 & (Scan.lease_expires_at != None)
                 & (Scan.lease_expires_at < now)
             )

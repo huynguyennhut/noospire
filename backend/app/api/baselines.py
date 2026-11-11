@@ -56,7 +56,7 @@ async def list_baselines(
 async def create_baseline(
     payload: BaselineCreateRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_operator),
+    current_user: User = Depends(require_admin),
 ) -> Any:
     now = datetime.now(timezone.utc)
     approver = current_user.username if current_user and current_user.username else "operator"
@@ -86,7 +86,7 @@ async def create_baseline(
 async def revoke_baseline(
     id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_operator),
+    current_user: User = Depends(require_admin),
 ) -> None:
     res = await db.execute(select(BaselineException).where(BaselineException.id == id))
     baseline = res.scalars().first()
@@ -108,5 +108,5 @@ async def reset_baseline_endpoint(
             detail="System reset is permanently disabled in production environments.",
         )
     from backend.app.api.system import execute_system_reset
-    return await execute_system_reset(db)
+    return await execute_system_reset(db, actor_username=current_user.username, actor_id=str(current_user.id))
 

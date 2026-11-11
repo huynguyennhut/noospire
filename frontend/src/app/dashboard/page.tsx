@@ -27,6 +27,7 @@ import {
 import { api } from '@/lib/api';
 import { OverviewMetrics, Asset } from '@/lib/types';
 import { useI18n } from '@/lib/i18n';
+import DashboardSummaryPanel from '@/components/console/DashboardSummaryPanel';
 import { useToast } from '@/components/ui/toast';
 import {
   Card,
@@ -240,17 +241,20 @@ export default function DashboardPage() {
   }, [remediationProg]);
 
   // Posture styling helper
-  const posture = metrics?.risk_posture || 'OPTIMAL';
-  const postureConfig: Record<string, { badge: 'critical' | 'high' | 'medium' | 'low'; glow: 'rose' | 'amber' | 'cyan' | 'emerald'; text: string }> = {
+  // No data (backend lost, owner-only metrics, empty estate) is UNKNOWN, never OPTIMAL/green.
+  const posture = metrics?.risk_posture || 'UNKNOWN';
+  const postureConfig: Record<string, { badge: 'critical' | 'high' | 'medium' | 'low' | 'info'; glow: 'rose' | 'amber' | 'cyan' | 'emerald'; text: string }> = {
+    UNKNOWN: { badge: 'info', glow: 'cyan', text: t('posture.unknown', 'UNKNOWN') },
     CRITICAL: { badge: 'critical', glow: 'rose', text: t('posture.critical', 'CRITICAL') },
     ELEVATED: { badge: 'high', glow: 'amber', text: t('posture.elevated', 'ELEVATED') },
     MODERATE: { badge: 'medium', glow: 'cyan', text: t('posture.moderate', 'MODERATE') },
     OPTIMAL: { badge: 'low', glow: 'emerald', text: t('posture.secure', 'OPTIMAL') },
   };
-  const activePosture = postureConfig[posture] || postureConfig.OPTIMAL;
+  const activePosture = postureConfig[posture] || postureConfig.UNKNOWN;
 
   return (
     <div className="space-y-6 animate-fadeIn pb-12">
+      <DashboardSummaryPanel />
       {/* =========================================================================
           TOP COMMAND HEADER & CONTROL TOOLBAR
       ========================================================================= */}

@@ -9,13 +9,13 @@ from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.api.deps import get_current_active_user, require_admin
+from backend.app.api.deps import get_current_active_user, require_admin, require_owner
 from backend.app.core.database import get_db
 from backend.app.core.dispatcher import log_buffer
 from backend.app.models.scan import ScanLog
 from backend.app.models.user import User
 
-router = APIRouter(prefix="/logs", tags=["Operational Logs Management"], dependencies=[Depends(get_current_active_user)])
+router = APIRouter(prefix="/logs", tags=["Operational Logs Management"], dependencies=[Depends(require_owner)])  # pilot: estate aggregates are owner-only until per-grant aggregation lands
 
 
 class LogItemResponse(BaseModel):

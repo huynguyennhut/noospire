@@ -1,0 +1,17 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "serialNumber": "urn:uuid:00000000-0000-4000-8000-0000000000aa",
+  "metadata": {"component": {"type": "application", "name": "pilot-test-service (SYNTHETIC)"}},
+  "components": [
+    {"type": "library", "bom-ref": "alpha", "name": "pilot-test-alpha", "version": "1.5.0", "purl": "pkg:pypi/pilot-test-alpha@1.5.0"},
+    {"type": "library", "bom-ref": "beta", "name": "beta", "version": "1.4.1", "purl": "pkg:npm/%40pilot-test/beta@1.4.1"},
+    {"type": "library", "bom-ref": "gamma", "name": "gamma", "version": "2.14.1", "purl": "pkg:maven/org.pilottest/gamma@2.14.1"},
+    {"type": "library", "bom-ref": "delta", "name": "pilot-test-delta", "version": "0.9.1", "purl": "pkg:pypi/pilot-test-delta@0.9.1",
+     "components": [
+       {"type": "library", "bom-ref": "epsilon", "name": "pilot-test-epsilon", "version": "3.0", "purl": "pkg:pypi/pilot-test-epsilon@3.0"}
+     ]},
+    {"type": "library", "bom-ref": "nopurl", "name": "vendored-blob", "version": "1"},
+    {"type": "library", "bom-ref": "deb", "name": "libpilot", "version": "1.0", "purl": "pkg:deb/debian/libpilot@1.0"}
+  ]
+}

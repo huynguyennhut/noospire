@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
+import FindingLifecyclePanel from '@/components/console/FindingLifecyclePanel';
 import {
   AlertTriangle,
   Search,
@@ -59,8 +60,19 @@ const SEVERITY_RANK: Record<string, number> = {
 function FindingsContent() {
   const { t } = useI18n();
   const searchParams = useSearchParams();
-  const initialModule = searchParams?.get('module');
-  const initialAssetId = searchParams?.get('assetId');
+  const initialModule = searchParams?.get('module') || searchParams?.get('empire_module');
+  const initialAssetId = searchParams?.get('assetId') || searchParams?.get('asset_id');
+  // Drill-down links from the dashboard, notifications and run diffs (Milestone 5).
+  const drill = {
+    severity: searchParams?.get('severity') || undefined,
+    statusGroup: searchParams?.get('status_group') || undefined,
+    outcome: searchParams?.get('outcome') || undefined,
+    day: searchParams?.get('day') || undefined,
+    scanId: searchParams?.get('scan_id') || undefined,
+    executionId: searchParams?.get('execution_id') || undefined,
+  };
+  const drillKey = JSON.stringify(drill);
+  const deepFinding = searchParams?.get('finding');
 
   // Core Data
   const [findings, setFindings] = useState<Finding[]>([]);
@@ -96,6 +108,7 @@ function FindingsContent() {
       const res = await api.listFindings({
         assetId: initialAssetId || undefined,
         module: moduleFilter !== 'ALL' ? moduleFilter : undefined,
+        ...JSON.parse(drillKey),
       });
       setFindings(res.items || []);
     } catch (err) {
@@ -103,11 +116,16 @@ function FindingsContent() {
     } finally {
       setLoading(false);
     }
-  }, [initialAssetId, moduleFilter]);
+  }, [initialAssetId, moduleFilter, drillKey]);
 
   useEffect(() => {
     fetchFindings();
   }, [fetchFindings]);
+
+  useEffect(() => {
+    if (!deepFinding) return;
+    api.getFinding(deepFinding).then(setSelectedFinding).catch(() => setSelectedFinding(null));
+  }, [deepFinding]);
 
   // Handle Sort Toggle
   const handleSort = (field: SortField) => {
@@ -235,14 +253,10 @@ function FindingsContent() {
     e.stopPropagation();
     try {
       setRowRetestingId(id);
-      await api.retestFinding(id);
-      const refreshed = await api.getFinding(id);
-      setFindings((prev) => prev.map((f) => (f.id === id ? refreshed : f)));
-      if (selectedFinding?.id === id) {
-        setSelectedFinding(refreshed);
-      }
+      const res = await api.retestFinding(id);
+      alert(res.notes);
     } catch (err) {
-      alert(`Live retest failed: ${err}`);
+      alert(`Recheck refused: ${err}`);
     } finally {
       setRowRetestingId(null);
     }
@@ -850,6 +864,7 @@ function FindingsContent() {
           }
           description={`Forensic analysis, HTTP evidence, reproduction steps, and live verification for ${selectedFinding.scanner_rule_id}`}
         >
+          <FindingLifecyclePanel findingId={selectedFinding.id} assetId={selectedFinding.asset_id} />
           <EvidenceViewer
             finding={selectedFinding}
             onFindingUpdated={(updated) => {

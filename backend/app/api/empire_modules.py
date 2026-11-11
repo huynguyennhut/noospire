@@ -4,14 +4,14 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.api.deps import get_current_active_user
+from backend.app.api.deps import get_current_active_user, require_owner
 from backend.app.core.database import get_db
 from backend.app.models.asset import Asset
 from backend.app.models.finding import NormalizedFinding
 from backend.app.models.scan import Scan
 from backend.app.schemas.common import EmpireModule, FindingSeverity, FindingStatus
 
-router = APIRouter(prefix="/empire-modules", tags=["Empire Modules"], dependencies=[Depends(get_current_active_user)])
+router = APIRouter(prefix="/empire-modules", tags=["Empire Modules"], dependencies=[Depends(require_owner)])  # pilot: estate aggregates are owner-only until per-grant aggregation lands
 
 
 MODULE_METADATA = {

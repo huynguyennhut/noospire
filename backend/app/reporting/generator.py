@@ -135,7 +135,8 @@ class ReportGenerator:
     """Orchestrates report generation across JSON, HTML, and ReportLab PDF formats."""
 
     def __init__(self, storage_dir: Optional[Path] = None) -> None:
-        self.storage_dir = storage_dir or DEFAULT_STORAGE_DIR
+        from backend.app.core.config import settings as _settings
+        self.storage_dir = storage_dir or (Path(_settings.STORAGE_DIR) / "reports")
         self.storage_dir.mkdir(parents=True, exist_ok=True)
 
         self.jinja_env = Environment(
