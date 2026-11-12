@@ -639,7 +639,7 @@ function TargetsContent() {
       try {
         setLoadingDrawerData(true);
         const [scansRes, findingsRes] = await Promise.all([
-          fetch(`/api/v1/scans?asset_id=${selectedAssetForDrawer.id}&size=20`).then((r) => r.json()).catch(() => ({ items: [] })),
+          api.request(`/scans?asset_id=${selectedAssetForDrawer.id}&size=20`).catch(() => ({ items: [] })),
           api.listFindings({ assetId: selectedAssetForDrawer.id }).catch(() => ({ items: [] })),
         ]);
         setDrawerScans(scansRes.items || []);
@@ -766,20 +766,13 @@ function TargetsContent() {
     if (!bulkContent.trim()) return;
     try {
       setPreviewingBulk(true);
-      const response = await fetch('/api/v1/assets/bulk-preview', {
+      const data = await api.request('/assets/bulk-preview', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           import_type: bulkImportType,
           raw_content: bulkContent,
         }),
       });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const data = await response.json();
       setBulkPreviewData(data);
     } catch (err: unknown) {
       alert(`Bulk preview error: ${err instanceof Error ? err.message : String(err)}`);
@@ -876,7 +869,8 @@ function TargetsContent() {
   };
 
   // Summary Counters
-  const verifiedCount = assets.filter((a) => a.verification_status === 'VERIFIED').length;
+  const verifiedCount = assets.filter((a) => (a.verification_state || a.verification_status) === 'VERIFIED').length;
+  const unprovenCount = assets.filter((a) => a.verification_state === 'UNPROVEN').length;
   const pendingCount = assets.filter((a) => a.verification_status === 'PENDING').length;
   const failedCount = assets.filter((a) => a.verification_status === 'FAILED').length;
 
@@ -928,6 +922,7 @@ function TargetsContent() {
         <div className="p-3.5 rounded-2xl liquid-glass border border-emerald-500/30">
           <div className="text-[10px] text-emerald-400 uppercase tracking-wider font-semibold">Verified Scope</div>
           <div className="text-2xl font-black text-emerald-400 font-mono mt-0.5">{verifiedCount}</div>
+          {unprovenCount > 0 && <div className="text-[10px] text-amber-300 font-mono">+{unprovenCount} UNPROVEN (no ownership proof)</div>}
         </div>
         <div className="p-3.5 rounded-2xl liquid-glass border border-amber-500/30">
           <div className="text-[10px] text-amber-400 uppercase tracking-wider font-semibold">Pending Verification</div>
@@ -1151,7 +1146,7 @@ function TargetsContent() {
                           title="Click to view 8-Step Verification Pipeline"
                         >
                           <CheckCircle className="w-2.5 h-2.5" />
-                          <span>{asset.verification_status || 'VERIFIED'}</span>
+                          <span title={asset.verification_proof ? `proof ${asset.verification_proof.method} ${asset.verification_proof.verified_at}` : 'no ownership proof on record'}>{asset.verification_state || asset.verification_status || 'UNKNOWN'}</span>
                         </button>
                       </td>
 

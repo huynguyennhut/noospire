@@ -59,6 +59,9 @@ export interface Asset {
   auth_profile?: Record<string, any>;
   excluded_endpoints?: string[];
   verification_status: VerificationStatus;
+  /** Derived server-side from ownership proofs (Milestone 6). UNPROVEN = flagged verified without proof. */
+  verification_state?: 'VERIFIED' | 'UNPROVEN' | 'PENDING' | 'FAILED' | 'REVOKED';
+  verification_proof?: { proof_id: string; method: string; verified_at: string | null; created_by: string } | null;
   verification_type: string;
   verification_token: string;
   verified_at?: string | null;
@@ -403,21 +406,25 @@ export interface TrackCurrentResponse {
   trackcurrent?: any;
 }
 
+/** Engine health contract (Milestone 6): GET /engines/health. Status comes from measured state only. */
 export interface EngineDiagnosticItem {
   id: string;
   name: string;
-  driver: string;
-  version: string;
-  status: 'OPERATIONAL' | 'AVAILABLE' | 'DEGRADED' | 'OUTDATED';
-  runtime_context: string;
-  latency_ms: number;
-  last_tested: string;
-  update_available: boolean;
+  driver: string | null;
+  version: string | null;
+  status: 'OPERATIONAL' | 'DEGRADED' | 'UNAVAILABLE' | 'NOT_INTEGRATED';
+  reason: string | null;
+  runtime_context: string | null;
+  workers_online: number;
+  last_success_at: string | null;
+  rules: Record<string, string> | null;
   capabilities: string[];
+  update_available: boolean | null;
 }
 
 export interface EngineHealthResponse {
-  status: 'HEALTHY' | 'DEGRADED' | 'CRITICAL';
+  status: 'HEALTHY' | 'DEGRADED' | 'UNAVAILABLE';
+  as_of: string;
   engines_count: number;
   operational_count: number;
   timestamp: string;
@@ -428,6 +435,7 @@ export interface EngineTestResult {
   overall_status: 'PASS' | 'FAIL';
   duration_ms: number;
   timestamp: string;
+  scope: string;
   results: {
     engine: string;
     status: 'PASS' | 'FAIL';
@@ -439,11 +447,12 @@ export interface EngineTestResult {
 export interface EngineUpdateCheckResult {
   timestamp: string;
   updates_available: boolean;
+  note?: string;
   engines: {
     engine: string;
     current_version: string;
-    latest_version: string;
-    has_update: boolean;
+    latest_version: string | null;
+    has_update: boolean | null;
     templates_updated: boolean;
     template_count?: number;
     notes?: string;

@@ -105,7 +105,7 @@ export default function SettingsPage() {
       setShowResetConfirmModal(false);
       toast({
         title: 'System Restored to Baseline',
-        description: res.message || 'Restored 379 verified targets, 98 findings, and 50 baseline scans.',
+        description: res.message || 'Development reset completed.',
         duration: 5000,
       });
     } catch (err: unknown) {
@@ -137,47 +137,39 @@ export default function SettingsPage() {
     }
   };
 
-  const handleExportSystemLogs = (format: 'json' | 'csv') => {
-    const logSummary = {
-      export_timestamp: new Date().toISOString(),
-      platform: 'NOOSFORGE Security Intelligence',
-      target: 'https://empire.edu.vn/',
-      time_filter: logTimeFilter,
-      subsystems: [
-        { name: 'Core API Gateway', status: 'OPERATIONAL', driver: 'FastAPI / Uvicorn', latency: '2ms' },
-        { name: 'Database Persistence Engine', status: 'OPERATIONAL', driver: 'SQLAlchemy 2.0 Async', latency: '4ms' },
-        { name: 'Task Dispatcher Pool', status: 'OPERATIONAL', driver: 'AsyncWorkerDispatcher', workers: 4 },
-        { name: 'Nuclei Scanner Adapter', status: 'OPERATIONAL', driver: 'Binary CLI (nuclei.exe v3.11.1)' },
-        { name: 'Empire Assessment Engine', status: 'OPERATIONAL', driver: 'EmpireAssessmentEngine' },
-        { name: 'OWASP ZAP Core Adapter', status: 'OPERATIONAL', driver: 'ZAPLabRunner' },
-        { name: 'Aqua Trivy Container & SBOM', status: 'OPERATIONAL', driver: 'TrivyLabRunner' },
-        { name: 'Two-Tier SSRF Gatekeeper', status: 'OPERATIONAL', driver: 'SSRFProtector' },
-        { name: 'Continuous Daily Scheduler', status: 'OPERATIONAL', driver: 'APScheduler Cron (Asia/Ho_Chi_Minh)' },
-      ],
-      baseline_summary: {
-        total_assets: 379,
-        verified_findings: 98,
-        active_schedules: 3,
-      },
-    };
-
+  // Exports the server's own operational snapshot (Milestone 5). No component is reported
+  // "operational" unless the server measured it; failures are reported, not filled in.
+  const handleExportSystemLogs = async (format: 'json' | 'csv') => {
+    let ov: any;
+    try {
+      ov = await api.getOperationsOverview();
+    } catch (err: any) {
+      toast({ title: 'Export failed', description: err?.message || String(err), duration: 5000 });
+      return;
+    }
+    const rows = [
+      ...Object.entries(ov.engines).map(([name, e]: [string, any]) => ({
+        component: `engine:${name}`,
+        state: e.stale ? 'stale' : 'fresh',
+        detail: `last success ${e.last_success_at || 'never'}; queued ${e.queued}; running ${e.running}`,
+      })),
+      ...ov.workers.map((w: any) => ({ component: `worker:${w.worker_id}`, state: w.state, detail: w.throttle_reason || `seen ${w.age_seconds}s ago` })),
+      { component: 'advisory_feed', state: ov.feed ? 'imported' : 'missing', detail: ov.feed ? `${ov.feed.version} age ${ov.feed.age_hours}h` : 'no snapshot' },
+    ];
+    const logSummary = { exported_at_utc: new Date().toISOString(), server_as_of: ov.as_of, display_timezone: ov.display_timezone,
+      time_filter: logTimeFilter, overdue: ov.overdue, errors_24h: ov.errors_24h, capacity: ov.capacity, components: rows };
     let content = '';
     let mimeType = 'text/plain;charset=utf-8';
-    let filename = `noosforge_system_audit_${logTimeFilter.toLowerCase()}_${Date.now()}`;
-
+    let filename = `noospire_operations_${logTimeFilter.toLowerCase()}_${Date.now()}`;
     if (format === 'json') {
       content = JSON.stringify(logSummary, null, 2);
       mimeType = 'application/json;charset=utf-8';
       filename += '.json';
     } else {
-      content = [
-        'Component,Driver,Status,Latency',
-        ...logSummary.subsystems.map((s) => `"${s.name}","${s.driver}","${s.status}","${s.latency || 'N/A'}"`),
-      ].join('\n');
+      content = ['component,state,detail', ...rows.map((r) => `"${r.component}","${r.state}","${String(r.detail).replace(/"/g, "'")}"`)].join('\n');
       mimeType = 'text/csv;charset=utf-8';
       filename += '.csv';
     }
-
     const blob = new Blob([content], { type: mimeType });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -185,12 +177,7 @@ export default function SettingsPage() {
     link.download = filename;
     link.click();
     URL.revokeObjectURL(url);
-
-    toast({
-      title: 'Logs Exported',
-      description: `Saved system telemetry export as ${filename}`,
-      duration: 3000,
-    });
+    toast({ title: 'Exported', description: `Saved ${filename}`, duration: 3000 });
   };
 
   const handleTestAllEnginesQuick = async () => {
@@ -514,7 +501,7 @@ export default function SettingsPage() {
                   </h3>
                 </div>
                 <p className="text-slate-400 text-xs mt-1.5 leading-relaxed max-w-2xl">
-                  Khôi phục toàn bộ nền tảng về trạng thái chuẩn đã được kiểm toán: nạp lại đầy đủ <strong>379 mục tiêu Empire</strong>, <strong>98 lỗ hổng đã xác thực</strong>, <strong>50 bản ghi quét ban đầu</strong>, và làm sạch bộ nhớ đệm tạm thời.
+                  Chỉ dùng ở môi trường phát triển (production từ chối). Xóa dữ liệu thử và chỉ nạp lại dữ liệu demo tổng hợp khi bật <strong>SENTINEL_SEED_DEMO_DATA</strong>; đây <strong>không</strong> phải dữ liệu đã kiểm toán.
                 </p>
               </div>
 
@@ -532,7 +519,7 @@ export default function SettingsPage() {
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-2 text-[11px] font-mono">
               <div className="p-2.5 rounded-lg bg-black/50 border border-white/5">
                 <span className="text-slate-400 block text-[10px]">TARGET PERIMETER</span>
-                <span className="font-bold text-white">379 Assets (empire.edu.vn)</span>
+                <span className="font-bold text-white">Synthetic demo data (dev only)</span>
               </div>
               <div className="p-2.5 rounded-lg bg-black/50 border border-white/5">
                 <span className="text-slate-400 block text-[10px]">FINDING REPOSITORY</span>
@@ -700,7 +687,7 @@ export default function SettingsPage() {
             <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-xs text-rose-200 leading-relaxed">
               Thao tác này sẽ đặt lại toàn bộ hệ thống về trạng thái ban đầu:
               <ul className="list-disc list-inside mt-2 space-y-1 text-slate-300">
-                <li>379 mục tiêu Empire Platform chuẩn</li>
+                <li>Dữ liệu demo tổng hợp (chỉ khi bật SENTINEL_SEED_DEMO_DATA)</li>
                 <li>98 lỗ hổng đã được xác minh</li>
                 <li>50 tác vụ quét baseline</li>
                 <li>3 lịch trình quét Asia/Ho_Chi_Minh</li>

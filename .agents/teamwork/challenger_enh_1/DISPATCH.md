@@ -8,7 +8,7 @@ You MUST read:
 
 Adversarially challenge and stress-test the backend implementation:
 1. Ultra Admin Authentication:
-   - Test login with valid Ultra Admin (`dangnhutnguyen0910@gmail.com` / `Hahanguyen09@`). Verify issued JWT has `SUPER_ADMIN` role and `is_ultra_admin: True`.
+   - Test login with valid Ultra Admin (`dangnhutnguyen0910@gmail.com` / `REDACTED-ROTATE-ME`). Verify issued JWT has `SUPER_ADMIN` role and `is_ultra_admin: True`.
    - Test login with invalid password, wrong email, SQLi payloads in username. Confirm proper 401 rejection and audit logging in `admin_audit_logs`.
 2. System State Reset & Concurrency:
    - Call `POST /api/v1/system/reset`. Verify that operational records (scans, findings, alerts, scan logs) are wiped and the baseline for `https://empire.edu.vn/` is cleanly re-seeded.

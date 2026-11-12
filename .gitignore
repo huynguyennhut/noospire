@@ -42,3 +42,13 @@ storage/
 Thumbs.db
 .vscode/
 .idea/
+
+# Local secrets, runtime data, tooling
+.env
+deploy/.env
+backups/
+.venv/
+noospire.db*
+
+# TypeScript incremental build cache
+*.tsbuildinfo

@@ -1,0 +1,9 @@
+{
+  "spdxVersion": "SPDX-2.3",
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "pilot-test-spdx (SYNTHETIC)",
+  "packages": [
+    {"SPDXID": "SPDXRef-alpha", "name": "pilot-test-alpha", "versionInfo": "1.9.9",
+     "externalRefs": [{"referenceCategory": "PACKAGE-MANAGER", "referenceType": "purl", "referenceLocator": "pkg:pypi/pilot-test-alpha@1.9.9"}]}
+  ]
+}

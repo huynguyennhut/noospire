@@ -1,0 +1,61 @@
+[
+  {
+    "schema_version": "1.6.0",
+    "id": "PILOT-TEST-0001",
+    "modified": "2026-10-01T00:00:00Z",
+    "published": "2026-09-01T00:00:00Z",
+    "aliases": ["CVE-2099-0001"],
+    "summary": "SYNTHETIC TEST ADVISORY: alpha deserialization flaw",
+    "severity": [{"type": "CVSS_V3", "score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"}],
+    "affected": [{
+      "package": {"ecosystem": "PyPI", "name": "Pilot_Test.Alpha", "purl": "pkg:pypi/pilot-test-alpha"},
+      "ranges": [{"type": "ECOSYSTEM", "events": [{"introduced": "0"}, {"fixed": "2.0.0"}]}]
+    }],
+    "references": [{"type": "WEB", "url": "https://pilot-test.invalid/advisories/0001"}]
+  },
+  {
+    "schema_version": "1.6.0",
+    "id": "PILOT-TEST-0002",
+    "modified": "2026-10-02T00:00:00Z",
+    "aliases": [],
+    "summary": "SYNTHETIC TEST ADVISORY: beta prototype pollution",
+    "database_specific": {"severity": "MODERATE"},
+    "affected": [{
+      "package": {"ecosystem": "npm", "name": "@pilot-test/beta"},
+      "ranges": [{"type": "SEMVER", "events": [{"introduced": "1.0.0"}, {"fixed": "1.4.2"}]}]
+    }]
+  },
+  {
+    "schema_version": "1.6.0",
+    "id": "PILOT-TEST-0003",
+    "modified": "2026-10-03T00:00:00Z",
+    "aliases": ["CVE-2099-0003"],
+    "summary": "SYNTHETIC TEST ADVISORY: gamma lookup injection",
+    "severity": [{"type": "CVSS_V3", "score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H"}],
+    "affected": [{
+      "package": {"ecosystem": "Maven", "name": "org.pilottest:gamma"},
+      "ranges": [{"type": "ECOSYSTEM", "events": [{"introduced": "2.0-beta9"}, {"fixed": "2.15.0"}]}]
+    }]
+  },
+  {
+    "schema_version": "1.6.0",
+    "id": "PILOT-TEST-0004",
+    "modified": "2026-10-04T00:00:00Z",
+    "summary": "SYNTHETIC TEST ADVISORY: delta single bad release",
+    "affected": [{
+      "package": {"ecosystem": "PyPI", "name": "pilot-test-delta"},
+      "versions": ["0.9.1"]
+    }]
+  },
+  {
+    "schema_version": "1.6.0",
+    "id": "PILOT-TEST-0005",
+    "modified": "2026-10-05T00:00:00Z",
+    "summary": "SYNTHETIC TEST ADVISORY: withdrawn record must be ignored",
+    "withdrawn": "2026-10-06T00:00:00Z",
+    "affected": [{
+      "package": {"ecosystem": "PyPI", "name": "pilot-test-epsilon"},
+      "ranges": [{"type": "ECOSYSTEM", "events": [{"introduced": "0"}]}]
+    }]
+  }
+]

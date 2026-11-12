@@ -40,7 +40,7 @@ class SSRFConfigUpdateRequest(BaseModel):
 
 @router.get("", response_model=SettingsResponse)
 async def get_settings(
-    current_user: User = Depends(require_viewer),
+    current_user: User = Depends(require_admin),
 ) -> Any:
     return {
         "project_name": settings.PROJECT_NAME,
@@ -75,7 +75,7 @@ async def update_settings(
 
 @router.get("/ssrf-config", response_model=SSRFConfigResponse)
 async def get_ssrf_config(
-    current_user: User = Depends(require_viewer),
+    current_user: User = Depends(require_admin),
 ) -> Any:
     return {
         "blocked_networks_count": len(SSRFProtector.BLOCKED_NETWORKS),
@@ -110,7 +110,7 @@ async def reset_baseline_endpoint(
             detail="Destructive reset is disabled in production environments.",
         )
     from backend.app.api.system import execute_system_reset
-    return await execute_system_reset(db, actor_username=current_user.username)
+    return await execute_system_reset(db, actor_username=current_user.username, actor_id=str(current_user.id))
 
 
 @router.post("/reset")
@@ -125,4 +125,4 @@ async def reset_endpoint(
             detail="Destructive reset is disabled in production environments.",
         )
     from backend.app.api.system import execute_system_reset
-    return await execute_system_reset(db, actor_username=current_user.username)
+    return await execute_system_reset(db, actor_username=current_user.username, actor_id=str(current_user.id))

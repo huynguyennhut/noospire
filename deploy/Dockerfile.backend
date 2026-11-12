@@ -1,56 +1,40 @@
-# =============================================================================
-# NOOSFORGE BACKEND PRODUCTION DOCKERFILE
-# Multi-stage lightweight hardened Python runtime
-# =============================================================================
+# Noospire API / worker / scheduler image (one image, role chosen by SENTINEL_PROCESS_ROLE).
+# Installs exactly the pinned dependency set used by development and tests.
+# Base pinned by digest (resolved 2026-11-11 from Docker Hub). Same interpreter line as the
+# development/test venv (Python 3.14) so the locked requirements are the tested set.
+FROM python:3.14-slim@sha256:9aaa474097d094040649f2162a627c0049b408f52138d980916788d80f04802f AS runtime
 
-FROM python:3.12-slim as builder
-
-WORKDIR /app
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-COPY backend/ /app/backend/
-COPY requirements.txt* /app/
-
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir \
-    fastapi \
-    uvicorn[standard] \
-    pydantic \
-    sqlalchemy \
-    aiosqlite \
-    httpx \
-    pyyaml \
-    reportlab \
-    psutil
-
-# =============================================================================
-# FINAL RUNTIME IMAGE
-# =============================================================================
-FROM python:3.12-slim
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    TZ=UTC
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/* \
-    && useradd -m -u 1000 sentinel
+COPY backend/requirements.txt /app/backend/requirements.txt
+RUN pip install --no-cache-dir -r /app/backend/requirements.txt \
+    && useradd --system --uid 10001 --home /app noospire
 
-COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
-COPY --from=builder /usr/local/bin /usr/local/bin
-
+# Application code only: no tests, DBs, .git, node_modules, credentials (see .dockerignore).
+# Only the detection-rule samples ship (safe synthetic data for rule dry-runs); the synthetic
+# threat-intel fixtures are not copied, so they can never be loaded into a production DB.
 COPY backend/ /app/backend/
-COPY scripts/ /app/scripts/
+COPY fixtures/rules/ /app/fixtures/rules/
 
-RUN mkdir -p /app/storage /app/storage/reports /app/storage/evidence && \
-    chown -R sentinel:sentinel /app
+RUN mkdir -p /data/storage/reports /data/storage/evidence \
+    && chown -R noospire:noospire /data /app
+VOLUME ["/data"]
+WORKDIR /data
 
-USER sentinel
-
+USER noospire
 EXPOSE 8000
 
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+# Default role: API only. Worker/scheduler run as separate containers (see compose).
+ENV SENTINEL_PROCESS_ROLE=api \
+    SENTINEL_DATABASE_URL=sqlite+aiosqlite:////data/noospire.db
+ENV PYTHONPATH=/app
+
+HEALTHCHECK --interval=15s --timeout=5s --retries=3 \
+  CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz/ready',timeout=4).status==200 else 1)"
+
+CMD ["python", "-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]

@@ -1,286 +1,130 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import {
-  Cpu,
-  CheckCircle2,
-  AlertTriangle,
-  Flame,
-  Globe,
-  Bell,
-  Send,
-  RefreshCw,
-  Server,
-  Radio,
-  ExternalLink,
-} from 'lucide-react';
-import { api } from '@/lib/api';
+/**
+ * Integrations (Milestone 6 contract clean-up).
+ * Shows only server-measured state:
+ *  - defensive engines and worker heartbeats (/operations/overview, /engines/workers)
+ *  - threat-intel feeds (/threat-intel/summary, /threat-intel/sync) with the real per-source result
+ * Webhook delivery is NOT implemented in the pilot; the page says so instead of simulating a send.
+ */
+
+import React, { useCallback, useEffect, useState } from 'react';
+import { RefreshCw } from 'lucide-react';
+import { api, OperationsOverview } from '@/lib/api';
 import { useI18n } from '@/lib/i18n';
-import { useToast } from '@/components/ui/toast';
+
+const TZ = 'Asia/Ho_Chi_Minh';
+
+function ict(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString('vi-VN', { timeZone: TZ, hour12: false }) + ' ICT';
+}
 
 export default function IntegrationsPage() {
-  const { t } = useI18n();
-  const { toast } = useToast();
-  const [intelStatus, setIntelStatus] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
-  const [updatingEngines, setUpdatingEngines] = useState(false);
-  const [engineVerifiedTime, setEngineVerifiedTime] = useState<string>('Just now');
+  const { locale } = useI18n();
+  const vi = locale === 'vi';
+  const L = (a: string, b: string) => (vi ? a : b);
+  const [ov, setOv] = useState<OperationsOverview | null>(null);
+  const [intel, setIntel] = useState<any | null>(null);
+  const [sync, setSync] = useState<any | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  // Webhook Test State
-  const [telegramToken, setTelegramToken] = useState('');
-  const [discordWebhook, setDiscordWebhook] = useState('');
-  const [testingWebhook, setTestingWebhook] = useState(false);
-
-  const fetchStatus = async () => {
-    try {
-      setLoading(true);
-      const res = await api.getIntelStatus().catch(() => null);
-      setIntelStatus(res);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchStatus();
+  const load = useCallback(async () => {
+    const errs: string[] = [];
+    await Promise.all([
+      api.getOperationsOverview().then(setOv).catch((e) => errs.push(`operations: ${e?.message || e}`)),
+      api.getIntelStatus().then(setIntel).catch((e) => errs.push(`threat-intel: ${e?.message || e}`)),
+    ]);
+    setError(errs.length ? errs.join(' · ') : null);
   }, []);
 
-  const handleUpdateEngines = () => {
-    setUpdatingEngines(true);
-    setTimeout(() => {
-      setUpdatingEngines(false);
-      setEngineVerifiedTime(new Date().toLocaleTimeString());
-      toast({
-        title: 'Engines Verified & Updated',
-        description: 'Nuclei (142 templates), Empire Engine v2.4, OWASP ZAP, and Aqua Trivy verified 100% healthy.',
-        variant: 'default',
-        duration: 5000,
-      });
-    }, 1200);
-  };
+  useEffect(() => { void load(); }, [load]);
 
-  const handleSyncIntel = async () => {
+  async function doSync() {
+    setBusy(true);
     try {
-      setSyncing(true);
-      await api.syncIntel();
-      await fetchStatus();
-      toast({
-        title: 'Feeds Synchronized',
-        description: 'Threat Intelligence feeds (CISA KEV, FIRST EPSS) updated successfully.',
-        variant: 'default',
-        duration: 4000,
-      });
-    } catch (err) {
-      toast({
-        title: 'Sync Failed',
-        description: String(err),
-        variant: 'destructive',
-      });
+      setSync(await api.syncIntel());
+      await load();
+    } catch (e: any) {
+      setError(`sync: ${e?.message || e}`);
     } finally {
-      setSyncing(false);
+      setBusy(false);
     }
-  };
-
-  const handleTestWebhook = () => {
-    setTestingWebhook(true);
-    setTimeout(() => {
-      setTestingWebhook(false);
-      toast({
-        title: 'Notification Dispatched',
-        description: 'Test alert payload dispatched to configured notification channel (Discord / Telegram).',
-        variant: 'default',
-        duration: 4000,
-      });
-    }, 800);
-  };
+  }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-white/10">
-        <div>
-          <div className="flex items-center gap-2">
-            <Cpu className="w-6 h-6 text-cyan-400" />
-            <h1 className="text-2xl font-black tracking-tight text-white">
-              {t('integrations.title', 'EXTERNAL INTEGRATIONS & SCANNERS')}
-            </h1>
-          </div>
-          <p className="text-xs text-slate-400 mt-1">
-            {t('integrations.subtitle', 'Scanner execution engines, threat intelligence synchronization pipelines, and webhook dispatchers.')}
+    <div className="space-y-6 text-sm text-slate-200">
+      <div className="flex items-end justify-between">
+        <h1 className="text-xl font-semibold">{L('Tích hợp', 'Integrations')}</h1>
+        <button onClick={() => void load()} className="px-3 py-1.5 rounded border border-slate-600 flex items-center gap-1"><RefreshCw className="w-4 h-4" />{L('Tải lại', 'Reload')}</button>
+      </div>
+      {error && <div role="alert" className="p-3 rounded border border-rose-700 bg-rose-950 text-rose-200">{error}</div>}
+
+      <section className="p-4 rounded-xl border border-white/10 bg-black/30 space-y-2">
+        <h2 className="font-semibold">{L('Engine phòng thủ và worker', 'Defensive engines and workers')}</h2>
+        {ov ? (
+          <>
+            <ul className="text-xs space-y-1">
+              {Object.entries(ov.engines).map(([name, e]) => (
+                <li key={name}>
+                  <span className="font-mono">{name}</span> · {L('thành công cuối', 'last success')} {ict(e.last_success_at)}
+                  {e.stale ? <span className="text-amber-300"> · {L('dữ liệu cũ', 'stale')}</span> : null} · {e.queued} {L('chờ', 'queued')} · {e.running} {L('chạy', 'running')}
+                </li>
+              ))}
+            </ul>
+            <p className="text-xs">Worker online: {ov.workers_online}/{ov.workers.length}</p>
+            {ov.workers.map((w) => (
+              <p key={w.worker_id} className="text-xs text-slate-400"><code>{w.worker_id}</code> · {w.state} · {ict(w.last_seen_at)}{w.throttle_reason ? ` · ${w.throttle_reason}` : ''}</p>
+            ))}
+            <p className="text-xs text-slate-500">
+              {L('Các engine tích hợp cũ (nuclei, ZAP, trivy) chưa được nối vào luồng execution có fencing nên không hiển thị trạng thái ở đây.',
+                 'Legacy integrated engines (nuclei, ZAP, trivy) are not wired into the fenced execution flow, so no status is shown for them.')}
+            </p>
+          </>
+        ) : <p className="text-xs text-slate-400">{L('Chưa có dữ liệu.', 'No data.')}</p>}
+      </section>
+
+      <section className="p-4 rounded-xl border border-white/10 bg-black/30 space-y-2">
+        <div className="flex items-center gap-3">
+          <h2 className="font-semibold">{L('Nguồn threat intelligence', 'Threat-intelligence feeds')}</h2>
+          <button disabled={busy} onClick={() => void doSync()} className="ml-auto px-3 py-1.5 rounded bg-cyan-700 text-white disabled:opacity-50">
+            {busy ? L('Đang đồng bộ…', 'Syncing…') : L('Đồng bộ ngay', 'Sync now')}
+          </button>
+        </div>
+        {intel && (
+          <>
+            <p className="text-xs">CVE: {intel.total_cves} · KEV: {intel.total_kev_exploited} · {L('đồng bộ toàn cục cuối', 'last global sync')} {ict(intel.last_global_sync)}</p>
+            <table className="w-full text-xs">
+              <thead className="text-left text-slate-400"><tr><th>{L('Nguồn', 'Source')}</th><th>{L('Trạng thái', 'Status')}</th><th>{L('Lần cuối', 'Last sync')}</th><th>Records</th><th>{L('Lỗi', 'Error')}</th></tr></thead>
+              <tbody>
+                {Object.values(intel.sources || {}).map((s: any) => (
+                  <tr key={s.source_name} className="border-t border-white/5">
+                    <td className="font-mono">{s.source_name}</td><td>{s.status}</td><td>{ict(s.last_sync_at)}</td><td>{s.records_synced}</td><td className="text-rose-300">{s.error_message || ''}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        )}
+        {sync && (
+          <p role="status" className={sync.status === 'completed' ? 'text-emerald-300 text-xs' : 'text-amber-300 text-xs'}>
+            {L('Kết quả đồng bộ', 'Sync result')}: {sync.status} · {(sync.results || []).map((r: any) => `${r.source}: ${r.success ? 'ok' : 'failed'}`).join(' · ')}
           </p>
-        </div>
+        )}
+        <p className="text-xs text-slate-500">
+          {L('Snapshot advisory dùng cho engine SBOM được nhập riêng ở trang Engine runs và có digest/phiên bản.',
+             'The advisory snapshot used by the SBOM engine is imported separately on Engine runs, with digest and version.')}
+        </p>
+      </section>
 
-        <div className="flex flex-wrap items-center gap-2.5">
-          <button
-            onClick={handleUpdateEngines}
-            disabled={updatingEngines}
-            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] border border-white/10 text-white text-xs font-semibold shadow-sm transition"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${updatingEngines ? 'animate-spin text-cyan-400' : 'text-slate-300'}`} />
-            <span>{updatingEngines ? 'Verifying Engines...' : 'Update & Verify Engines'}</span>
-          </button>
-
-          <button
-            onClick={handleSyncIntel}
-            disabled={syncing}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-cyan-400 text-slate-950 text-xs font-bold shadow-lg shadow-cyan-950/60 hover:from-cyan-400 hover:to-cyan-300 transition"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
-            <span>{syncing ? 'Syncing Feeds...' : 'Sync All Feeds Now'}</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Grid: 3 Main Sections */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Section 1: Security Scanner Engines */}
-        <div className="rounded-2xl liquid-glass-card border border-white/10 p-5 space-y-4 shadow-xl">
-          <div className="flex items-center justify-between pb-3 border-b border-white/10">
-            <div className="flex items-center gap-2">
-              <Radio className="w-4 h-4 text-cyan-400" />
-              <h2 className="text-sm font-bold text-white uppercase tracking-wider">Scanner Engines</h2>
-            </div>
-            <span className="text-[10px] text-slate-400 font-mono">Verified: {engineVerifiedTime}</span>
-          </div>
-
-          <div className="space-y-3 text-xs">
-            {/* Nuclei */}
-            <div className="p-3 rounded-xl bg-white/[0.02] border border-white/10 flex items-center justify-between">
-              <div>
-                <div className="font-bold text-white flex items-center gap-2">
-                  <span>ProjectDiscovery Nuclei</span>
-                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-cyan-950/60 text-cyan-300 border border-cyan-800">142 Templates</span>
-                </div>
-                <div className="text-[10px] text-slate-400 mt-0.5">CLI Binary: <code className="text-cyan-400">nuclei.exe v3.3.6</code></div>
-              </div>
-              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-950/80 text-emerald-400 border border-emerald-800">
-                ACTIVE
-              </span>
-            </div>
-
-            {/* Empire Engine */}
-            <div className="p-3 rounded-xl bg-white/[0.02] border border-white/10 flex items-center justify-between">
-              <div>
-                <div className="font-bold text-white">Empire Security Engine</div>
-                <div className="text-[10px] text-slate-400 mt-0.5">Better-Auth, /media Policy, BOLA, BFLA</div>
-              </div>
-              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-950/80 text-emerald-400 border border-emerald-800">
-                OPERATIONAL
-              </span>
-            </div>
-
-            {/* OWASP ZAP */}
-            <div className="p-3 rounded-xl bg-white/[0.02] border border-white/10 flex items-center justify-between">
-              <div>
-                <div className="font-bold text-white">OWASP ZAP Engine</div>
-                <div className="text-[10px] text-slate-400 mt-0.5">High-Fidelity Lab Baseline Runner</div>
-              </div>
-              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-950/80 text-emerald-400 border border-emerald-800">
-                READY
-              </span>
-            </div>
-
-            {/* Trivy */}
-            <div className="p-3 rounded-xl bg-white/[0.02] border border-white/10 flex items-center justify-between">
-              <div>
-                <div className="font-bold text-white">Aqua Security Trivy</div>
-                <div className="text-[10px] text-slate-400 mt-0.5">Container & SBOM Dependency Scanner</div>
-              </div>
-              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-950/80 text-emerald-400 border border-emerald-800">
-                READY
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Section 2: Threat Intelligence Feeds */}
-        <div className="rounded-2xl liquid-glass-card border border-white/10 p-5 space-y-4 shadow-xl">
-          <div className="flex items-center gap-2 pb-3 border-b border-white/10">
-            <Flame className="w-4 h-4 text-orange-400" />
-            <h2 className="text-sm font-bold text-white uppercase tracking-wider">Threat Intel Feeds</h2>
-          </div>
-
-          <div className="space-y-3 text-xs">
-            {/* CISA KEV */}
-            <div className="p-3 rounded-xl bg-white/[0.02] border border-white/10 flex items-center justify-between">
-              <div>
-                <div className="font-bold text-white">CISA KEV Catalog</div>
-                <div className="text-[10px] text-slate-400 mt-0.5">Known Exploited Vulnerabilities Bulk JSON</div>
-              </div>
-              <span className="text-rose-400 font-bold font-mono text-[11px]">SYNCED</span>
-            </div>
-
-            {/* FIRST EPSS */}
-            <div className="p-3 rounded-xl bg-white/[0.02] border border-white/10 flex items-center justify-between">
-              <div>
-                <div className="font-bold text-white">FIRST EPSS Scores</div>
-                <div className="text-[10px] text-slate-400 mt-0.5">Exploit Prediction Scoring System v3</div>
-              </div>
-              <span className="text-amber-400 font-bold font-mono text-[11px]">ACTIVE</span>
-            </div>
-
-            {/* NVD */}
-            <div className="p-3 rounded-xl bg-white/[0.02] border border-white/10 flex items-center justify-between">
-              <div>
-                <div className="font-bold text-white">NIST NVD 2.0</div>
-                <div className="text-[10px] text-slate-400 mt-0.5">National Vulnerability Database API & Seed</div>
-              </div>
-              <span className="text-cyan-400 font-bold font-mono text-[11px]">INDEXED</span>
-            </div>
-
-            {/* OSV */}
-            <div className="p-3 rounded-xl bg-white/[0.02] border border-white/10 flex items-center justify-between">
-              <div>
-                <div className="font-bold text-white">Google OSV & GHSA</div>
-                <div className="text-[10px] text-slate-400 mt-0.5">Open Source Vulnerabilities Schema v1.6.0</div>
-              </div>
-              <span className="text-emerald-400 font-bold font-mono text-[11px]">CONNECTED</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Section 3: Webhook Notification Dispatcher */}
-        <div className="rounded-2xl liquid-glass-card border border-white/10 p-5 space-y-4 shadow-xl">
-          <div className="flex items-center gap-2 pb-3 border-b border-white/10">
-            <Bell className="w-4 h-4 text-cyan-400" />
-            <h2 className="text-sm font-bold text-white uppercase tracking-wider">Alert Dispatchers</h2>
-          </div>
-
-          <div className="space-y-3 text-xs">
-            <div>
-              <label className="block text-slate-300 font-semibold mb-1">Telegram Bot Token / Chat ID</label>
-              <input
-                type="text"
-                placeholder="bot123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
-                value={telegramToken}
-                onChange={(e) => setTelegramToken(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl bg-cyber-950 border border-white/10 text-white font-mono text-xs focus:outline-none focus:border-cyan-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-slate-300 font-semibold mb-1">Discord Webhook URL</label>
-              <input
-                type="url"
-                placeholder="https://discord.com/api/webhooks/..."
-                value={discordWebhook}
-                onChange={(e) => setDiscordWebhook(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl bg-cyber-950 border border-white/10 text-white font-mono text-xs focus:outline-none focus:border-cyan-500"
-              />
-            </div>
-
-            <button
-              onClick={handleTestWebhook}
-              disabled={testingWebhook}
-              className="w-full py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-cyan-400 font-bold transition flex items-center justify-center gap-2 mt-2 border border-white/10 shadow-sm"
-            >
-              <Send className="w-3.5 h-3.5" />
-              <span>{testingWebhook ? 'Testing...' : 'Send Test Notification'}</span>
-            </button>
-          </div>
-        </div>
-      </div>
+      <section className="p-4 rounded-xl border border-white/10 bg-black/30 space-y-1">
+        <h2 className="font-semibold">Webhook (Discord / Telegram)</h2>
+        <p className="text-xs text-amber-300">
+          {L('Chưa có trong pilot: chưa có kênh gửi và biên nhận thật nên không có nút gửi thử. Thông báo hiện ở hộp thư trong console.',
+             'Not in the pilot yet: no real delivery channel or receipts, so there is no test-send button. Notifications are in the console inbox.')}
+        </p>
+      </section>
     </div>
   );
 }

@@ -12,7 +12,7 @@
 Direct tool executions and codebase inspections confirmed:
 1. **Initial Ultra Admin & User Schema Observation**:
    - `backend/app/models/base.py`: The `User` model had only `username` and `hashed_password` without `email` or `role`.
-   - `backend/app/core/database.py`: In `init_db()`, only `settings.ADMIN_USERNAME` (`admin`) was seeded. The user `dangnhutnguyen0910@gmail.com` with password `Hahanguyen09@` was not present in `noospire.db`.
+   - `backend/app/core/database.py`: In `init_db()`, only `settings.ADMIN_USERNAME` (`admin`) was seeded. The user `dangnhutnguyen0910@gmail.com` with password `REDACTED-ROTATE-ME` was not present in `noospire.db`.
 2. **Logs Lifecycle & State Reset Observation**:
    - `backend/app/api/scans.py`: The existing `GET /{scan_id}/logs` lacked range/day filters (`days`, `from_date`, `to_date`, `level`, `search`), lacked an export endpoint (JSON/CSV), and had no log purge endpoint.
    - There was no unified `/api/v1/logs` router nor a `/api/v1/system/reset` endpoint to reset dynamic operational state back to verified initial baseline.
@@ -49,7 +49,7 @@ Direct tool executions and codebase inspections confirmed:
 
 1. **Ultra Admin & Flexible Authentication**:
    - Step 1.1: Added `email` (unique, indexed) and `role` (`String(64)`, default `"USER"`) to `User` in `backend/app/models/base.py`. Added `AdminAuditLog` model to track dev/admin actions.
-   - Step 1.2: Added SQLite auto-migration in `database.py` (`init_db()`) checking `PRAGMA table_info(users)` and issuing `ALTER TABLE` if missing. Seeded Ultra Admin `dangnhutnguyen0910@gmail.com` with `Hahanguyen09@`, `SUPER_ADMIN` role, and superuser privileges.
+   - Step 1.2: Added SQLite auto-migration in `database.py` (`init_db()`) checking `PRAGMA table_info(users)` and issuing `ALTER TABLE` if missing. Seeded Ultra Admin `dangnhutnguyen0910@gmail.com` with `REDACTED-ROTATE-ME`, `SUPER_ADMIN` role, and superuser privileges.
    - Step 1.3: Enhanced `backend/app/core/security.py` to embed `role`, `is_superuser`, `is_ultra_admin` in signed JWT claims.
    - Step 1.4: Updated `backend/app/api/auth.py` so `/login` accepts either username or email (via JSON body `email`, `username`, `account` or form), authenticates against DB password hash with PBKDF2, writes an audit trail to `admin_audit_logs`, and returns enriched user profile with signed JWT. Added `/auth/audit` endpoint.
 2. **Log Lifecycle & System State Reset**:

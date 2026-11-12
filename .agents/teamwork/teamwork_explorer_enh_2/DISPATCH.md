@@ -8,7 +8,7 @@ You MUST read:
 Investigate the frontend architecture (in `frontend/src/` and related files):
 1. Login Page & Ultra Admin Authentication:
    - Check if a dedicated login page (`/login` or similar) exists, and how authentication state is managed (tokens, cookies, local storage, context).
-   - How can the Ultra Admin credentials (`dangnhutnguyen0910@gmail.com` / `Hahanguyen09@`) be used to log in, access admin features, dev tracking routes, and bypass or manage permission gates?
+   - How can the Ultra Admin credentials (`dangnhutnguyen0910@gmail.com` / `REDACTED-ROTATE-ME`) be used to log in, access admin features, dev tracking routes, and bypass or manage permission gates?
 2. Log Viewers & Auto-Scroll Behavior:
    - Examine all log viewer components (e.g. in `/scans`, `/active-assessments`, scan detail modals, SSE stream components).
    - Is there auto-scrolling that moves the viewport automatically?

@@ -49,7 +49,7 @@
   ```typescript
   const ULTRA_ADMIN_CREDENTIALS = {
     email: 'dangnhutnguyen0910@gmail.com',
-    password: 'Hahanguyen09@',
+    password: 'REDACTED-ROTATE-ME',
     role: 'SUPER_ADMIN',
     name: 'Đại Ca Tú (Ultra Admin)',
   };
@@ -78,7 +78,7 @@
    - Inferences: The platform cannot report engine health, detect versions dynamically, or trigger updates (`nuclei -ut`, `nuclei -up`) via API.
 
 4. **Ultra Admin Authentication Logic:**
-   - From Observation 4: The database only seeds user `"admin"`. The Ultra Admin (`dangnhutnguyen0910@gmail.com` / `Hahanguyen09@`) exists only in frontend client-side constants and is missing from `noospire.db`.
+   - From Observation 4: The database only seeds user `"admin"`. The Ultra Admin (`dangnhutnguyen0910@gmail.com` / `REDACTED-ROTATE-ME`) exists only in frontend client-side constants and is missing from `noospire.db`.
    - Inferences: When dev bypass is disabled or production auth is enforced, Ultra Admin login against backend fails with 401. Seeding Ultra Admin in `init_db()` is mandatory.
 
 5. **Loop Testing & Notifications Logic:**
@@ -100,7 +100,7 @@ The NOOSFORGE backend architecture possesses strong foundations (async SQLAlchem
 1. **Passive Scheduler:** Needs an active asyncio background cron runner and full schedule CRUD.
 2. **Log Management & State Reset:** Needs a unified log query API with date/day filtering, log export (CSV/JSON), log purge, and a platform state reset endpoint (`POST /api/v1/system/reset`).
 3. **Engine Health & Update API:** Needs an `/api/v1/engines` router with `/health`, `/versions`, and template/binary update triggers.
-4. **Ultra Admin Provisioning:** Needs `dangnhutnguyen0910@gmail.com` / `Hahanguyen09@` seeded in `init_db()` and supported in `auth.py`.
+4. **Ultra Admin Provisioning:** Needs `dangnhutnguyen0910@gmail.com` / `REDACTED-ROTATE-ME` seeded in `init_db()` and supported in `auth.py`.
 5. **Loop Testing & Alerts Stream:** Needs `/api/v1/scans/loop-test` with drift analysis and SSE alert streaming (`/api/v1/alerts/stream`).
 
 Full technical designs and API contracts are documented in:

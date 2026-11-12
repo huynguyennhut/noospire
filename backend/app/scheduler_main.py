@@ -1,53 +1,48 @@
-"""Standalone Scheduler Worker Entry Point.
+"""Standalone scheduler process (compose service `scheduler`).
 
-Executes continuous cron schedule evaluations in Asia/Ho_Chi_Minh,
-overrun coalescing, and periodic worker lease recovery.
+Runs the Milestone 4 monitor scheduler: atomic (schedule, slot) claims, single coalesced
+catch-up, lease reaper, dead letters and stale-source notifications.
+
+The legacy DailySchedule engine (`backend.app.core.scheduler`) is NOT started: it launched
+legacy "all"-engine scans outside the defensive execution flow.
 """
 
 import asyncio
 import logging
 import signal
-import sys
 
 from backend.app.core.database import init_db
-from backend.app.core.scheduler import get_scheduler_engine
+from backend.app.core.monitor_scheduler import get_monitor_scheduler
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
-logger = logging.getLogger("sentinel.scheduler_main")
+logger = logging.getLogger("noospire.scheduler_main")
 
 
 async def run_scheduler() -> None:
-    logger.info("Starting standalone scheduler process...")
     await init_db()
-
-    scheduler_engine = get_scheduler_engine()
-    scheduler_engine.start()
+    sched = get_monitor_scheduler()
+    sched.start()
+    logger.info("monitor scheduler started id=%s tick=%ss", sched.scheduler_id, sched.interval_seconds)
 
     stop_event = asyncio.Event()
-
-    def handle_signal():
-        logger.info("Received termination signal, stopping scheduler...")
-        stop_event.set()
-
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         try:
-            loop.add_signal_handler(sig, handle_signal)
+            loop.add_signal_handler(sig, stop_event.set)
         except (NotImplementedError, RuntimeError):
-            pass
-
-    while not stop_event.is_set():
-        try:
-            await asyncio.sleep(1.0)
-        except asyncio.CancelledError:
-            break
-
-    await scheduler_engine.stop()
-    logger.info("Standalone scheduler stopped.")
+            pass  # Windows: rely on process termination / KeyboardInterrupt
+    try:
+        await stop_event.wait()
+    finally:
+        await sched.stop()
+        logger.info("monitor scheduler stopped id=%s", sched.scheduler_id)
 
 
 def main() -> None:
-    asyncio.run(run_scheduler())
+    try:
+        asyncio.run(run_scheduler())
+    except KeyboardInterrupt:
+        pass
 
 
 if __name__ == "__main__":

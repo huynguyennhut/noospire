@@ -1,0 +1,32 @@
+# Build context hygiene (Milestone 6): images carry application code only.
+.git
+.gitignore
+.agents
+.venv
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+# Databases, WAL/SHM, backups, runtime storage and evidence
+**/*.db
+**/*.db-wal
+**/*.db-shm
+**/*.sqlite*
+backups
+storage
+**/storage
+# Credentials
+**/.env
+deploy/.env
+**/*.pem
+**/*.key
+# Frontend build output and OS-specific dependencies (rebuilt inside the image)
+frontend/node_modules
+frontend/.next
+frontend/out
+**/node_modules
+# Tests, test data and docs are not part of the runtime image
+tests
+tests_pilot
+docs
+fixtures/threat_intel
+*.log

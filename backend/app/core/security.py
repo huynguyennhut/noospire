@@ -51,27 +51,22 @@ def create_access_token(
     else:
         expire = now_utc + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     
-    # Scopes derived from role
+    # Informational only: authorization is always re-derived from the DB user row
+    # and asset grants on every request; these claims are never trusted for access.
     role_upper = role.upper()
-    if role_upper in ("ADMIN", "SUPER_ADMIN"):
-        scopes = ["admin", "operator", "viewer"]
-    elif role_upper in ("OPERATOR", "SECURITY_LEAD"):
-        scopes = ["operator", "viewer"]
-    else:
-        scopes = ["viewer"]
-
     to_encode = {
         "exp": expire,
         "iat": now_utc,
+        # Millisecond issue time so session invalidation (logout/disable) is exact
+        # even when a new token is issued within the same second.
+        "iat_ms": int(now_utc.timestamp() * 1000),
         "jti": str(uuid.uuid4()),
-        "sub": str(subject),
-        "username": str(subject),
         "role": role_upper,
-        "scopes": scopes,
-        "is_superuser": is_superuser or (role_upper in ("ADMIN", "SUPER_ADMIN")),
     }
     if claims:
         to_encode.update(claims)
+    # `sub` is always the immutable user ID (never overridable by claims).
+    to_encode["sub"] = str(subject)
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
 
@@ -84,15 +79,13 @@ def decode_access_token(token: str) -> Optional[dict]:
         return None
 
 
-async def get_current_user(token: Optional[str] = Depends(oauth2_scheme)) -> Optional[dict]:
-    if not token:
-        return None
-    payload = decode_access_token(token)
-    if not payload:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    return payload
+def token_issued_at_ms(payload: dict) -> Optional[int]:
+    """Return issue time in epoch milliseconds (prefers precise iat_ms)."""
+    iat_ms = payload.get("iat_ms")
+    if isinstance(iat_ms, (int, float)):
+        return int(iat_ms)
+    iat = payload.get("iat")
+    if isinstance(iat, (int, float)):
+        return int(iat) * 1000
+    return None
 

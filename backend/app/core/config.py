@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     # Task Dispatcher Mode: "async_worker" or "celery"
     DISPATCHER_MODE: str = os.getenv("SENTINEL_DISPATCHER_MODE", "async_worker")
     MAX_CONCURRENT_SCANS: int = int(os.getenv("SENTINEL_MAX_CONCURRENT_SCANS", "4"))
+    # Worker pauses claiming while the host is above these (percent; 100 disables the check).
+    THROTTLE_CPU_PCT: float = float(os.getenv("SENTINEL_THROTTLE_CPU_PCT", "90"))
+    THROTTLE_MEM_PCT: float = float(os.getenv("SENTINEL_THROTTLE_MEM_PCT", "95"))
     DEFAULT_SCAN_TIMEOUT: int = int(os.getenv("SENTINEL_SCAN_TIMEOUT", "600"))
 
     # SSRF & Egress Protection (Defaults strictly to False for security)
@@ -54,6 +57,30 @@ class Settings(BaseSettings):
         "http://localhost:8000",
         "http://127.0.0.1:8000",
     ]
+
+    # Browser session (HttpOnly cookie) settings
+    SESSION_COOKIE_NAME: str = "noospire_session"
+    CSRF_COOKIE_NAME: str = "noospire_csrf"
+    CSRF_HEADER_NAME: str = "x-csrf-token"
+    # Secure cookies are mandatory outside local development/test.
+    SESSION_COOKIE_SECURE: Optional[bool] = None
+    SESSION_COOKIE_SAMESITE: str = os.getenv("SENTINEL_SESSION_SAMESITE", "strict")
+
+    # One-time owner bootstrap secret. HTTP bootstrap is disabled unless this is set
+    # (supply via secret store, never commit). Prefer the private CLI:
+    #   python -m backend.app.cli bootstrap-owner
+    BOOTSTRAP_TOKEN: Optional[str] = os.getenv("SENTINEL_BOOTSTRAP_TOKEN", None)
+
+    # Demo/fixture seeding is never run implicitly. Only an isolated demo environment
+    # may opt in, and it must use its own database.
+    SEED_DEMO_DATA: bool = os.getenv("SENTINEL_SEED_DEMO_DATA", "false").lower() in ("true", "1", "yes")
+
+    # Persistent storage root for artifacts, advisory snapshots, engine outputs, reports.
+    STORAGE_DIR: str = os.getenv("SENTINEL_STORAGE_DIR", "storage")
+    MAX_ARTIFACT_BYTES: int = int(os.getenv("SENTINEL_MAX_ARTIFACT_BYTES", str(20 * 1024 * 1024)))
+
+    # Scheduler/worker role split: "all" (single process), "api", "worker", "scheduler"
+    PROCESS_ROLE: str = os.getenv("SENTINEL_PROCESS_ROLE", "all")
 
     # Environment & Development Mode
     ENVIRONMENT: str = os.getenv("SENTINEL_ENV", os.getenv("ENVIRONMENT", "development"))
@@ -86,6 +113,15 @@ class Settings(BaseSettings):
                 import secrets
                 self.SECRET_KEY = secrets.token_urlsafe(32)
         return self
+
+    @property
+    def session_cookie_secure(self) -> bool:
+        if self.SESSION_COOKIE_SECURE is not None:
+            return self.SESSION_COOKIE_SECURE
+        env = os.getenv("SENTINEL_SESSION_COOKIE_SECURE")
+        if env is not None:
+            return env.lower() in ("true", "1", "yes")
+        return not self.is_development
 
     @property
     def is_development(self) -> bool:

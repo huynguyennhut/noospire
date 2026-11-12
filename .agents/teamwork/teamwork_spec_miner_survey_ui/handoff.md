@@ -22,7 +22,7 @@ Direct code and execution observations across the authoritative repository:
        return <main className="min-h-screen bg-nf-950 text-nf-100">{children}</main>;
      }
      ```
-     Unauthenticated access redirects to `/login`, where Ultra Admin credentials (`dangnhutnguyen0910@gmail.com` / `Hahanguyen09@`) are pre-configured with one-click quick authentication.
+     Unauthenticated access redirects to `/login`, where Ultra Admin credentials (`dangnhutnguyen0910@gmail.com` / `REDACTED-ROTATE-ME`) are pre-configured with one-click quick authentication.
 
 2. **UI Component Primitives**:
    - `frontend/src/components/ui/` contains 10 component files: `card.tsx`, `button.tsx`, `badge.tsx`, `table.tsx`, `modal.tsx`, `tooltip.tsx`, `input.tsx`, `tabs.tsx`, `stat-card.tsx`, `toast.tsx`.

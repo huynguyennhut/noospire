@@ -39,7 +39,7 @@ Direct observations and evidence collected across the codebase:
    - When `handleLogout()` (lines 172–179) deletes `sentinel_user` and navigates to `/login`, `Shell.tsx` mounts on `/login` and immediately executes the `else` branch, recreating the session instantly.
 
 2. **Login Page Bypass & Mock JWT Generation in `frontend/src/app/login/page.tsx`**:
-   - Lines 23–28: Hardcodes `ULTRA_ADMIN_CREDENTIALS` (`dangnhutnguyen0910@gmail.com` / `Hahanguyen09@`).
+   - Lines 23–28: Hardcodes `ULTRA_ADMIN_CREDENTIALS` (`dangnhutnguyen0910@gmail.com` / `REDACTED-ROTATE-ME`).
    - Lines 55–95: `handleLogin` validates credentials via JavaScript comparison and sets `sentinel_jwt_token = "jwt_live_token_" + Date.now()`. It does not call backend `POST /api/v1/auth/login`.
    - Lines 97–123: `handleOneClickUltraAdmin` sets `sentinel_jwt_token = "jwt_ultra_admin_" + Date.now()` and redirects to `/dashboard`.
    - `frontend/src/app/page.tsx:6` renders `<DashboardPage />` directly without checking authentication or redirecting to `/login`.
@@ -63,7 +63,7 @@ Direct observations and evidence collected across the codebase:
          )
      return payload
      ```
-   - Ultra Admin credentials (`dangnhutnguyen0910@gmail.com` / `Hahanguyen09@`) are not registered in backend database or config. In production (`ENVIRONMENT=production`), client requests with dummy tokens (`jwt_live_token_...`) fail with `401 UNAUTHORIZED`.
+   - Ultra Admin credentials (`dangnhutnguyen0910@gmail.com` / `REDACTED-ROTATE-ME`) are not registered in backend database or config. In production (`ENVIRONMENT=production`), client requests with dummy tokens (`jwt_live_token_...`) fail with `401 UNAUTHORIZED`.
 
 4. **Window Viewport Hijacking in `frontend/src/app/active-assessments/page.tsx`**:
    - Line 84: `const [autoScroll, setAutoScroll] = useState(false);`

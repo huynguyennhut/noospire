@@ -18,6 +18,7 @@ import {
 import { api } from '@/lib/api';
 import { Asset, ReportItem } from '@/lib/types';
 import { useI18n } from '@/lib/i18n';
+import { HistoryPanel, SnapshotsPanel } from '@/components/console/HistoryAndSnapshots';
 
 const REPORT_TEMPLATES = [
   { key: 'daily_summary', label: 'Daily Security Summary', desc: 'Summary of daily automated scans, target availability, and newly discovered risks.' },
@@ -116,6 +117,11 @@ export default function ReportsPage() {
 
   return (
     <div className="space-y-6">
+      {/* Milestone 5: snapshot reports (template version + checksum) and run history */}
+      <SnapshotsPanel />
+      <React.Suspense fallback={null}>
+        <HistoryPanel />
+      </React.Suspense>
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-white/10">
         <div>

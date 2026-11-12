@@ -6,12 +6,12 @@ from pydantic import BaseModel
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.api.deps import get_current_active_user, require_admin, require_operator
+from backend.app.api.deps import get_current_active_user, require_admin, require_operator, require_owner
 from backend.app.core.database import get_db
 from backend.app.models.alert import SecurityAlert
 from backend.app.models.user import User
 
-router = APIRouter(prefix="/alerts", tags=["Security Alerts & Notifications"], dependencies=[Depends(get_current_active_user)])
+router = APIRouter(prefix="/alerts", tags=["Security Alerts & Notifications"], dependencies=[Depends(require_owner)])  # pilot: estate aggregates are owner-only until per-grant aggregation lands
 
 
 class AlertResponse(BaseModel):
@@ -57,7 +57,7 @@ async def get_unread_alerts_count(db: AsyncSession = Depends(get_db)) -> Any:
 @router.post("/{id}/read")
 async def mark_alert_read(
     id: uuid.UUID,
-    current_user: User = Depends(require_operator),
+    current_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
     res = await db.execute(select(SecurityAlert).where(SecurityAlert.id == id))
@@ -71,7 +71,7 @@ async def mark_alert_read(
 
 @router.post("/read-all")
 async def mark_all_alerts_read(
-    current_user: User = Depends(require_operator),
+    current_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
     res = await db.execute(select(SecurityAlert).where(SecurityAlert.is_read == False))

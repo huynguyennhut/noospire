@@ -87,7 +87,7 @@ We define maturity across 5 objective evaluation dimensions, each scored on a 0â
 ### 1. API Verification
 - **Mounted Routers**: 16 routers under `/api/v1`: `alerts`, `assets`, `auth`, `baselines`, `empire_modules`, `engines`, `findings`, `intel`, `logs`, `metrics`, `reports`, `rules`, `scans`, `schedules`, `settings`, `system`.
 - **Request / Response Validation**: Enforced across all endpoints via Pydantic V2 schemas in `backend/app/schemas/`.
-- **Authentication**: JWT token validation in `backend/app/core/deps.py`. Ultra Admin credentials (`dangnhutnguyen0910@gmail.com` / `Hahanguyen09@`) authenticate cleanly via `POST /api/v1/auth/access-token`.
+- **Authentication**: JWT token validation in `backend/app/core/deps.py`. Ultra Admin credentials (`dangnhutnguyen0910@gmail.com` / `REDACTED-ROTATE-ME`) authenticate cleanly via `POST /api/v1/auth/access-token`.
 - **Error Handling**: Standard HTTP status codes (200, 201, 400, 401, 403, 404, 422, 500) with descriptive JSON details.
 
 ### 2. Database Integrity & Persistence

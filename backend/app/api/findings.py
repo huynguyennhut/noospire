@@ -1,13 +1,13 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 import uuid
 from typing import Any, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import Request, APIRouter, Depends, HTTPException, Query, status
 import httpx
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.api.deps import require_operator, require_viewer
+from backend.app.api.deps import AccessScope, load_scope, require_operator, require_viewer
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.core.ssrf import SSRFProtector, SSRFValidationError
@@ -39,10 +39,17 @@ async def list_findings(
     scanner_engine: Optional[str] = None,
     cve_id: Optional[str] = None,
     search: Optional[str] = None,
+    status_group: Optional[str] = Query(None, pattern="^(open|closed)$"),
+    outcome: Optional[str] = Query(None, pattern="^(new|unchanged|reopened|fixed|unavailable|changed_scope)$"),
+    day: Optional[date] = Query(None, description="ICT day for `outcome` (observation-based)"),
+    execution_id: Optional[uuid.UUID] = None,
     current_user: User = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
     stmt = select(NormalizedFinding)
+    scope = await load_scope(current_user, db)
+    if scope.asset_ids is not None:
+        stmt = stmt.where(NormalizedFinding.asset_id.in_(scope.asset_ids))
 
     if asset_id:
         stmt = stmt.where(NormalizedFinding.asset_id == asset_id)
@@ -60,6 +67,23 @@ async def list_findings(
         stmt = stmt.where(NormalizedFinding.scanner_engine == scanner_engine.lower())
     if cve_id:
         stmt = stmt.where(NormalizedFinding.cve_id == cve_id)
+    open_states = ("NEW", "OPEN", "CONFIRMED", "IN_REMEDIATION", "REOPENED")
+    if status_group == "open":
+        stmt = stmt.where(NormalizedFinding.status.in_(open_states))
+    elif status_group == "closed":
+        stmt = stmt.where(NormalizedFinding.status.not_in(open_states))
+    if outcome or day or execution_id:
+        from backend.app.api.console import ict_day_bounds
+        from backend.app.models.lifecycle import FindingObservation
+        obs = select(FindingObservation.finding_id)
+        if outcome:
+            obs = obs.where(FindingObservation.outcome == outcome)
+        if day:
+            lo, hi = ict_day_bounds(day)
+            obs = obs.where(FindingObservation.observed_at >= lo, FindingObservation.observed_at < hi)
+        if execution_id:
+            obs = obs.where(FindingObservation.execution_id == execution_id)
+        stmt = stmt.where(NormalizedFinding.id.in_(obs))
     if search:
         search_filter = f"%{search}%"
         stmt = stmt.where(
@@ -100,6 +124,7 @@ async def get_finding(
     finding = result.scalars().first()
     if not finding:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Finding not found")
+    (await load_scope(current_user, db)).require(finding.asset_id, "READ")
     return finding
 
 
@@ -119,8 +144,12 @@ async def triage_finding(
     finding = result.scalars().first()
     if not finding:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Finding not found")
+    (await load_scope(current_user, db)).require(finding.asset_id, "TRIAGE")
 
     old_status = finding.status
+    old_assignee = finding.assignee
+    old_notes = finding.remediation_notes
+    old_retest = finding.retest_status
     finding.status = triage_req.status.value
 
     # Assignee & notes
@@ -149,6 +178,13 @@ async def triage_finding(
     finding.evidence = evidence
     flag_modified(finding, "evidence")
 
+    from backend.app.core.lifecycle import record_change
+    for field, old, new in (("status", old_status, finding.status), ("assignee", old_assignee, finding.assignee),
+                            ("remediation_notes", old_notes, finding.remediation_notes),
+                            ("retest_status", old_retest, finding.retest_status)):
+        record_change(db, finding.id, field, old, new, actor_id=str(current_user.id),
+                      actor_name=current_user.username, reason=triage_req.comment)
+
     # Record alert if vulnerability marked FIXED or REOPENED
     if triage_req.status == FindingStatus.FIXED:
         alert = SecurityAlert(
@@ -176,66 +212,19 @@ async def triage_finding(
     return finding
 
 
-@router.post("/{finding_id}/retest")
+@router.post("/{finding_id}/retest", deprecated=True)
 async def retest_finding(
     finding_id: uuid.UUID,
+    request: Request,
     current_user: User = Depends(require_operator),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
-    """Executes an immediate live retest against the finding's target location
-    to determine if the vulnerability has been remediated.
+    """Deprecated alias of POST /findings/{id}/recheck (Milestone 5).
+
+    The former implementation sent a live GET to the finding location and marked the finding
+    FIXED on 401/403/404, which is neither an approved defensive control nor equivalent evidence.
+    It now queues the same defensive control that produced the finding.
     """
-    result = await db.execute(select(NormalizedFinding).where(NormalizedFinding.id == finding_id))
-    finding = result.scalars().first()
-    if not finding:
-        raise HTTPException(status_code=404, detail="Finding not found")
+    from backend.app.api.console import recheck_finding_impl
 
-    target_url = finding.target_location
-    retest_result = "STILL_VULNERABLE"
-    notes = "Retest executed. Vulnerability pattern re-verified."
-
-    # Validate egress with SSRF Protector (F11)
-    allow_private = bool(not settings.is_production and settings.SSRF_ALLOW_PRIVATE_TARGETS)
-    try:
-        SSRFProtector.validate_target(target_url, allow_private=allow_private)
-    except SSRFValidationError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Retest blocked by SSRF policy: {e}",
-        )
-
-    try:
-        async with httpx.AsyncClient(verify=True, timeout=5.0) as client:
-            resp = await client.get(target_url)
-            # If target returns 404, 401, or 403 on an unauthenticated leak endpoint, it has been secured!
-            if resp.status_code in (401, 403, 404) and "LEAK" in (finding.scanner_rule_id or ""):
-                retest_result = "VERIFIED_FIXED"
-                finding.status = FindingStatus.FIXED.value
-                notes = f"Target now returns HTTP {resp.status_code} (access denied/not found). Vulnerability confirmed remediated."
-            elif resp.status_code == 200:
-                retest_result = "STILL_VULNERABLE"
-                notes = f"Target still returns HTTP 200 with exposed content. Vulnerability remains active."
-    except Exception as e:
-        retest_result = "RETEST_ERROR"
-        notes = f"Could not reach target during retest: {e}"
-
-    finding.retest_status = retest_result
-    evidence = dict(finding.evidence or {})
-    evidence["last_retest"] = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "result": retest_result,
-        "notes": notes,
-        "actor": current_user.username,
-    }
-    finding.evidence = evidence
-    flag_modified(finding, "evidence")
-
-    await db.commit()
-    await db.refresh(finding)
-
-    return {
-        "finding_id": str(finding.id),
-        "status": finding.status,
-        "retest_status": retest_result,
-        "notes": notes,
-    }
+    return await recheck_finding_impl(db, current_user, finding_id, request, None)

@@ -17,7 +17,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.api.deps import require_admin, require_operator, require_viewer
+from backend.app.core.config import settings
+from backend.app.api.deps import require_admin, require_operator, require_viewer, load_scope
 from backend.app.core.database import get_db
 from backend.app.models.user import User
 from backend.app.reporting.generator import Report, ReportGenerator
@@ -67,6 +68,10 @@ async def list_reports(
 ) -> Any:
     """Lists all generated security assessment and executive reports (F04, F06)."""
     stmt = select(Report).order_by(Report.created_at.desc())
+    scope = await load_scope(current_user, db)
+    if scope.asset_ids is not None:
+        # Estate-wide reports (asset_id NULL) are visible to the owner only.
+        stmt = stmt.where(Report.asset_id.in_(scope.asset_ids))
     if report_type:
         stmt = stmt.where(Report.report_type == report_type)
     if asset_id:
@@ -85,6 +90,11 @@ async def generate_report(
     db: AsyncSession = Depends(get_db),
 ) -> Any:
     """Dispatches and generates a report derived strictly from verified database findings."""
+    scope = await load_scope(current_user, db)
+    if req.asset_id is None and not scope.estate_wide:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Estate-wide reports are restricted to the owner.")
+    if req.asset_id is not None:
+        scope.require(req.asset_id, "REPORT")
     generator = ReportGenerator()
     report = await generator.generate(
         db=db,
@@ -109,6 +119,7 @@ async def get_report(
     report = result.scalars().first()
     if not report:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
+    (await load_scope(current_user, db)).require(report.asset_id, "READ")
     return report.to_dict()
 
 
@@ -124,6 +135,7 @@ async def download_report(
     report = result.scalars().first()
     if not report:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
+    (await load_scope(current_user, db)).require(report.asset_id, "READ")
 
     fmt = format.lower().strip()
     if fmt not in ("pdf", "html", "json"):
@@ -134,7 +146,7 @@ async def download_report(
 
     # If file path not registered, check default storage
     if not path_str or not os.path.exists(path_str):
-        candidate = Path("storage") / "reports" / f"{report_id}.{fmt}"
+        candidate = Path(settings.STORAGE_DIR) / "reports" / f"{report_id}.{fmt}"
         if candidate.exists():
             path_str = str(candidate)
 
@@ -146,8 +158,8 @@ async def download_report(
 
     # Path traversal protection: ensure file is within storage directory
     resolved_path = Path(path_str).resolve()
-    base_storage = Path("storage").resolve()
-    if not str(resolved_path).startswith(str(base_storage)):
+    base_storage = Path(settings.STORAGE_DIR).resolve()
+    if not resolved_path.is_relative_to(base_storage):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access to path forbidden")
 
     media_types = {
@@ -160,10 +172,18 @@ async def download_report(
     safe_title = "".join(c for c in report.title if c.isalnum() or c in ("-", "_")).rstrip()
     filename = f"{safe_title or 'Sentinel_Report'}.{fmt}"
 
+    import hashlib
+    digest = hashlib.sha256(resolved_path.read_bytes()).hexdigest()
     return FileResponse(
         path=str(resolved_path),
         media_type=media_type,
         filename=filename,
+        headers={
+            "Cache-Control": "private, no-store",
+            "X-Content-SHA256": digest,
+            "X-Content-Type-Options": "nosniff",
+            "X-Template-Version": "legacy-report",
+        },
     )
 
 

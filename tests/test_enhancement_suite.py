@@ -43,7 +43,7 @@ async def authenticate_client(client: AsyncClient):
                 id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
                 username="dangnhutnguyen0910@gmail.com",
                 email="dangnhutnguyen0910@gmail.com",
-                hashed_password=get_password_hash("Hahanguyen09@"),
+                hashed_password=get_password_hash("REDACTED-ROTATE-ME"),
                 role="SUPER_ADMIN",
                 is_superuser=True,
                 is_active=True,
@@ -77,7 +77,7 @@ async def test_ultra_admin_login_with_email_json(client: AsyncClient):
         "/api/v1/auth/login",
         json={
             "email": "dangnhutnguyen0910@gmail.com",
-            "password": "Hahanguyen09@",
+            "password": "REDACTED-ROTATE-ME",
         },
     )
     assert resp.status_code == 200, resp.text
@@ -106,7 +106,7 @@ async def test_ultra_admin_login_with_username_field(client: AsyncClient):
         "/api/v1/auth/login",
         json={
             "username": "dangnhutnguyen0910@gmail.com",
-            "password": "Hahanguyen09@",
+            "password": "REDACTED-ROTATE-ME",
         },
     )
     assert resp.status_code == 200
@@ -120,7 +120,7 @@ async def test_auth_me_and_admin_audit_tracking(client: AsyncClient):
     # 1. Login
     login_resp = await client.post(
         "/api/v1/auth/login",
-        json={"email": "dangnhutnguyen0910@gmail.com", "password": "Hahanguyen09@"},
+        json={"email": "dangnhutnguyen0910@gmail.com", "password": "REDACTED-ROTATE-ME"},
     )
     token = login_resp.json()["access_token"]
 

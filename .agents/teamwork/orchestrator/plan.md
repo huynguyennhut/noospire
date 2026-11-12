@@ -5,7 +5,7 @@ Execute the comprehensive enhancements and rigorous verification requested in th
 1. Scan process & schedules: Inspect and verify scan scheduler, scan loop execution, and engine orchestration.
 2. UI & Auto-scroll control: Fix/provide auto-scroll toggle across log viewers (active assessments, scan details) so users are not forced into auto-scroll, check full UI integrity.
 3. System logs & clean state reset: Audit logs, export/save logs, purge/delete logs completely, reset system to initial state, and enable log tracking by days/dates.
-4. Ultra Admin login & Dev track: Verify login page and Ultra Admin authentication (`dangnhutnguyen0910@gmail.com` / `Hahanguyen09@`), ensure admin role capabilities, tracking, and dev tooling.
+4. Ultra Admin login & Dev track: Verify login page and Ultra Admin authentication (`dangnhutnguyen0910@gmail.com` / `REDACTED-ROTATE-ME`), ensure admin role capabilities, tracking, and dev tooling.
 5. All engines live testing on `empire.edu.vn`: Execute multi-engine real assessment (Nuclei, ZAP, Empire engine, Crawler), verify real evidence capture, loop testing, and notification tracking.
 6. Engine health & management: Implement/verify engine health monitoring, update checks, and operational status.
 7. Independent Verification & Forensic Audit: Multi-reviewer approval, adversarial challenger testing, and clean forensic audit.

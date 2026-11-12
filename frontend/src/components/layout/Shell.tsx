@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { createPortal } from 'react-dom';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard,
@@ -20,6 +21,7 @@ import {
   Activity,
   Settings,
   Bell,
+  Users,
   Menu,
   X,
   Languages,
@@ -66,6 +68,7 @@ const NAVIGATION_GROUPS: NavGroup[] = [
       { name: 'Targets', i18nKey: 'nav.targets', href: '/assets', icon: Server },
       { name: 'Scan Center', i18nKey: 'nav.scans', href: '/scans', icon: Crosshair },
       { name: 'Active Assessments', i18nKey: 'nav.activeAssessments', href: '/active-assessments', icon: Radio },
+      { name: 'Engine Runs', i18nKey: 'nav.engineRuns', href: '/engine-runs', icon: Code2 },
       { name: 'Schedules', i18nKey: 'nav.schedules', href: '/schedules', icon: CalendarClock },
     ],
   },
@@ -85,6 +88,7 @@ const NAVIGATION_GROUPS: NavGroup[] = [
     items: [
       { name: 'Detection Rules', i18nKey: 'nav.rules', href: '/detection-rules', icon: Code2, badge: 'YAML' },
       { name: 'Reports', i18nKey: 'nav.reports', href: '/reports', icon: FileText },
+      { name: 'Users', i18nKey: 'nav.users', href: '/users', icon: Users },
       { name: 'Integrations', i18nKey: 'nav.integrations', href: '/integrations', icon: Cpu },
       { name: 'System Health', i18nKey: 'nav.health', href: '/health', icon: Activity },
       { name: 'Settings', i18nKey: 'nav.settings', href: '/settings', icon: Settings },
@@ -96,37 +100,50 @@ interface AlertNotification {
   id: string;
   title: string;
   message: string;
-  severity: 'critical' | 'high' | 'medium' | 'info';
+  severity: string;
   timestamp: string;
   isRead: boolean;
+  link: string;
 }
 
-const DEFAULT_ALERTS: AlertNotification[] = [
-  {
-    id: 'alt-1',
-    title: 'High Severity Finding Detected',
-    message: 'Directory listing exposed on /media/learning-materials endpoint.',
-    severity: 'high',
-    timestamp: '10m ago',
-    isRead: false,
-  },
-  {
-    id: 'alt-2',
-    title: 'CISA KEV Feed Synchronized',
-    message: 'Added 4 new actively exploited CVE definitions to local threat database.',
-    severity: 'info',
-    timestamp: '45m ago',
-    isRead: false,
-  },
-  {
-    id: 'alt-3',
-    title: 'Scheduled Baseline Assessment Completed',
-    message: 'Automated 02:00 AM ICT scan on Empire Platform completed successfully.',
-    severity: 'info',
-    timestamp: '2h ago',
-    isRead: false,
-  },
-];
+const SEV_DOT: Record<string, string> = {
+  CRITICAL: 'bg-rose-500', HIGH: 'bg-orange-500', MEDIUM: 'bg-amber-400', LOW: 'bg-sky-400', INFO: 'bg-slate-400',
+};
+
+/** Per-user inbox list shared by the mobile and desktop popovers. */
+function NotificationList({ items, error, vi, onOpen, onDelete }: {
+  items: AlertNotification[];
+  error: string | null;
+  vi: boolean;
+  onOpen: (n: AlertNotification) => void;
+  onDelete: (n: AlertNotification) => void;
+}) {
+  if (error) {
+    return <div className="py-6 text-center text-xs text-amber-300" role="status">{error}</div>;
+  }
+  if (items.length === 0) {
+    return <div className="py-6 text-center text-xs text-nf-500">{vi ? 'Không có thông báo' : 'No notifications'}</div>;
+  }
+  return (
+    <ul className="space-y-2 max-h-72 overflow-y-auto" aria-label={vi ? 'Thông báo' : 'Notifications'}>
+      {items.map((n) => (
+        <li key={n.id} className={`p-2.5 rounded-xl border text-xs ${n.isRead ? 'bg-white/[0.01] border-white/5 text-nf-500' : 'bg-white/[0.04] border-white/10 text-nf-200'}`}>
+          <div className="flex items-start justify-between gap-2">
+            <button onClick={() => onOpen(n)} className="text-left font-bold text-white text-xs hover:underline focus:outline-none focus:ring-1 focus:ring-white/40 rounded flex items-center gap-1.5">
+              <span className={`inline-block w-1.5 h-1.5 rounded-full ${SEV_DOT[n.severity] || SEV_DOT.INFO}`} aria-hidden />
+              {!n.isRead && <span className="sr-only">{vi ? 'Chưa đọc: ' : 'Unread: '}</span>}
+              {n.title}
+            </button>
+            <button onClick={() => onDelete(n)} aria-label={vi ? 'Xóa thông báo' : 'Delete notification'} className="text-nf-500 hover:text-rose-300 px-1">×</button>
+          </div>
+          <p className="text-[11px] text-nf-400 mt-1 leading-snug">{n.message}</p>
+          <span className="text-[10px] text-nf-500 font-mono flex items-center gap-1 mt-1"><Clock className="w-2.5 h-2.5" />{n.timestamp}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 
 // ============================================================================
 // Shell Component
@@ -141,39 +158,55 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const [alerts, setAlerts] = useState<AlertNotification[]>(DEFAULT_ALERTS);
+  const [alerts, setAlerts] = useState<AlertNotification[]>([]);
   const [backendStatus, setBackendStatus] = useState<'online' | 'checking' | 'offline'>('checking');
+  const [backendReason, setBackendReason] = useState<string | null>(null);
+  const [alertsError, setAlertsError] = useState<string | null>(null);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
   const [currentUser, setCurrentUser] = useState<{ email: string; name: string; role: string; is_ultra_admin?: boolean } | null>(null);
 
   const notificationsRef = useRef<HTMLDivElement>(null);
+  const mobileNotificationsRef = useRef<HTMLDivElement>(null);
+  const mobilePopoverRef = useRef<HTMLDivElement>(null);
+  const desktopPopoverRef = useRef<HTMLDivElement>(null);
+  // Pages render only after mount: the static export is built at a different time than it runs,
+  // so time-dependent text (countdowns, "as of", ICT clocks) would not match during hydration.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
-  // Restore current user session (Clean: DO NOT auto-seed dummy session)
+  // Session comes from the server (HttpOnly cookie). Nothing identity-related is kept in storage.
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const raw = localStorage.getItem('sentinel_user');
-      if (raw) {
-        try {
-          setCurrentUser(JSON.parse(raw));
-        } catch (_) {
+    let cancelled = false;
+    if (pathname.startsWith('/login')) return;
+    api.me()
+      .then((u) => {
+        if (!cancelled) setCurrentUser({ email: u.email || u.username, name: u.username, role: u.is_owner ? 'OWNER' : u.role });
+      })
+      .catch((err: any) => {
+        if (cancelled) return;
+        if (err?.kind === 'unauthenticated' || err?.kind === 'forbidden') {
           setCurrentUser(null);
+          router.push('/login/');
         }
-      } else {
-        setCurrentUser(null);
-        if (pathname !== '/login' && !pathname.startsWith('/login')) {
-          router.push('/login');
-        }
-      }
-    }
+        // Gateway/API outage: keep the page, the status pill shows offline with the reason.
+      });
+    const onUnauth = () => router.push('/login/');
+    window.addEventListener('noospire:unauthenticated', onUnauth);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('noospire:unauthenticated', onUnauth);
+    };
   }, [pathname, router]);
 
-  const handleLogout = () => {
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('sentinel_user');
-      localStorage.removeItem('sentinel_jwt_token');
-      setCurrentUser(null);
-      window.location.href = '/login';
+  const handleLogout = async () => {
+    try {
+      await api.logout();
+    } catch (_) {
+      // Even if the server is unreachable, leave the console; the cookie expires server-side.
     }
+    setCurrentUser(null);
+    window.location.href = '/login/';
   };
 
 
@@ -200,27 +233,31 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     setLocale(nextLocale);
   };
 
-  // Backend Connectivity Health Check Probe
+  // API readiness via the gateway. Never reports online when the probe fails.
   useEffect(() => {
     let isMounted = true;
     const checkHealth = async () => {
-      const start = performance.now();
+      const t0 = performance.now();
       try {
-        await api.getSettings();
-        if (isMounted) {
-          const duration = Math.round(performance.now() - start);
-          setBackendStatus('online');
-          setLatencyMs(duration);
-        }
-      } catch (_) {
-        if (isMounted) {
-          // Graceful fallback for static dev preview
-          setBackendStatus('online');
-          setLatencyMs(18);
-        }
+        await api.ready();
+        if (!isMounted) return;
+        setBackendStatus('online');
+        setBackendReason(null);
+        setLatencyMs(Math.round(performance.now() - t0));
+      } catch (err: any) {
+        if (!isMounted) return;
+        setBackendStatus('offline');
+        setLatencyMs(null);
+        const reasons: Record<string, string> = {
+          network: 'gateway unreachable',
+          upstream_unreachable: 'API unreachable (502)',
+          upstream_timeout: 'API timeout (503)',
+          misrouted: 'misrouted (HTML on API path)',
+        };
+        const rid = err?.requestId ? ` · ${err.requestId}` : '';
+        setBackendReason((reasons[err?.kind] || err?.message || 'unknown') + rid);
       }
     };
-
     checkHealth();
     const interval = setInterval(checkHealth, 30000);
     return () => {
@@ -229,31 +266,71 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  // Fetch Live Alerts if API available
-  useEffect(() => {
-    api.listAlerts()
-      .then((items) => {
-        if (items && items.length > 0) {
-          const mapped: AlertNotification[] = items.slice(0, 5).map((a) => ({
-            id: a.id,
-            title: a.title,
-            message: a.message,
-            severity: (a.severity.toLowerCase() as any) || 'info',
-            timestamp: new Date(a.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            isRead: a.is_read,
-          }));
-          setAlerts(mapped);
-        }
+  // Per-user notifications (server data only). Errors are shown, not replaced by samples.
+  const loadNotifications = React.useCallback(() => {
+    if (pathname.startsWith('/login')) return;
+    api.listNotifications(20)
+      .then((res) => {
+        setAlertsError(null);
+        setUnreadCount(res.unread);
+        setAlerts(res.items.map((a) => ({
+          id: a.id,
+          title: a.title,
+          message: a.message,
+          severity: (a.severity || 'INFO').toUpperCase(),
+          timestamp: new Date(a.created_at).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' }) + ' ICT',
+          isRead: a.read,
+          link: a.link,
+        })));
       })
-      .catch(() => {
-        // Fallback to default sample alerts
+      .catch((err: any) => {
+        setAlertsError((locale === 'vi' ? 'Không tải được thông báo: ' : 'Could not load notifications: ') + (err?.message || err?.kind || 'error'));
       });
-  }, []);
+  }, [pathname, locale]);
+
+  useEffect(() => {
+    loadNotifications();
+    const id = setInterval(loadNotifications, 60_000);
+    return () => clearInterval(id);
+  }, [loadNotifications]);
+
+  useEffect(() => {
+    if (notificationsOpen) loadNotifications();
+  }, [notificationsOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const openNotification = async (n: AlertNotification) => {
+    try {
+      if (!n.isRead) await api.readNotification(n.id);
+    } catch (err: any) {
+      setAlertsError((locale === 'vi' ? 'Máy chủ từ chối: ' : 'Server refused: ') + (err?.message || 'error'));
+      loadNotifications();
+      return;
+    }
+    setNotificationsOpen(false);
+    loadNotifications();
+    router.push(n.link);
+  };
+
+  const deleteNotification = async (n: AlertNotification) => {
+    try {
+      await api.deleteNotification(n.id);
+      setAlerts((prev) => prev.filter((x) => x.id !== n.id));
+      if (!n.isRead) setUnreadCount((c) => Math.max(0, c - 1));
+    } catch (err: any) {
+      setAlertsError((locale === 'vi' ? 'Máy chủ từ chối: ' : 'Server refused: ') + (err?.message || 'error'));
+      loadNotifications();
+    }
+  };
 
   // Handle outside click for notification popover
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (notificationsRef.current && !notificationsRef.current.contains(event.target as Node)) {
+      const t = event.target as Node;
+      const inside = (notificationsRef.current && notificationsRef.current.contains(t)) ||
+        (mobileNotificationsRef.current && mobileNotificationsRef.current.contains(t)) ||
+        (mobilePopoverRef.current && mobilePopoverRef.current.contains(t)) ||
+        (desktopPopoverRef.current && desktopPopoverRef.current.contains(t));
+      if (!inside) {
         setNotificationsOpen(false);
       }
     };
@@ -289,13 +366,14 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     };
   }, [mobileMenuOpen]);
 
-  const unreadCount = alerts.filter((a) => !a.isRead).length;
-
   const markAllAlertsRead = async () => {
     try {
-      await api.markAllAlertsRead();
-    } catch (_) {}
-    setAlerts((prev) => prev.map((a) => ({ ...a, isRead: true })));
+      await api.readAllNotifications();
+      setAlerts((prev) => prev.map((a) => ({ ...a, isRead: true })));
+      setUnreadCount(0);
+    } catch (err: any) {
+      setAlertsError((locale === 'vi' ? 'Máy chủ từ chối: ' : 'Server refused: ') + (err?.message || 'error'));
+    }
   };
 
   const isLoginPage = pathname === '/login' || pathname.startsWith('/login');
@@ -337,12 +415,14 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           </div>
 
           {/* Mobile Notification Bell */}
-          <div className="relative">
+          <div className="relative" ref={mobileNotificationsRef}>
             <button
               onClick={() => setNotificationsOpen(!notificationsOpen)}
               className="p-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-nf-300 hover:text-white transition-all relative cursor-pointer"
               title={t('shell.notifications', 'Security Alerts')}
               aria-label="View notifications"
+              aria-expanded={notificationsOpen}
+              aria-haspopup="dialog"
             >
               <Bell className="w-3.5 h-3.5" />
               {unreadCount > 0 && (
@@ -379,7 +459,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
         {/* Mobile Notification Center Dropdown */}
         {notificationsOpen && (
-          <div className="md:hidden absolute top-14 left-2 right-2 rounded-2xl bg-nf-900/98 backdrop-blur-3xl border border-white/15 shadow-2xl p-3.5 z-50 specular-highlight animate-fadeIn">
+          <div ref={mobilePopoverRef} role="dialog" aria-label="Notifications" className="md:hidden absolute top-14 left-2 right-2 rounded-2xl bg-nf-900/98 backdrop-blur-3xl border border-white/15 shadow-2xl p-3.5 z-50 specular-highlight animate-fadeIn">
             <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/10">
               <div className="flex items-center gap-2">
                 <Bell className="w-4 h-4 text-white" />
@@ -403,33 +483,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               )}
             </div>
 
-            <div className="space-y-2 max-h-72 overflow-y-auto">
-              {alerts.length === 0 ? (
-                <div className="py-6 text-center text-xs text-nf-500">
-                  {t('shell.noNotifications', 'No unread alerts')}
-                </div>
-              ) : (
-                alerts.map((alert) => (
-                  <div
-                    key={alert.id}
-                    className={`p-2.5 rounded-xl border text-xs transition-all ${
-                      alert.isRead
-                        ? 'bg-white/[0.01] border-white/5 text-nf-500'
-                        : 'bg-white/[0.04] border-white/10 text-nf-200 shadow-sm'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <span className="font-bold text-white text-xs">{alert.title}</span>
-                      <span className="text-[10px] text-nf-500 font-mono flex items-center gap-1">
-                        <Clock className="w-2.5 h-2.5" />
-                        {alert.timestamp}
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-nf-400 mt-1 leading-snug">{alert.message}</p>
-                  </div>
-                ))
-              )}
-            </div>
+            <NotificationList items={alerts} error={alertsError} vi={locale === 'vi'} onOpen={openNotification} onDelete={deleteNotification} />
           </div>
         )}
       </header>
@@ -767,6 +821,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                 <>
                   <WifiOff className="w-3.5 h-3.5" />
                   <span>{t('shell.backendOffline', 'API: Offline')}</span>
+                  {backendReason && <span className="font-mono text-[10px] text-rose-300/80" title={backendReason}>({backendReason})</span>}
                 </>
               )}
             </div>
@@ -781,6 +836,8 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                 className="p-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-nf-300 hover:text-white transition-all relative cursor-pointer"
                 title={t('shell.notifications', 'Security Alerts')}
                 aria-label="View security notifications"
+                aria-expanded={notificationsOpen}
+                aria-haspopup="dialog"
               >
                 <Bell className="w-4 h-4" />
                 {unreadCount > 0 && (
@@ -791,8 +848,9 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               </button>
 
               {/* Notification Center Popover */}
-              {notificationsOpen && (
-                <div className="absolute right-0 top-11 w-80 sm:w-96 rounded-2xl bg-nf-900/98 backdrop-blur-3xl border border-white/15 shadow-2xl p-3.5 z-50 specular-highlight">
+              {/* Portal to <body>: the header's backdrop-filter would otherwise become the containing block. */}
+              {notificationsOpen && mounted && createPortal(
+                <div ref={desktopPopoverRef} role="dialog" aria-label="Notifications" className="hidden md:block fixed right-4 top-16 w-80 sm:w-96 max-h-[75vh] overflow-y-auto rounded-2xl bg-nf-900/98 backdrop-blur-3xl border border-white/15 shadow-2xl p-3.5 z-50 specular-highlight">
                   <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/10">
                     <div className="flex items-center gap-2">
                       <Bell className="w-4 h-4 text-white" />
@@ -816,35 +874,9 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                     )}
                   </div>
 
-                  <div className="space-y-2 max-h-72 overflow-y-auto">
-                    {alerts.length === 0 ? (
-                      <div className="py-6 text-center text-xs text-nf-500">
-                        {t('shell.noNotifications', 'No unread alerts')}
-                      </div>
-                    ) : (
-                      alerts.map((alert) => (
-                        <div
-                          key={alert.id}
-                          className={`p-2.5 rounded-xl border text-xs transition-all ${
-                            alert.isRead
-                              ? 'bg-white/[0.01] border-white/5 text-nf-500'
-                              : 'bg-white/[0.04] border-white/10 text-nf-200 shadow-sm'
-                          }`}
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <span className="font-bold text-white text-xs">{alert.title}</span>
-                            <span className="text-[10px] text-nf-500 font-mono flex items-center gap-1">
-                              <Clock className="w-2.5 h-2.5" />
-                              {alert.timestamp}
-                            </span>
-                          </div>
-                          <p className="text-[11px] text-nf-400 mt-1 leading-snug">{alert.message}</p>
-                        </div>
-                      ))
-                    )}
-                  </div>
+                  <NotificationList items={alerts} error={alertsError} vi={locale === 'vi'} onOpen={openNotification} onDelete={deleteNotification} />
                 </div>
-              )}
+              , document.body)}
             </div>
 
             {/* Bilingual Segmented Locale Toggle Button */}
@@ -906,7 +938,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
         {/* Main Workspace Page Viewport */}
         <main className="relative z-10 flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          {children}
+          {mounted ? children : <div className="text-sm text-nf-500" role="status">…</div>}
         </main>
       </div>
     </div>

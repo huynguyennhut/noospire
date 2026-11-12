@@ -39,7 +39,7 @@ Investigate NOOSFORGE backend architecture for scan scheduling, log management/r
   1. Passive `DailySchedule` model exists, but no background cron loop or ticker executes it automatically.
   2. `scan_logs` only queryable per scan ID; no date range filtering, no unified `/logs` endpoint, no export, no purge, no system reset endpoint.
   3. `nuclei.exe` v3.11.1 present on host, but backend lacks `/api/v1/engines` router and `/engines/health` endpoint; no template/binary update commands.
-  4. Ultra Admin (`dangnhutnguyen0910@gmail.com` / `Hahanguyen09@`) is NOT seeded in DB; only `"admin"` is seeded; frontend does client-side dummy auth.
+  4. Ultra Admin (`dangnhutnguyen0910@gmail.com` / `REDACTED-ROTATE-ME`) is NOT seeded in DB; only `"admin"` is seeded; frontend does client-side dummy auth.
   5. No loop testing runner exists; notifications have polling endpoints but no real-time SSE stream (`/alerts/stream`).
 - **Unexplored areas**: None. All 5 target investigation domains fully analyzed.
 

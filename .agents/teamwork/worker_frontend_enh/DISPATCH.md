@@ -22,7 +22,7 @@ YOUR IMPLEMENTATION TASKS:
      * When route is `/login`, render a clean unauthenticated layout without the main sidebar/topbar navigation.
      * Ensure logout (`handleLogout`) clears `sentinel_user` and `sentinel_jwt_token` and redirects cleanly to `/login` without re-seeding.
    - In `frontend/src/app/login/page.tsx`:
-     * Support Ultra Admin credentials: `dangnhutnguyen0910@gmail.com` / `Hahanguyen09@`.
+     * Support Ultra Admin credentials: `dangnhutnguyen0910@gmail.com` / `REDACTED-ROTATE-ME`.
      * On login / One-Click Ultra Admin, call backend `POST /api/v1/auth/login` (via `api.login` in `frontend/src/lib/api.ts`), store the real token and user profile in `localStorage`, and redirect to `/dashboard`.
      * Display Ultra Admin role badge and dev tracking indicator.
 2. Auto-scroll Control in Log Terminals ("Không auto scroll, check UI"):

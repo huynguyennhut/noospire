@@ -1,203 +1,133 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+/**
+ * EMPIRE BUSINESS MODULE HUB (Milestone 5). Every configured module is shown, including modules
+ * with zero assets in the viewer's scope. Totals reconcile with the viewer's scope. Each card links
+ * to the module's own assets, findings and runs. Load errors show the reason and a retry button.
+ */
+
+import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import {
-  Layers,
-  Users,
-  BookOpen,
-  Wrench,
-  Cpu,
-  Globe,
-  Server,
-  AlertTriangle,
-  ShieldAlert,
-  CheckCircle2,
-  Calendar,
-  ArrowRight,
-  RefreshCw,
-  Play,
-} from 'lucide-react';
-import { api } from '@/lib/api';
-import { EmpireModuleSummary } from '@/lib/types';
+import { BookOpen, Cpu, Globe, RefreshCw, Server, Users, Wrench } from 'lucide-react';
+import { api, ApiError, ModuleHub } from '@/lib/api';
 import { useI18n } from '@/lib/i18n';
 
+const TZ = 'Asia/Ho_Chi_Minh';
+
+const META: Record<string, { vi: string; en: string; icon: React.ElementType }> = {
+  STUDENT_MANAGEMENT: { vi: 'Học viên & định danh', en: 'Students & identity', icon: Users },
+  LEARNING_MATERIALS: { vi: 'Học liệu', en: 'Learning materials', icon: BookOpen },
+  SUPPORTING_TOOLS: { vi: 'Công cụ hỗ trợ', en: 'Supporting tools', icon: Wrench },
+  API_SERVICES: { vi: 'API', en: 'APIs', icon: Cpu },
+  WEB_APPLICATION: { vi: 'Ứng dụng web', en: 'Web applications', icon: Globe },
+  SERVER_INFRASTRUCTURE: { vi: 'Hạ tầng', en: 'Infrastructure', icon: Server },
+};
+
+function ict(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString('vi-VN', { timeZone: TZ, hour12: false }) + ' ICT';
+}
+
 export default function EmpireModulesPage() {
-  const { t } = useI18n();
-  const [modules, setModules] = useState<EmpireModuleSummary[]>([]);
+  const { locale } = useI18n();
+  const vi = locale === 'vi';
+  const L = (a: string, b: string) => (vi ? a : b);
+  const [hub, setHub] = useState<ModuleHub | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchModules = async () => {
+  const load = useCallback(async () => {
+    setLoading(true);
     try {
-      setLoading(true);
-      const res = await api.getEmpireModules();
-      const items = Array.isArray(res) ? res : ((res as any)?.items || []);
-      setModules(items);
-    } catch (err) {
-      console.error('Failed to load Empire modules', err);
+      setHub(await api.getModuleHub());
+      setError(null);
+    } catch (e: any) {
+      const rid = e instanceof ApiError && e.requestId ? ` · request ${e.requestId}` : '';
+      setError(`${e?.kind || 'error'}: ${e?.message || e}${rid}`);
     } finally {
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    fetchModules();
   }, []);
 
-  const getModuleIcon = (iconName: string) => {
-    switch (iconName) {
-      case 'Users':
-        return <Users className="w-5 h-5 text-purple-400" />;
-      case 'BookOpen':
-        return <BookOpen className="w-5 h-5 text-blue-400" />;
-      case 'Wrench':
-        return <Wrench className="w-5 h-5 text-emerald-400" />;
-      case 'Cpu':
-        return <Cpu className="w-5 h-5 text-cyan-400" />;
-      case 'Globe':
-        return <Globe className="w-5 h-5 text-amber-400" />;
-      default:
-        return <Server className="w-5 h-5 text-slate-400" />;
-    }
-  };
-
-  const getRiskColor = (tier: string) => {
-    switch (tier) {
-      case 'CRITICAL':
-        return 'text-rose-400 border-rose-800 bg-rose-950/60';
-      case 'HIGH':
-        return 'text-orange-400 border-orange-800 bg-orange-950/60';
-      case 'MEDIUM':
-        return 'text-amber-400 border-amber-800 bg-amber-950/60';
-      default:
-        return 'text-emerald-400 border-emerald-800 bg-emerald-950/60';
-    }
-  };
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   return (
     <div className="space-y-6">
-      {/* Page Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-white/10">
+      <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2">
-            <Layers className="w-6 h-6 text-cyan-400" />
-            <h1 className="text-2xl font-black tracking-tight text-white">
-              {t('modules.title', 'EMPIRE BUSINESS MODULE SECURITY')}
-            </h1>
-          </div>
-          <p className="text-xs text-slate-400 mt-1">
-            {t('modules.subtitle', "Continuous threat posture, access control boundary verification, and vulnerability distribution across Empire's operational domains.")}
-          </p>
+          <h1 className="text-xl font-semibold text-slate-100">EMPIRE BUSINESS MODULE HUB</h1>
+          {hub && (
+            <p className="text-xs text-slate-400 mt-1">
+              {L('Trong phạm vi của bạn', 'In your scope')}: {hub.assets_in_scope} asset = {hub.assets_in_modules} {L('trong 6 module', 'in 6 modules')}
+              {hub.assets_unassigned ? ` + ${hub.assets_unassigned} ${L('chưa gán module', 'unassigned')}` : ''} · {L('dữ liệu lúc', 'as of')} {ict(hub.as_of)}
+              {hub.scope === 'granted' ? ` · ${L('chỉ các asset được cấp quyền', 'granted assets only')}` : ''}
+            </p>
+          )}
         </div>
-
-        <button
-          onClick={fetchModules}
-          className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-xs font-semibold text-slate-300 hover:text-white transition shadow-sm"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-cyan-400' : ''}`} />
-          <span>{t('common.refresh', 'Refresh Telemetry')}</span>
+        <button onClick={() => void load()} disabled={loading} className="px-3 py-1.5 rounded border border-slate-600 text-slate-200 text-sm flex items-center gap-1 disabled:opacity-50">
+          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> {L('Tải lại', 'Reload')}
         </button>
       </div>
 
-      {/* Module Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        {modules.map((mod) => (
-          <div
-            key={mod.module_key}
-            className="rounded-2xl liquid-glass-card border border-white/10 hover:border-white/20 transition-all flex flex-col justify-between overflow-hidden shadow-xl"
-          >
-            {/* Card Header */}
-            <div className="p-5 border-b border-white/10 bg-white/[0.02]">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-white/[0.04] border border-white/10 flex items-center justify-center shadow-md">
-                    {getModuleIcon(mod.icon)}
-                  </div>
-                  <div>
-                    <h2 className="text-sm font-bold text-white tracking-wide">{mod.title}</h2>
-                    <span className="text-[10px] text-slate-400 font-mono uppercase">{mod.module_key}</span>
-                  </div>
-                </div>
+      {error && (
+        <div role="alert" className="p-3 rounded border border-rose-700 bg-rose-950 text-rose-200 text-sm flex justify-between gap-3">
+          <span>{L('Không tải được module hub', 'Module hub failed to load')} ({error})</span>
+          <button onClick={() => void load()} className="underline">{L('Thử lại', 'Retry')}</button>
+        </div>
+      )}
 
-                <div className={`px-2.5 py-1 rounded-md text-xs font-black border ${getRiskColor(mod.risk_tier)}`}>
-                  {mod.risk_tier}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        {hub?.modules.map((m) => {
+          const meta = META[m.module] || { vi: m.module, en: m.module, icon: Server };
+          const Icon = meta.icon;
+          const h = m.service_health;
+          return (
+            <article key={m.module} className="p-4 rounded-xl border border-slate-700 bg-slate-900 text-sm text-slate-200 space-y-3">
+              <header className="flex items-center gap-2">
+                <Icon className="w-5 h-5 text-cyan-400" aria-hidden />
+                <h2 className="font-semibold">{vi ? meta.vi : meta.en}</h2>
+                <span className="ml-auto text-xs text-slate-400 font-mono">{m.module}</span>
+              </header>
+              <dl className="grid grid-cols-2 gap-2 text-xs">
+                <div><dt className="text-slate-400">Asset</dt><dd className="text-lg font-semibold">{m.assets}</dd></div>
+                <div>
+                  <dt className="text-slate-400">{L('Coverage 24 giờ', 'Coverage 24 h')}</dt>
+                  <dd>{m.assets ? `${m.coverage_24h.covered}/${m.coverage_24h.total}` : '—'}</dd>
                 </div>
-              </div>
-
-              <p className="text-xs text-slate-400 mt-3 leading-relaxed line-clamp-2">
-                {mod.description}
-              </p>
-            </div>
-
-            {/* Metrics Breakdown */}
-            <div className="p-5 space-y-4 text-xs">
-              {/* Risk Score Meter */}
-              <div>
-                <div className="flex justify-between items-center mb-1">
-                  <span className="text-slate-400 font-medium">Domain Risk Score:</span>
-                  <span className="text-sm font-black text-rose-400 font-mono">{mod.risk_score} / 100</span>
+                <div>
+                  <dt className="text-slate-400">{L('Sức khỏe dịch vụ', 'Service health')}</dt>
+                  <dd>
+                    <span className="text-emerald-300">{h.up} up</span> · <span className="text-amber-300">{h.degraded} {L('suy giảm', 'degraded')}</span> ·{' '}
+                    <span className="text-rose-300">{h.down} down</span> · <span className="text-slate-400">{h.unknown} {L('chưa rõ', 'unknown')}</span>
+                  </dd>
                 </div>
-                <div className="w-full h-2 rounded-full bg-cyber-950 overflow-hidden border border-white/5">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-rose-500 to-rose-400 transition-all duration-500"
-                    style={{ width: `${mod.risk_score}%` }}
-                  />
+                <div>
+                  <dt className="text-slate-400">{L('Finding đang mở', 'Open findings')}</dt>
+                  <dd>
+                    {m.open_total}
+                    {m.open_total > 0 && (
+                      <span className="text-slate-400"> ({Object.entries(m.open_findings).filter(([, n]) => n).map(([k, n]) => `${k} ${n}`).join(', ')})</span>
+                    )}
+                  </dd>
                 </div>
-              </div>
-
-              {/* Counts Grid */}
-              <div className="grid grid-cols-3 gap-2 text-center">
-                <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/10">
-                  <div className="text-[10px] text-slate-400">Targets</div>
-                  <div className="text-base font-bold text-white mt-0.5">{mod.asset_count}</div>
+                <div className="col-span-2">
+                  <dt className="text-slate-400">{L('Lịch chạy kế tiếp', 'Next scheduled run')}</dt>
+                  <dd>{m.next_scheduled_run_at ? ict(m.next_scheduled_run_at) : L('không có lịch bao phủ module này', 'no schedule covers this module')}</dd>
                 </div>
-                <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/10">
-                  <div className="text-[10px] text-rose-400">Critical</div>
-                  <div className="text-base font-bold text-rose-400 mt-0.5">{mod.critical_count}</div>
-                </div>
-                <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/10">
-                  <div className="text-[10px] text-amber-400">High</div>
-                  <div className="text-base font-bold text-amber-400 mt-0.5">{mod.high_count}</div>
-                </div>
-              </div>
-
-              {/* Assessment Status */}
-              <div className="space-y-1.5 pt-1 text-[11px] text-slate-400 border-t border-white/10">
-                <div className="flex justify-between">
-                  <span>Open Remediation Tasks:</span>
-                  <strong className="text-white font-mono">{mod.open_remediation_count}</strong>
-                </div>
-                <div className="flex justify-between">
-                  <span>Last Assessment:</span>
-                  <strong className="text-slate-300">
-                    {mod.latest_assessment ? new Date(mod.latest_assessment).toLocaleDateString() : 'Awaiting Run'}
-                  </strong>
-                </div>
-                <div className="flex justify-between">
-                  <span>Next Automated Scan:</span>
-                  <strong className="text-cyan-400">{mod.next_scheduled_assessment}</strong>
-                </div>
-              </div>
-            </div>
-
-            {/* Actions Footer */}
-            <div className="p-3 bg-cyber-950/80 border-t border-white/10 flex items-center justify-between text-xs">
-              <Link
-                href={`/assets?empire_module=${mod.module_key}`}
-                className="text-slate-400 hover:text-white font-medium flex items-center gap-1 transition"
-              >
-                <span>Targets ({mod.asset_count})</span>
-                <ArrowRight className="w-3 h-3" />
-              </Link>
-              <Link
-                href={`/findings?module=${mod.module_key}`}
-                className="px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-cyan-400 font-bold transition flex items-center gap-1 border border-white/10"
-              >
-                <span>{t('targets.findingsButton', 'View Findings')} ({mod.total_findings})</span>
-              </Link>
-            </div>
-          </div>
-        ))}
+              </dl>
+              {m.assets === 0 && (
+                <p className="text-xs text-slate-500">{L('Chưa có asset nào trong phạm vi của bạn thuộc module này.', 'No asset in your scope belongs to this module yet.')}</p>
+              )}
+              <nav className="flex gap-3 text-xs">
+                <Link className="underline text-cyan-300" href={m.links.assets}>{L('Asset', 'Assets')}</Link>
+                <Link className="underline text-cyan-300" href={m.links.findings}>Findings</Link>
+                <Link className="underline text-cyan-300" href={m.links.runs}>{L('Lượt chạy', 'Runs')}</Link>
+              </nav>
+            </article>
+          );
+        })}
       </div>
     </div>
   );

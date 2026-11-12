@@ -172,8 +172,8 @@ export default function EvidenceViewer({
     if (!finding.id || finding.id === 'preview-finding') {
       setRetestResult({
         status: finding.status,
-        retest_status: 'VERIFIED_FIXED',
-        notes: 'Preview retest probe executed successfully.',
+        retest_status: 'RETEST_ERROR',
+        notes: 'Preview data has no defensive control to recheck.',
       });
       return;
     }
@@ -182,7 +182,7 @@ export default function EvidenceViewer({
       setRetesting(true);
       setRetestResult(null);
       const res = await api.retestFinding(finding.id);
-      setRetestResult(res);
+      setRetestResult({ status: finding.status, retest_status: res.retest_status, notes: res.notes });
       const refreshed = await api.getFinding(finding.id);
       setTriageStatus(refreshed.status);
       onFindingUpdated?.(refreshed);
@@ -284,7 +284,7 @@ export default function EvidenceViewer({
             loading={retesting}
             icon={<RotateCcw className="w-3.5 h-3.5 text-white" />}
           >
-            {retesting ? t('findings.retesting', 'Retesting Target Live...') : t('findings.retestTarget', 'Retest Live')}
+            {retesting ? t('findings.retesting', 'Queuing recheck...') : t('findings.retestTarget', 'Recheck control')}
           </Button>
         </div>
       </div>
@@ -307,7 +307,7 @@ export default function EvidenceViewer({
           )}
           <div className="flex-1">
             <div className="font-bold flex items-center gap-2">
-              <span>Retest Verdict: {retestResult.retest_status}</span>
+              <span>{retestResult.retest_status === 'RECHECK_QUEUED' ? 'Recheck queued' : `Recheck: ${retestResult.retest_status}`}</span>
               <span className="text-[10px] font-normal opacity-75">
                 ({new Date().toLocaleTimeString()})
               </span>

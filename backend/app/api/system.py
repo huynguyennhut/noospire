@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.api.deps import require_admin, require_viewer
+from backend.app.api.deps import require_owner, require_viewer
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.core.dispatcher import get_dispatcher, log_buffer
@@ -28,12 +28,12 @@ logger = logging.getLogger("sentinel.system")
 router = APIRouter(prefix="/system", tags=["System Maintenance & State Lifecycle"])
 
 
-async def execute_system_reset(db: AsyncSession, actor_username: str = "administrator") -> dict:
+async def execute_system_reset(db: AsyncSession, actor_username: str = "administrator", actor_id: str | None = None) -> dict:
     """Resets operational state in non-production environments.
 
     Critical audit history (AdminAuditLog) is IMMUTABLE and stored outside the reset path (F08).
     """
-    if settings.is_production:
+    if not settings.is_development:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Destructive system reset is disabled in production environments.",
@@ -64,15 +64,18 @@ async def execute_system_reset(db: AsyncSession, actor_username: str = "administ
     # NOTE: AdminAuditLog is append-only and NEVER deleted!
     await db.commit()
 
-    # 4. Re-seed Empire ecosystem initial baseline
-    await seed_empire_ecosystem(db)
+    # 4. Re-seed demo fixtures only in an explicitly isolated demo environment
+    reseeded = False
+    if settings.SEED_DEMO_DATA:
+        await seed_empire_ecosystem(db)
+        reseeded = True
 
     # 5. Record Reset Completed Audit Log and Alert
     now = datetime.now(timezone.utc)
     reset_alert = SecurityAlert(
         id=uuid.uuid4(),
         severity="INFO",
-        title="System Reset: Returned to Initial Baseline",
+        title="System reset: operational data purged",
         message=f"All operational scans, logs, alerts, and dynamic findings were purged by {actor_username}.",
         category="BASELINE",
         is_read=False,
@@ -81,11 +84,11 @@ async def execute_system_reset(db: AsyncSession, actor_username: str = "administ
     db.add(reset_alert)
 
     audit_entry = AdminAuditLog(
-        user_id="admin",
+        user_id=actor_id,
         username=actor_username,
         action="SYSTEM_STATE_RESET",
-        details="Purged operational data and re-seeded Empire ecosystem baseline. Audit history preserved.",
-        ip_address="127.0.0.1",
+        details=f"Purged operational data (reseeded_demo={reseeded}). Audit history preserved.",
+        ip_address="server",
     )
     db.add(audit_entry)
 
@@ -93,24 +96,16 @@ async def execute_system_reset(db: AsyncSession, actor_username: str = "administ
 
     return {
         "status": "RESET_SUCCESSFUL",
-        "message": "System state successfully reset to initial verified baseline for https://empire.edu.vn/",
         "timestamp": now.isoformat(),
-        "baseline_target": "https://empire.edu.vn/",
         "preserved_audit_logs": True,
-        "reseeded_components": [
-            "assets",
-            "findings",
-            "baseline_exceptions",
-            "daily_schedules",
-            "initial_alerts",
-        ],
+        "reseeded_demo_fixtures": reseeded,
     }
 
 
 @router.post("/reset")
 async def reset_system_endpoint(
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_owner),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
-    """Destructive reset endpoint. Disabled in production, requires ADMIN in development (F08)."""
-    return await execute_system_reset(db, actor_username=current_user.username)
+    """Destructive reset: development/test only, sole owner only. Audit log preserved."""
+    return await execute_system_reset(db, actor_username=current_user.username, actor_id=str(current_user.id))

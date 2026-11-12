@@ -30,7 +30,7 @@ The investigation uncovered several critical architectural gaps where existing i
     ```typescript
     const ULTRA_ADMIN_CREDENTIALS = {
       email: 'dangnhutnguyen0910@gmail.com',
-      password: 'Hahanguyen09@',
+      password: 'REDACTED-ROTATE-ME',
       role: 'SUPER_ADMIN',
       name: 'Đại Ca Tú (Ultra Admin)',
     };
@@ -86,7 +86,7 @@ The investigation uncovered several critical architectural gaps where existing i
 - **Backend Authentication Disconnect**:
   - File: `backend/app/api/auth.py:68-107` and `backend/app/core/config.py:30-31`:
     - Backend only recognizes `ADMIN_USERNAME` (`admin`) and `ADMIN_PASSWORD` (`admin123`).
-    - The Ultra Admin credentials (`dangnhutnguyen0910@gmail.com` / `Hahanguyen09@`) are **not configured or seeded** in `backend/app/core/config.py` or `noospire.db`.
+    - The Ultra Admin credentials (`dangnhutnguyen0910@gmail.com` / `REDACTED-ROTATE-ME`) are **not configured or seeded** in `backend/app/core/config.py` or `noospire.db`.
     - In `backend/app/core/security.py:74-88`, the token decoder `decode_access_token` rejects non-JWT strings (`jwt_live_token_...`). It only succeeds in development mode because it falls back to `DEV_MOCK_SUPERUSER`. In production mode (`ENVIRONMENT=production`), all API calls with the client token would fail with `401 UNAUTHORIZED`.
 
 ### 1.2 Gap Summary & Proposed Remediation
@@ -95,7 +95,7 @@ The investigation uncovered several critical architectural gaps where existing i
 | First Page Experience | Bypasses `/login`; loads `/dashboard` directly and auto-seeds Ultra Admin. | Check authentication on root `/` and protected routes. If unauthenticated, redirect to `/login`. |
 | Login Page Layout | Double shell layout (sidebar + header around login page). | `Shell.tsx` checks `pathname === '/login'` and renders clean standalone viewport. |
 | Logout Mechanics | `handleLogout` cleared storage but was immediately re-seeded by `Shell.tsx`. | Remove auto-seeding on unauthenticated state. Maintain null session until explicit login. |
-| Ultra Admin Authorization | Hardcoded in client JS only; backend rejects credentials in non-dev. | Seed Ultra Admin (`dangnhutnguyen0910@gmail.com` / `Hahanguyen09@`) in backend auth system & issue verifiable JWTs. |
+| Ultra Admin Authorization | Hardcoded in client JS only; backend rejects credentials in non-dev. | Seed Ultra Admin (`dangnhutnguyen0910@gmail.com` / `REDACTED-ROTATE-ME`) in backend auth system & issue verifiable JWTs. |
 | Permission Gates | No RBAC enforcement across 14 views. | Gate destructive operations (Reset Baseline, Emergency Stop, CIDR whitelist changes) to `SUPER_ADMIN` / `is_ultra_admin`. |
 
 ---
@@ -324,7 +324,7 @@ The investigation uncovered several critical architectural gaps where existing i
      - Remove the auto-seeding `defaultAdmin` code in `Shell.tsx:158-168`. If `sentinel_user` is null, set `currentUser(null)`.
      - In `frontend/src/app/page.tsx` and protected routes, redirect unauthenticated users to `/login`.
 2. **Backend Ultra Admin Sync**:
-   - Seed `dangnhutnguyen0910@gmail.com` with password `Hahanguyen09@` in backend user database or environment configuration.
+   - Seed `dangnhutnguyen0910@gmail.com` with password `REDACTED-ROTATE-ME` in backend user database or environment configuration.
    - Wire `LoginPage.handleLogin()` to call `POST /api/v1/auth/login` to obtain an authentic HMAC-SHA256 JWT, storing it in `sentinel_jwt_token`.
 
 ### Priority 2: Viewport-Safe Log Viewing ("Không Auto Scroll")

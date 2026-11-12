@@ -60,7 +60,7 @@ Direct code and runtime observations across the 7 mandated task areas:
    - In `handleLogout`, clearing `sentinel_user` and `sentinel_jwt_token` redirects cleanly to `/login` with zero re-seeding.
 
 2. **Authentic Backend Authentication & Ultra Admin Badges**:
-   - `api.login(username, password)` calls backend `POST /api/v1/auth/login`. When authenticated (including Ultra Admin `dangnhutnguyen0910@gmail.com` / `Hahanguyen09@`), it receives and stores an authentic JWT token in `sentinel_jwt_token` and the user profile in `sentinel_user`.
+   - `api.login(username, password)` calls backend `POST /api/v1/auth/login`. When authenticated (including Ultra Admin `dangnhutnguyen0910@gmail.com` / `REDACTED-ROTATE-ME`), it receives and stores an authentic JWT token in `sentinel_jwt_token` and the user profile in `sentinel_user`.
    - On the login view, an Ultra Admin Sovereign badge and an active "Operator & Dev Tracking: ACTIVE" indicator provide immediate visual confirmation of status.
 
 3. **Container-Scoped Terminal Scrolling ("Không Auto Scroll")**:

@@ -42,7 +42,7 @@ from backend.app.core.config import settings
 if not getattr(settings, "ULTRA_ADMIN_EMAIL", None):
     settings.ULTRA_ADMIN_EMAIL = "dangnhutnguyen0910@gmail.com"
 if not getattr(settings, "ULTRA_ADMIN_PASS", None):
-    settings.ULTRA_ADMIN_PASS = "Hahanguyen09@"
+    settings.ULTRA_ADMIN_PASS = "REDACTED-ROTATE-ME"
 if not getattr(settings, "ADMIN_PASSWORD", None):
     settings.ADMIN_PASSWORD = "admin123"
 
@@ -402,7 +402,7 @@ async def test_t1_login_defense_valid_credentials_succeed(client: httpx.AsyncCli
     """T1.3.4: Valid credentials authenticate successfully and return signed access token."""
     resp = await client.post("/api/v1/auth/login", json={
         "username": "dangnhutnguyen0910@gmail.com",
-        "password": "Hahanguyen09@",
+        "password": "REDACTED-ROTATE-ME",
     })
     assert resp.status_code == 200
     data = resp.json()

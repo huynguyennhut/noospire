@@ -59,6 +59,11 @@ class AssetResponse(AssetBase):
     verification_type: VerificationType
     verification_token: str
     verified_at: Optional[str] = None
+    # Milestone 6: derived from asset_ownership_proofs, not from the stored flag alone.
+    # VERIFIED = a VERIFIED proof row exists · UNPROVEN = flag says VERIFIED but no proof row
+    # (e.g. imported fixtures) · otherwise mirrors PENDING / FAILED / REVOKED.
+    verification_state: str = "UNPROVEN"
+    verification_proof: Optional[Dict[str, Any]] = None
     created_at: datetime
     updated_at: datetime
 

@@ -1,69 +1,110 @@
-version: '3.8'
+# Noospire pilot stack. Only the gateway is reachable from the host, on loopback.
+# cloudflared (profile "tunnel") reaches the gateway by service name on the internal
+# network. DB, API, worker and scheduler have no published ports.
+#
+#   cp deploy/.env.example deploy/.env      # fill secrets from your secret store
+#   docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build
+#   docker compose ... --profile tunnel up -d   # adds the Named Tunnel connector
+
+x-api-env: &api-env
+  SENTINEL_ENV: production
+  SENTINEL_DATABASE_URL: sqlite+aiosqlite:////data/noospire.db
+  SENTINEL_STORAGE_DIR: /data/storage
+  SENTINEL_SECRET_KEY: ${SENTINEL_SECRET_KEY:?set SENTINEL_SECRET_KEY (>=32 chars) from the secret store}
+  SENTINEL_SOLE_OWNER_EMAIL: ${SENTINEL_SOLE_OWNER_EMAIL:?set SENTINEL_SOLE_OWNER_EMAIL}
+  SENTINEL_SOLE_OWNER_ACCOUNT_ID: ${SENTINEL_SOLE_OWNER_ACCOUNT_ID:?set SENTINEL_SOLE_OWNER_ACCOUNT_ID}
+  SENTINEL_SEED_DEMO_DATA: "false"
+  SENTINEL_THROTTLE_CPU_PCT: ${SENTINEL_THROTTLE_CPU_PCT:-90}
+  SENTINEL_THROTTLE_MEM_PCT: ${SENTINEL_THROTTLE_MEM_PCT:-95}
+  NOOSPIRE_SCHEDULER_TICK_SECONDS: ${NOOSPIRE_SCHEDULER_TICK_SECONDS:-15}
+  TZ: UTC
+  NOOSPIRE_BUILD_ID: ${NOOSPIRE_BUILD_ID:-dev}
 
 services:
-  # ===========================================================================
-  # NOOSFORGE BACKEND API & SCAN ORCHESTRATOR
-  # ===========================================================================
-  backend:
+  api:
+    build: { context: .., dockerfile: deploy/Dockerfile.backend }
+    image: noospire-api:${NOOSPIRE_BUILD_ID:-dev}
+    restart: unless-stopped
+    environment:
+      <<: *api-env
+      SENTINEL_PROCESS_ROLE: api
+    volumes: [noospire-data:/data]
+    networks: [internal]
+
+  worker:
+    image: noospire-api:${NOOSPIRE_BUILD_ID:-dev}
+    restart: unless-stopped
+    depends_on: { api: { condition: service_healthy } }
+    command: ["python", "-m", "backend.app.worker"]
+    environment:
+      <<: *api-env
+      SENTINEL_PROCESS_ROLE: worker
+    volumes: [noospire-data:/data]
+    # Worker egress is separate from the tunnel connector; restrict it with host
+    # firewall rules to the owner-approved targets only.
+    networks: [internal, worker-egress]
+    healthcheck: { disable: true }
+
+  scheduler:
+    image: noospire-api:${NOOSPIRE_BUILD_ID:-dev}
+    restart: unless-stopped
+    depends_on: { api: { condition: service_healthy } }
+    command: ["python", "-m", "backend.app.scheduler_main"]
+    environment:
+      <<: *api-env
+      SENTINEL_PROCESS_ROLE: scheduler
+    volumes: [noospire-data:/data]
+    networks: [internal]
+    healthcheck: { disable: true }
+
+  gateway:
     build:
       context: ..
-      dockerfile: deploy/Dockerfile.backend
-    container_name: noosforge-backend
+      dockerfile: deploy/Dockerfile.gateway
+      args: { NOOSPIRE_BUILD_ID: "${NOOSPIRE_BUILD_ID:-dev}" }
+    image: noospire-gateway:${NOOSPIRE_BUILD_ID:-dev}
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:8000:8000"
+    depends_on: { api: { condition: service_healthy } }
     environment:
-      - PYTHONUNBUFFERED=1
-      - NOOSPIRE_DATABASE_URL=sqlite:////app/storage/noospire.db
-      - ENVIRONMENT=production
-    volumes:
-      - ../storage:/app/storage
-      - ../noospire.db:/app/noospire.db
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/system/resources"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-    networks:
-      - noosforge-net
+      NOOSPIRE_API_ORIGIN: http://api:8000
+      NOOSPIRE_GW_READ_TIMEOUT: "30"
+      NOOSPIRE_GW_MAX_CONNECTIONS: "100"
+      # Cloudflare Access verified at the origin. Fail closed: with REQUIRED=true and no team/AUD
+      # the gateway answers 503. Set REQUIRED=false only for loopback-only use without a tunnel.
+      NOOSPIRE_ACCESS_TEAM_DOMAIN: ${NOOSPIRE_ACCESS_TEAM_DOMAIN:-}
+      NOOSPIRE_ACCESS_AUD: ${NOOSPIRE_ACCESS_AUD:-}
+      NOOSPIRE_ACCESS_REQUIRED: ${NOOSPIRE_ACCESS_REQUIRED:-true}
+    # Loopback only on the host (owner console / smoke tests). Never 0.0.0.0.
+    ports: ["127.0.0.1:8080:8080"]
+    # internal: reaches the API · connector: reached by cloudflared · edge: host loopback publish
+    networks: [internal, connector, edge]
 
-  # ===========================================================================
-  # NOOSFORGE FRONTEND SOC CONSOLE (NEXT.JS 14 LIQUID GLASS)
-  # ===========================================================================
-  frontend:
-    build:
-      context: ../frontend
-      dockerfile: ../deploy/Dockerfile.frontend
-    container_name: noosforge-frontend
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:3000:3000"
-    environment:
-      - NODE_ENV=production
-      - PORT=3000
-    depends_on:
-      backend:
-        condition: service_healthy
-    networks:
-      - noosforge-net
-
-  # ===========================================================================
-  # CLOUDFLARE ZERO TRUST ARGO TUNNEL (OPTIONAL / PRODUCTION)
-  # Expose private host to dash.cloudflare.com without open inbound ports!
-  # Set TUNNEL_TOKEN in your environment or .env file
-  # ===========================================================================
   cloudflared:
-    image: cloudflare/cloudflared:latest
-    container_name: noosforge-tunnel
+    profiles: ["tunnel"]
+    # Pin to a reviewed release; record its digest in the hand-over.
+    # Pinned release + digest (resolved 2026-11-11). Bump deliberately and record it in the hand-over.
+    image: cloudflare/cloudflared:2026.10.7@sha256:4955524aeaa379e154023d5a027c250f7b35041a2e7e950cf13f144bc9b9c5ba
     restart: unless-stopped
-    command: tunnel --no-autoupdate run
+    depends_on: [gateway]
+    # Published route in the Zero Trust dashboard: <admin hostname> -> http://gateway:8080
+    # Protocol: QUIC (UDP 7844) with automatic HTTP/2 fallback (TCP 7844); allow only those to
+    # region1/region2.v2.argotunnel.com on the host firewall, plus 443 to api.cloudflare.com.
+    command: ["tunnel", "--no-autoupdate", "--metrics", "127.0.0.1:20241", "--grace-period", "30s",
+              "--retries", "8", "run"]
     environment:
-      - TUNNEL_TOKEN=${TUNNEL_TOKEN:-eyJhIjoiNTdlNzRjNmRiN2E1YmQ0NzQ4NzdmMjZjODQ5MDEwMDkiLCJ0IjoiODIzNDY0YTctM2JmMi00MTgyLWE0MGItY2IwZjFmY2ExOWY4IiwicyI6Ik9HVXdPV1UxTWprdE1UVmxOUzAwTVdJeUxUZ3pNak10TnpaaU16azBPV1UwT0RFNCJ9}
-    depends_on:
-      - frontend
-    networks:
-      - noosforge-net
+      # Named Tunnel token from the secret store. Never commit it, never default it.
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?set TUNNEL_TOKEN from the secret store}
+    # Only the gateway is reachable from the connector: no API, DB, worker or debug port.
+    networks: [connector, tunnel-egress]
+
+volumes:
+  noospire-data: {}
 
 networks:
-  noosforge-net:
-    driver: bridge
+  internal:
+    internal: true
+  connector:
+    internal: true
+  edge: {}
+  worker-egress: {}
+  tunnel-egress: {}

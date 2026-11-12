@@ -16,6 +16,9 @@ class InventoryRowClassification(str, Enum):
     EXECUTION_TARGET = "EXECUTION_TARGET"
     ALIAS = "ALIAS"
     EXCLUDED = "EXCLUDED"
+    # Milestone 7: rows that are accounted for but cannot run, each with an explicit reason.
+    INVALID_ALIAS = "INVALID_ALIAS"          # alias_of points to no execution target in this inventory
+    NO_APPLICABLE_ENGINE = "NO_APPLICABLE_ENGINE"  # requested engines/profile cover none of this asset type
 
 
 class ExecutionStatus(str, Enum):
@@ -127,6 +130,10 @@ class UltraScanPlan:
             "excluded_count": self.excluded_count,
             "shared_result_links_count": len(self.shared_result_links),
             "explained_exclusions_count": len(self.explained_exclusions),
+            "invalid_alias_count": sum(1 for r in self.inventory_entries
+                                       if r.classification == InventoryRowClassification.INVALID_ALIAS),
+            "no_applicable_engine_count": sum(1 for r in self.inventory_entries
+                                              if r.classification == InventoryRowClassification.NO_APPLICABLE_ENGINE),
         }
 
 
@@ -162,6 +169,13 @@ class UltraScanPlanner:
 
         # Index execution targets by semantics: (locator, environment, tenant, identity)
         execution_target_map: Dict[str, str] = {}
+        # IDs an alias may legitimately point to: in-scope, non-alias rows of this same inventory.
+        primary_ids = {
+            str(i.get("id") or i.get("inventory_id"))
+            for i in inventory_items
+            if not (i.get("is_out_of_scope") or i.get("out_of_scope"))
+            and not (i.get("is_alias") or i.get("alias_of"))
+        }
 
         for item in inventory_items:
             inv_id = str(item.get("id") or item.get("inventory_id") or uuid.uuid4())
@@ -196,7 +210,15 @@ class UltraScanPlanner:
                 })
                 continue
 
-            # 2. Alias resolution
+            # 2. Alias resolution (an alias without a valid primary is reported, never silently shared)
+            if is_alias and (not alias_target or alias_target not in primary_ids):
+                accounted_rows.append(AccountedInventoryRow(
+                    inventory_id=inv_id, target_locator=locator, asset_type=asset_type,
+                    classification=InventoryRowClassification.INVALID_ALIAS, alias_of_target_id=alias_target,
+                    exclusion_reason=(f"alias_of '{alias_target}' is not an in-scope execution target of this inventory"
+                                      if alias_target else "alias without alias_of"),
+                    environment=env, policy_revision=policy_revision, tenant=tenant, identity=identity))
+                continue
             if is_alias and alias_target:
                 row = AccountedInventoryRow(
                     inventory_id=inv_id,
@@ -233,6 +255,15 @@ class UltraScanPlanner:
                 planned_engines = [e for e in applicable_engines if e in active_engines]
             else:
                 planned_engines = applicable_engines
+
+            if not planned_engines:
+                accounted_rows.append(AccountedInventoryRow(
+                    inventory_id=inv_id, target_locator=locator, asset_type=asset_type,
+                    classification=InventoryRowClassification.NO_APPLICABLE_ENGINE,
+                    exclusion_reason=(f"requested engines {sorted(active_engines or [])} cover none of "
+                                      f"{applicable_engines} for asset type {asset_type}"),
+                    environment=env, policy_revision=policy_revision, tenant=tenant, identity=identity))
+                continue
 
             child_execs: List[ChildEngineExecution] = []
             for eng in planned_engines:

@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.api.deps import get_authorized_asset_ids, require_admin, require_operator, require_viewer
+from backend.app.api.deps import get_authorized_asset_ids, load_scope, require_admin, require_operator, require_viewer
 from backend.app.core.database import get_db
 from backend.app.core.target_verifier import get_target_verifier
 from backend.app.models.asset import Asset
@@ -52,6 +52,29 @@ from backend.app.schemas.common import (
 )
 
 router = APIRouter(prefix="/assets", tags=["Target & Asset Management"])
+
+
+async def annotate_verification(db: AsyncSession, assets) -> None:
+    """Attach `verification_state` / `verification_proof` from the proof table (Milestone 6)."""
+    assets = [a for a in assets if a is not None]
+    if not assets:
+        return
+    rows = (await db.execute(select(AssetOwnershipProof).where(
+        AssetOwnershipProof.asset_id.in_([a.id for a in assets]),
+        AssetOwnershipProof.status == OwnershipProofStatus.VERIFIED.value)
+        .order_by(AssetOwnershipProof.created_at))).scalars().all()
+    latest = {r.asset_id: r for r in rows}
+    for a in assets:
+        proof = latest.get(a.id)
+        if proof is not None and a.verification_status == VerificationStatus.VERIFIED.value:
+            a.verification_state = "VERIFIED"
+            a.verification_proof = {"proof_id": str(proof.id), "method": proof.method,
+                                    "verified_at": proof.verified_at.isoformat() if proof.verified_at else None,
+                                    "created_by": proof.created_by}
+        else:
+            a.verification_state = ("UNPROVEN" if a.verification_status == VerificationStatus.VERIFIED.value
+                                    else a.verification_status)
+            a.verification_proof = None
 
 
 @router.get("", response_model=PaginatedResponse[AssetResponse])
@@ -99,6 +122,7 @@ async def list_assets(
     stmt = stmt.order_by(Asset.created_at.asc()).offset((page - 1) * size).limit(size)
     result = await db.execute(stmt)
     items = result.scalars().all()
+    await annotate_verification(db, items)
 
     pages = (total + size - 1) // size if total > 0 else 1
     return {
@@ -113,7 +137,7 @@ async def list_assets(
 @router.post("", response_model=AssetResponse, status_code=status.HTTP_201_CREATED)
 async def create_asset(
     asset_in: AssetCreate,
-    current_user: User = Depends(require_operator),
+    current_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
     # Check duplicate locator
@@ -173,13 +197,14 @@ async def create_asset(
 
     await db.commit()
     await db.refresh(asset)
+    await annotate_verification(db, [asset])
     return asset
 
 
 @router.post("/bulk-import", response_model=AssetBulkImportResponse)
 async def bulk_import_assets(
     payload: AssetBulkImportRequest,
-    current_user: User = Depends(require_operator),
+    current_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
     """Bulk imports Empire targets with deduplication, module auto-assignment,
@@ -323,7 +348,7 @@ async def bulk_import_assets(
 @router.post("/bulk-preview", response_model=AssetBulkPreviewResponse)
 async def preview_bulk_assets(
     payload: AssetBulkPreviewRequest,
-    current_user: User = Depends(require_operator),
+    current_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
     """Previews incoming target assets from various formats (URL, domain, IP, CIDR, OpenAPI, CSV, JSON)
@@ -639,12 +664,14 @@ async def get_asset(
 ) -> Any:
     allowed_ids = await get_authorized_asset_ids(current_user, db)
     if allowed_ids is not None and asset_id not in allowed_ids:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied to this asset")
+        # Outside the caller's scope: indistinguishable from a missing asset.
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target asset not found")
 
     result = await db.execute(select(Asset).where(Asset.id == asset_id))
     asset = result.scalars().first()
     if not asset:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target asset not found")
+    await annotate_verification(db, [asset])
     return asset
 
 
@@ -654,6 +681,7 @@ async def get_asset_summary(
     current_user: User = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
+    (await load_scope(current_user, db)).require(asset_id, "READ")
     asset_res = await db.execute(select(Asset).where(Asset.id == asset_id))
     asset = asset_res.scalars().first()
     if not asset:
@@ -696,7 +724,7 @@ class AssetUpdateRequest(AssetUpdate):
 async def update_asset(
     asset_id: uuid.UUID,
     asset_in: AssetUpdateRequest,
-    current_user: User = Depends(require_operator),
+    current_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
     result = await db.execute(select(Asset).where(Asset.id == asset_id))
@@ -763,6 +791,7 @@ async def update_asset(
 
     await db.commit()
     await db.refresh(asset)
+    await annotate_verification(db, [asset])
     return asset
 
 
@@ -785,7 +814,7 @@ async def delete_asset(
 async def verify_asset(
     asset_id: uuid.UUID,
     verify_req: AssetVerifyRequest = AssetVerifyRequest(),
-    current_user: User = Depends(require_operator),
+    current_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
     result = await db.execute(select(Asset).where(Asset.id == asset_id))
@@ -806,14 +835,9 @@ async def verify_asset(
     challenge_data: dict = {}
 
     if verify_req.verification_type == VerificationType.ADMIN_OVERRIDE:
-        user_role = (current_user.role or "").upper()
-        if not (current_user.is_superuser or user_role in ("ADMIN", "SUPER_ADMIN")):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Administrative override requires ADMIN role permission",
-            )
+        # Owner attests ownership out-of-band (manual evidence). Recorded with actor ID.
         is_verified = True
-        challenge_data = {"override_by": current_user.username}
+        challenge_data = {"override_by_user_id": str(current_user.id), "method": "OWNER_ATTESTATION"}
     else:
         # Challenge verification (DNS TXT or HTTP well-known)
         challenge_passed, challenge_msg, challenge_data = await verifier.verify_ownership_challenge(
