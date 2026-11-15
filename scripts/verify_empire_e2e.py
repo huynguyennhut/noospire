@@ -27,11 +27,14 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 import httpx
 from backend.main import app
+from backend.app.core.config import settings
 from backend.app.core.database import AsyncSessionLocal, init_db
+from backend.app.core.security import create_access_token, get_password_hash
 from backend.app.models.asset import Asset
 from backend.app.models.finding import NormalizedFinding
 from backend.app.models.baseline import BaselineException
 from backend.app.models.schedule import DailySchedule
+from backend.app.models.user import User, UserRole
 from sqlalchemy import select
 
 
@@ -70,8 +73,37 @@ async def run_e2e_verification():
 
     # Step 1: Database Initialization & Seeding
     log_step(1, "Database Initialization & Empire Seed Verification")
+    os.environ["SENTINEL_SEED_DEMO_DATA"] = "true"
+    os.environ["SEED_DEMO_DATA"] = "true"
+    settings.SEED_DEMO_DATA = True
+
     await init_db()
+
+    # Ensure sole owner user is present in database
+    owner_id = uuid.UUID(settings.SOLE_OWNER_ACCOUNT_ID)
     async with AsyncSessionLocal() as session:
+        user_res = await session.execute(
+            select(User).where((User.id == owner_id) | (User.email == settings.SOLE_OWNER_EMAIL))
+        )
+        owner_user = user_res.scalars().first()
+        if not owner_user:
+            owner_user = User(
+                id=owner_id,
+                username="owner_admin",
+                email=settings.SOLE_OWNER_EMAIL,
+                hashed_password=get_password_hash("ValidOwnerPassword123!"),
+                role=UserRole.OWNER.value,
+                is_active=True,
+                is_superuser=True,
+            )
+            session.add(owner_user)
+            await session.commit()
+        else:
+            owner_user.role = UserRole.OWNER.value
+            owner_user.is_active = True
+            owner_user.is_superuser = True
+            await session.commit()
+
         assets_res = await session.execute(select(Asset))
         assets = assets_res.scalars().all()
         findings_res = await session.execute(select(NormalizedFinding))
@@ -101,9 +133,13 @@ async def run_e2e_verification():
     else:
         log_fail("No daily schedule found.")
 
-    # Create ASGI HTTP Client
+    # Mint Owner Bearer Token for API Authentication
+    owner_token = create_access_token(subject=settings.SOLE_OWNER_ACCOUNT_ID, role="OWNER")
+    auth_headers = {"Authorization": f"Bearer {owner_token}"}
+
+    # Create ASGI HTTP Client with Owner Authorization Header
     transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+    async with httpx.AsyncClient(transport=transport, base_url="http://test", headers=auth_headers) as client:
 
         # Step 2: Dashboard Overview & Metrics
         log_step(2, "Dashboard Overview KPIs & Analytics Verification")
@@ -275,6 +311,17 @@ async def run_e2e_verification():
                     log_fail(f"Schedule trigger failed: {trigger_resp.text}")
             else:
                 log_fail("No daily schedule items found in API.")
+        elif resp.status_code == 410:
+            # Milestone 4 architectural migration: /schedules retired in favor of /monitor-schedules
+            log_pass("Legacy /schedules endpoint correctly reports HTTP 410 (migrated to Monitor Schedules).")
+            mon_resp = await client.get("/api/v1/monitor-schedules")
+            if mon_resp.status_code == 200:
+                mon_data = mon_resp.json()
+                items = mon_data.get("items", [])
+                log_pass(f"Monitor Schedules API verified: {len(items)} active hourly schedules "
+                         f"(Timezone: {mon_data.get('display_timezone')}).")
+            else:
+                log_fail(f"Monitor schedules endpoint failed with status {mon_resp.status_code}: {mon_resp.text}")
         else:
             log_fail(f"Schedules API failed with status {resp.status_code}")
 

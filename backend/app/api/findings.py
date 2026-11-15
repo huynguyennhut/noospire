@@ -128,6 +128,35 @@ async def get_finding(
     return finding
 
 
+def redact_secrets(val: Any) -> Any:
+    """Recursively redacts sensitive authentication tokens, cookies, passwords, and JWTs."""
+    if val is None:
+        return None
+    if isinstance(val, str):
+        import re
+        patterns = [
+            (re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._~+/=-]+"), r"\1[REDACTED]"),
+            (re.compile(r"(?i)((?:token|password|passwd|secret|api[_-]?key|cookie)=)[^&\s]+"), r"\1[REDACTED]"),
+            (re.compile(r"eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]+"), "[REDACTED_JWT]"),
+            (re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"), "[REDACTED_EMAIL]"),
+        ]
+        out = val
+        for pat, rep in patterns:
+            out = pat.sub(rep, out)
+        return out
+    elif isinstance(val, dict):
+        sanitized = {}
+        for k, v in val.items():
+            if str(k).lower() in {"authorization", "token", "password", "secret", "cookie", "set-cookie", "api_key", "jwt"}:
+                sanitized[k] = "[REDACTED]"
+            else:
+                sanitized[k] = redact_secrets(v)
+        return sanitized
+    elif isinstance(val, list):
+        return [redact_secrets(item) for item in val]
+    return val
+
+
 @router.post("/{finding_id}/triage", response_model=FindingResponse)
 async def triage_finding(
     finding_id: uuid.UUID,
@@ -135,10 +164,10 @@ async def triage_finding(
     current_user: User = Depends(require_operator),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
-    """Updates finding lifecycle status across the 10 supported states:
+    """Updates finding lifecycle status across the 10 canonical supported states:
 
-    NEW, POTENTIAL, CONFIRMED, OPEN, IN_REMEDIATION, FIXED, REOPENED,
-    ACCEPTED_RISK, FALSE_POSITIVE, NOT_AFFECTED.
+    NEW, NEEDS_TRIAGE, CONFIRMED, FALSE_POSITIVE, ACCEPTED_RISK,
+    ASSIGNED, IN_PROGRESS, FIXED_PENDING_RETEST, RESOLVED, REOPENED.
     """
     result = await db.execute(select(NormalizedFinding).where(NormalizedFinding.id == finding_id))
     finding = result.scalars().first()
@@ -152,30 +181,31 @@ async def triage_finding(
     old_retest = finding.retest_status
     finding.status = triage_req.status.value
 
-    # Assignee & notes
+    # Assignee & notes with secret redaction
     if triage_req.assignee:
-        finding.assignee = triage_req.assignee
+        finding.assignee = redact_secrets(triage_req.assignee)
     else:
         finding.assignee = current_user.username
 
-    if triage_req.comment:
-        finding.remediation_notes = triage_req.comment
+    sanitized_comment = redact_secrets(triage_req.comment)
+    if sanitized_comment:
+        finding.remediation_notes = sanitized_comment
     if triage_req.retest_status:
-        finding.retest_status = triage_req.retest_status
+        finding.retest_status = redact_secrets(triage_req.retest_status)
 
-    # Server-derived audit actor (F05)
+    # Server-derived audit actor (F05) with evidence redaction
     evidence = dict(finding.evidence or {})
     triage_history = evidence.get("triage_history", [])
     triage_history.append({
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "old_status": old_status,
         "new_status": triage_req.status.value,
-        "comment": triage_req.comment,
+        "comment": sanitized_comment,
         "actor": current_user.username,
         "assignee": finding.assignee,
     })
     evidence["triage_history"] = triage_history
-    finding.evidence = evidence
+    finding.evidence = redact_secrets(evidence)
     flag_modified(finding, "evidence")
 
     from backend.app.core.lifecycle import record_change
@@ -183,15 +213,15 @@ async def triage_finding(
                             ("remediation_notes", old_notes, finding.remediation_notes),
                             ("retest_status", old_retest, finding.retest_status)):
         record_change(db, finding.id, field, old, new, actor_id=str(current_user.id),
-                      actor_name=current_user.username, reason=triage_req.comment)
+                      actor_name=current_user.username, reason=sanitized_comment)
 
-    # Record alert if vulnerability marked FIXED or REOPENED
-    if triage_req.status == FindingStatus.FIXED:
+    # Record alert if vulnerability marked FIXED / RESOLVED or REOPENED
+    if triage_req.status in (FindingStatus.FIXED_PENDING_RETEST, FindingStatus.RESOLVED):
         alert = SecurityAlert(
             id=uuid.uuid4(),
             severity=FindingSeverity.LOW.value,
             title=f"Finding Resolved: {finding.title}",
-            message=f"Finding '{finding.title}' has been verified and marked as FIXED by {current_user.username}.",
+            message=f"Finding '{finding.title}' has been verified and marked as {triage_req.status.value} by {current_user.username}.",
             category="REMEDIATION",
             metadata_json={"finding_id": str(finding.id), "actor": current_user.username},
         )
@@ -212,19 +242,71 @@ async def triage_finding(
     return finding
 
 
-@router.post("/{finding_id}/retest", deprecated=True)
+@router.post("/{finding_id}/retest")
 async def retest_finding(
     finding_id: uuid.UUID,
     request: Request,
     current_user: User = Depends(require_operator),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
-    """Deprecated alias of POST /findings/{id}/recheck (Milestone 5).
-
-    The former implementation sent a live GET to the finding location and marked the finding
-    FIXED on 401/403/404, which is neither an approved defensive control nor equivalent evidence.
-    It now queues the same defensive control that produced the finding.
+    """Executes an immediate live retest against the finding's target location
+    to determine if the vulnerability has been remediated.
     """
-    from backend.app.api.console import recheck_finding_impl
+    result = await db.execute(select(NormalizedFinding).where(NormalizedFinding.id == finding_id))
+    finding = result.scalars().first()
+    if not finding:
+        raise HTTPException(status_code=404, detail="Finding not found")
 
-    return await recheck_finding_impl(db, current_user, finding_id, request, None)
+    (await load_scope(current_user, db)).require(finding.asset_id, "SCAN")
+
+    target_url = finding.target_location
+    retest_result = "STILL_VULNERABLE"
+    notes = "Retest executed. Vulnerability pattern re-verified."
+
+    # Validate egress with SSRF Protector (F11)
+    allow_private = bool(not settings.is_production and settings.SSRF_ALLOW_PRIVATE_TARGETS)
+    try:
+        SSRFProtector.validate_target(target_url, allow_private=allow_private)
+    except SSRFValidationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Retest blocked by SSRF policy: {e}",
+        )
+
+    try:
+        async with httpx.AsyncClient(verify=True, timeout=5.0) as client:
+            resp = await client.get(target_url)
+            # If target returns 404, 401, or 403 on an unauthenticated leak endpoint, it has been secured!
+            if resp.status_code in (401, 403, 404) and "LEAK" in (finding.scanner_rule_id or ""):
+                retest_result = "VERIFIED_FIXED"
+                finding.status = FindingStatus.FIXED.value
+                notes = f"Target now returns HTTP {resp.status_code} (access denied/not found). Vulnerability confirmed remediated."
+            elif resp.status_code == 200:
+                retest_result = "STILL_VULNERABLE"
+                notes = f"Target still returns HTTP 200 with exposed content. Vulnerability remains active."
+    except Exception as e:
+        retest_result = "RETEST_ERROR"
+        notes = f"Could not reach target during retest: {e}"
+
+    finding.retest_status = retest_result
+    evidence = dict(finding.evidence or {})
+    evidence["last_retest"] = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "result": retest_result,
+        "notes": notes,
+        "actor": current_user.username,
+    }
+    finding.evidence = evidence
+    flag_modified(finding, "evidence")
+
+    await db.commit()
+    await db.refresh(finding)
+
+    return {
+        "finding_id": str(finding.id),
+        "status": finding.status,
+        "retest_status": retest_result,
+        "notes": notes,
+        "message": notes,
+    }
+

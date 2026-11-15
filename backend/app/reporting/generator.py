@@ -12,7 +12,7 @@ import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from pydantic import BaseModel, ConfigDict, Field
@@ -20,11 +20,13 @@ from sqlalchemy import JSON, String, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
-from backend.app.models.asset import Asset
-from backend.app.models.scan import Scan
 from backend.app.models.base import Base, GUID, TimestampMixin
-from backend.app.models.finding import NormalizedFinding
 from backend.app.reporting.pdf_builder import ReportLabPDFBuilder
+
+if TYPE_CHECKING:
+    from backend.app.models.asset import Asset
+    from backend.app.models.scan import Scan
+    from backend.app.models.finding import NormalizedFinding
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 DEFAULT_STORAGE_DIR = Path("storage") / "reports"
@@ -112,6 +114,15 @@ class RiskSummaryExport(BaseModel):
     risk_posture: str
 
 
+class CoverageGapExport(BaseModel):
+    target: str
+    target_locator: Optional[str] = None
+    engine: str
+    status: str  # FAILED, BLOCKED, EXCLUDED, UNAVAILABLE, TIMEOUT, AUTH_REQUIRED
+    reason: str
+    remediation_suggestion: Optional[str] = None
+
+
 class SentinelReportExport(BaseModel):
     report_id: str
     title: str
@@ -122,6 +133,8 @@ class SentinelReportExport(BaseModel):
     assessor: str = "Noosforge Sentinel Security Orchestrator"
     risk_summary: RiskSummaryExport
     findings: List[FindingExport] = Field(default_factory=list)
+    coverage_gaps: List[CoverageGapExport] = Field(default_factory=list)
+    coverage_metrics: Dict[str, Any] = Field(default_factory=dict)
     methodology: Dict[str, Any] = Field(default_factory=dict)
 
     model_config = ConfigDict(from_attributes=True)
@@ -215,6 +228,8 @@ class ReportGenerator:
         report_type: str,
         target_scope: str,
         findings: List[NormalizedFinding],
+        coverage_gaps: Optional[List[CoverageGapExport]] = None,
+        coverage_metrics: Optional[Dict[str, Any]] = None,
     ) -> SentinelReportExport:
         """Transforms DB findings into structured zero-fabrication export model."""
         now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
@@ -254,6 +269,14 @@ class ReportGenerator:
         sev_rank = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "INFO": 4}
         export_findings.sort(key=lambda x: sev_rank.get(x.severity, 99))
 
+        gaps = coverage_gaps or []
+        metrics = coverage_metrics or {
+            "total_checks_planned": max(len(findings) + len(gaps), 1),
+            "executed_findings_count": len(findings),
+            "coverage_gaps_count": len(gaps),
+            "coverage_pct": 100.0 if not gaps else round(100.0 * (len(findings) / max(len(findings) + len(gaps), 1)), 1),
+        }
+
         return SentinelReportExport(
             report_id=report_id,
             title=title,
@@ -262,6 +285,8 @@ class ReportGenerator:
             generated_at=now_str,
             risk_summary=risk_summary,
             findings=export_findings,
+            coverage_gaps=gaps,
+            coverage_metrics=metrics,
             methodology={
                 "standards": ["OWASP Top 10", "CISA KEV Catalog", "FIRST EPSS v3", "NVD CVSS v3.1"],
                 "scanner_engines": ["Nuclei v3", "OWASP ZAP 2.15", "Trivy 0.58"],
@@ -302,6 +327,8 @@ class ReportGenerator:
         batch_id: Optional[uuid.UUID] = None,
         formats: Optional[List[str]] = None,
         created_by: str = "admin@sentinel.local",
+        coverage_gaps: Optional[List[CoverageGapExport]] = None,
+        coverage_metrics: Optional[Dict[str, Any]] = None,
     ) -> Report:
         """Queries database for actual findings and produces all requested formats."""
         report_id = uuid.uuid4()
@@ -311,6 +338,9 @@ class ReportGenerator:
         target_scope = "All Assets"
 
         if db is not None:
+            from backend.app.models.asset import Asset
+            from backend.app.models.finding import NormalizedFinding
+            from backend.app.models.scan import Scan
             # Query actual findings from DB
             query = select(NormalizedFinding)
             if scan_id:
@@ -334,6 +364,22 @@ class ReportGenerator:
                 if asset:
                     target_scope = f"{asset.name} ({asset.target_locator})"
 
+            if coverage_gaps is None and scan_id:
+                from backend.app.models.scan import Scan
+                s_res = await db.execute(select(Scan).where(Scan.id == scan_id))
+                s_obj = s_res.scalars().first()
+                if s_obj and getattr(s_obj, "quality_status", None):
+                    coverage_gaps = [
+                        CoverageGapExport(
+                            target=s_obj.target_locator,
+                            target_locator=s_obj.target_locator,
+                            engine=getattr(s_obj, "engine", "orchestrator") or "orchestrator",
+                            status=str(s_obj.quality_status),
+                            reason=f"Scan quality status: {s_obj.quality_status}",
+                            remediation_suggestion="Verify target reachability and permission verification status.",
+                        )
+                    ]
+
         default_title = (
             f"Technical Security Assessment — {target_scope}"
             if report_type == "technical"
@@ -347,6 +393,8 @@ class ReportGenerator:
             report_type=report_type,
             target_scope=target_scope,
             findings=findings,
+            coverage_gaps=coverage_gaps,
+            coverage_metrics=coverage_metrics,
         )
 
         file_paths: Dict[str, str] = {}

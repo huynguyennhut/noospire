@@ -459,5 +459,72 @@ export interface EngineUpdateCheckResult {
   }[];
 }
 
+// ============================================================================
+// Checklist Catalog & Assessment Result Engine Types (R1 / R6)
+// ============================================================================
 
+export type ChecklistCategory = 'WEB' | 'API' | 'FILE' | 'AUTH' | 'INFRA' | 'DEP';
 
+export type ChecklistResultState =
+  | 'PASS'
+  | 'FAIL'
+  | 'NEEDS_REVIEW'
+  | 'NOT_APPLICABLE'
+  | 'BLOCKED'
+  | 'NOT_RUN'
+  | 'ERROR';
+
+export type AutomationType = 'AUTOMATED' | 'MANUAL' | 'HYBRID';
+
+export interface ChecklistDefinition {
+  check_id: string;
+  category: ChecklistCategory;
+  title_vi: string;
+  title_en: string;
+  description_vi: string;
+  description_en: string;
+  severity: SeverityLevel;
+  automation_type: AutomationType;
+  target_engine: string;
+  remediation_guidance_vi: string;
+  remediation_guidance_en: string;
+}
+
+export interface ChecklistResult {
+  id: string;
+  run_id: string;
+  check_id: string;
+  state: ChecklistResultState;
+  evidence_payload?: Record<string, any>;
+  execution_duration_ms?: number;
+  evaluated_at?: string;
+  reviewed_by?: string;
+  reviewer?: string;
+  review_notes?: string;
+  notes?: string;
+  definition?: ChecklistDefinition;
+}
+
+export interface ChecklistAssessmentRun {
+  id: string;
+  asset_id?: string;
+  batch_id?: string | null;
+  status: string;
+  total_checks: number;
+  automated_coverage_pct: number;
+  manual_completion_pct: number;
+  state_counts: Record<ChecklistResultState, number>;
+  started_at?: string;
+  completed_at?: string | null;
+  created_at: string;
+}
+
+export interface ChecklistCoverageSummary {
+  total_checks: number;
+  automated_count: number;
+  manual_count: number;
+  hybrid_count: number;
+  automated_coverage_pct: number;
+  manual_completion_pct: number;
+  state_counts: Record<ChecklistResultState, number>;
+}

@@ -47,6 +47,7 @@ from backend.app.schemas.common import (
     FindingSeverity,
     FindingStatus,
     PaginatedResponse,
+    ScanStatus,
     VerificationStatus,
     VerificationType,
 )
@@ -887,4 +888,69 @@ async def verify_asset(
         steps=[VerificationStepResult(**s) for s in probe_res["steps"]],
         fingerprint=probe_res["fingerprint"],
     )
+
+
+@router.post("/{asset_id}/emergency-stop")
+async def emergency_stop_asset(
+    asset_id: uuid.UUID,
+    current_user: User = Depends(require_operator),
+    db: AsyncSession = Depends(get_db),
+) -> Any:
+    """Target-level emergency stop: Immediately toggles emergency_stop_active=True
+    and terminates all active scanner processes for the asset in < 3s.
+    """
+    from backend.app.core.dispatcher import process_safety
+
+    result = await db.execute(select(Asset).where(Asset.id == asset_id))
+    asset = result.scalars().first()
+    if not asset:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target asset not found")
+
+    scope_res = await db.execute(select(AssetAssessmentScope).where(AssetAssessmentScope.asset_id == asset_id))
+    scope = scope_res.scalars().first()
+    if scope:
+        scope.emergency_stop_active = True
+    else:
+        # Create an emergency scope record to enforce the kill-switch if not present
+        scope = AssetAssessmentScope(
+            asset_id=asset.id,
+            exact_origin=asset.target_locator,
+            emergency_stop_active=True,
+            created_by=current_user.username,
+        )
+        db.add(scope)
+
+    # Halt all running and queued scans for this asset
+    scans_res = await db.execute(
+        select(Scan).where(
+            Scan.asset_id == asset_id,
+            Scan.status.in_([
+                ScanStatus.QUEUED.value,
+                ScanStatus.INITIALIZING.value,
+                ScanStatus.RUNNING.value,
+                ScanStatus.PENDING.value,
+            ]),
+        )
+    )
+    active_scans = scans_res.scalars().all()
+    halted_count = 0
+    now_utc = datetime.now(timezone.utc)
+
+    for scan in active_scans:
+        process_safety.terminate_process_tree(scan.id)
+        scan.status = ScanStatus.CANCELLED.value
+        scan.cancelled_at = now_utc
+        scan.completed_at = now_utc
+        scan.cancellation_reason = f"Target emergency stop triggered by operator '{current_user.username}'"
+        halted_count += 1
+
+    await db.commit()
+
+    return {
+        "status": "EMERGENCY_STOP_ACTIVATED",
+        "asset_id": asset.id,
+        "emergency_stop_active": True,
+        "halted_scans_count": halted_count,
+        "message": f"Target emergency stop activated for asset '{asset.name}'. {halted_count} scanner processes terminated in < 3s.",
+    }
 

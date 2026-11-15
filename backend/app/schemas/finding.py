@@ -89,7 +89,7 @@ class FindingResponse(BaseModel):
 class FindingTriageRequest(BaseModel):
     status: FindingStatus = Field(
         ...,
-        description="Target lifecycle state: NEW, POTENTIAL, CONFIRMED, OPEN, IN_REMEDIATION, FIXED, REOPENED, ACCEPTED_RISK, FALSE_POSITIVE, NOT_AFFECTED"
+        description="Target lifecycle state: NEW, NEEDS_TRIAGE, CONFIRMED, FALSE_POSITIVE, ACCEPTED_RISK, ASSIGNED, IN_PROGRESS, FIXED_PENDING_RETEST, RESOLVED, REOPENED"
     )
     comment: Optional[str] = Field(default=None, description="Triage rationale or verification notes")
     assignee: Optional[str] = Field(default=None, description="Engineer assigned to remediation")

@@ -1,103 +1,92 @@
-# Project: NOOSFORGE Security Intelligence — Enterprise Cybersecurity SaaS Dashboard
+# Project: NOOSFORGE Security Intelligence — Enterprise Cybersecurity SaaS Platform
 
 ## Architecture
 NOOSFORGE Security Intelligence is a production-grade, enterprise cybersecurity SaaS platform and command center for the Empire Education Platform (`https://empire.edu.vn/`).
 
 The architecture comprises:
-- **Backend Core**: FastAPI (Python 3.12/3.14) with asynchronous SQLAlchemy 2.0 ORM (`aiosqlite`/`asyncpg`) backed by `noospire.db`. Features SSRF protection gatekeeper, multi-tenant asset registry, 8-step target verification engine, bounded crawling, real scanner process executor, and multi-factor Sentinel Risk Score ($SRS$). 13 mounted API routers under `/api/v1` provide stable REST contracts.
-- **Scan & Evidence Engine**: Process-safe scanner runner (Nuclei CLI v3.11.1, OWASP ZAP adapter, Empire custom business module engine) with raw HTTP request/response evidence capture, SSE log streaming (`ScanLogBuffer`), deterministic finding deduplication (SHA-256 fingerprint), and explicit 5-state quality machine (`SCANNED_SUCCESSFULLY`, `PARTIAL_COVERAGE`, `AUTH_REQUIRED`, `SCANNER_FAILED`, `TARGET_UNAVAILABLE`).
-- **Frontend Command Center**: Next.js 14 App Router, TypeScript, Tailwind CSS, featuring the Black/White/Liquid Glass design system, full bilingual internationalization (Vietnamese default, English toggle), 14 operational navigation views, responsive layouts across mobile/tablet/desktop viewports, reusable UI component primitives (`components/ui/`), dedicated zero-dependency interactive SVG charting engine (`components/charts/`), live SSE scan monitoring with 5-stage stepper and telemetry HUD, and interactive tabbed forensic evidence viewer.
-- **Verification Harness**: `scripts/verify_empire_e2e.py` (10 automated capability tests), `pytest` test suite (244 tests across 14 modules in `tests/`), non-interactive Next.js ESLint (`npm run lint`), TypeScript compile check (`tsc --noEmit`), Next.js static build check (`npm run build`), and automated dual-track test suite.
+- **Checklist Catalog & Result Engine**: Versioned checklist catalog containing 39 check definitions across 6 categories (Web WEB-001..010, API API-001..011, Files & Learning Materials FILE-001..005, Auth AUTH-001..005, Public Infra INFRA-001..004, Dependencies & Containers DEP-001..005). Immutable 7-state results (`PASS`, `FAIL`, `NEEDS_REVIEW`, `NOT_APPLICABLE`, `BLOCKED`, `NOT_RUN`, `ERROR`) with strict state invariants (never convert unrun/blocked/error to PASS), bilingual Vietnamese/English metadata, and honest coverage metrics.
+- **Customer Scope & Authorization Gate**: Immutable backend gate requiring active, unexpired `AssetAssessmentScope` records before probe dispatch. Preflight validation verifying exact origin, ports, permitted checks, rate limits, request budgets, and byte budgets. SSRF protection blocking RFC 1918, loopbacks, and cloud metadata. 4-tier emergency stop (< 3s) at Platform, Batch, Target, and Worker levels.
+- **Scanner Adapter Framework & Process Isolation**: Real scanner engine integrations (Nuclei CLI v3.11.1, OWASP ZAP, Trivy, Empire custom business checks) executing with structured argument arrays (`shell=False`), process group isolation (`os.setsid`), non-root execution, resource limits (`RLIMIT_AS`, `RLIMIT_CPU`, `RLIMIT_NOFILE`), complete process-tree termination, and normalized finding schema.
+- **Custom Synthetic Test Harness & File Policy Engine**: API authorization testing (BOLA/IDOR, BFLA) using authenticated `SyntheticIdentity` test accounts (marking checks `BLOCKED` when credentials missing). File policy engine enforcing `/media` `PUBLIC_BY_DESIGN` baseline (evaluating legitimate public educational media to PASS and sensitive leaks to FAIL).
+- **Live Assessment Monitor, Triage & Remediation Lifecycle**: Multi-worker concurrency telemetry HUD (`trackcurrent`), real-time SSE event streaming (`/scans/{id}/events/stream`) with Last-Event-ID replay and fallback polling, canonical 10-state finding lifecycle (`NEW`, `NEEDS_TRIAGE`, `CONFIRMED`, `FALSE_POSITIVE`, `ACCEPTED_RISK`, `ASSIGNED`, `IN_PROGRESS`, `FIXED_PENDING_RETEST`, `RESOLVED`, `REOPENED`), secret redaction, and targeted retesting.
+- **Dual-Theme Liquid Glass UI & Reporting**: Next.js 14 App Router, TypeScript, Tailwind CSS, featuring the Black/White/Liquid Glass design system with seamless switching between Obsidian Dark Mode and Warm Invert Light Theme (`Theme: Invert (Light) / Light Theme: Warm`), bilingual VI/EN dictionary, checklist management view, interactive forensic evidence viewer, and ReportLab vector PDF, Jinja2 HTML, and JSON reports with honest coverage gap disclosure.
+- **Documentation & Verification Suite**: Complete 8-document Empire documentation package (`EMPIRE_*.md`), end-to-end verification script (`scripts/verify_empire_e2e.py`), automated pytest suite, TypeScript compilation, and ESLint validation.
 
 ## Feature Inventory
 | # | Feature | Description | Milestone | Source |
 |---|---------|-------------|-----------|--------|
-| 1 | Primary Target Registration | Register `https://empire.edu.vn/` in `noospire.db` with same-origin scope & production-safe policy | M1 | Survey (R1) |
-| 2 | 8-Step Live Target Verification Engine | Input validation, DNS resolution, TLS verification, HTTP connectivity, Redirect inspection, Web discovery, Target fingerprint, Verification result | M1 | Survey (R1) |
-| 3 | Bulk Target Ingestion & Deduplication | CSV/JSON/TXT import with URL normalization, duplicate detection, and preview | M1 | Survey (R1) |
-| 4 | Scanner Quality State Machine | Explicit quality states (`SCANNED_SUCCESSFULLY`, `PARTIAL_COVERAGE`, `AUTH_REQUIRED`, `SCANNER_FAILED`, `TARGET_UNAVAILABLE`) | M2 | Survey (R2) |
-| 5 | Real Scanner Orchestration & Process Safety | Process registration in `ProcessSafetyManager`, Nuclei CLI / ZAP / Empire engine runner, bounded BFS crawler | M2 | Survey (R2) |
-| 6 | Raw Evidence Capture & SSE Streaming | Full HTTP request/response evidence storage, audit trails, and SSE log streaming | M2 | Survey (R2) |
-| 7 | Empire Module Security Taxonomy & Finding Intel | Coverage across 7 Empire modules, SHA-256 finding deduplication, SRS risk scoring, retesting lifecycle | M2 | Survey (R3) |
-| 8 | 14 Navigation Views & Sidebar Completeness | All 14 views active and wired in `Shell.tsx` navigation sidebar including `/detection-rules` | M3 | Survey (R4) |
-| 9 | Black/White/Liquid Glass Design System | Frosted glass cards, white specular borders, backdrop-blur elevation tokens | M3 | Survey (R4) |
-| 10 | Bilingual Internationalization (VI/EN) | Vietnamese as default locale, English selectable, comprehensive dictionary across all 14 views | M3 | Survey (R4) |
-| 11 | Interactive Evidence Viewer & SSE Tracker | Tabbed evidence modal (Request/Response/Headers/cURL) and real-time SSE scan tracking | M3 | Survey (R4) |
-| 12 | Comprehensive E2E Verification & Live Assessment | Automated verification suite (10/10 tests in `scripts/verify_empire_e2e.py`) + live baseline against `https://empire.edu.vn/` | M4 | Survey (R5) |
-| 13 | UI Component Primitives Library | Standardized reusable UI primitives in `src/components/ui/` (Card, Button, Badge, Table, Modal, Tooltip, Tabs, StatCard, Input, Dropdown) | M5 | Survey (R1) |
-| 14 | Responsive Viewport Navigation Layout | Fully responsive layout in `Shell.tsx` with mobile topbar, collapsible drawer, tablet breakpoint, and desktop sticky sidebar | M5 | Survey (R1) |
-| 15 | Reusable Interactive SVG Charting Engine | Zero-dependency SVG charts in `src/components/charts/` (AreaChart, DonutChart, BarChart, GaugeChart) with tooltips, legends, and animations | M5 | Survey (R1) |
-| 16 | Non-Interactive ESLint Configuration | `.eslintrc.json` extending `next/core-web-vitals` to ensure `npm run lint` passes 100% cleanly | M5 | Survey (R2) |
-| 17 | Security Analytics Overview Dashboard | Overhaul `/dashboard` with 10 KPI summary cards, 8 interactive SVG charts, time-range filters, and live API data hydration | M6 | Survey (R1) |
-| 18 | Interactive Vulnerability Management Table | Overhaul `/findings` with multi-column sorting (Severity, Title, Target, Date), severity/module/status filters, search, and bulk triage | M6 | Survey (R1) |
-| 19 | Forensic Vulnerability Drill-Down & Live Retest | 5-tab forensic evidence viewer modal (Proof, Request, Response, Headers, cURL), 10-state triage selector, and live retest trigger | M6 | Survey (R1) |
-| 20 | Target Management & Profile Drawer | Overhaul `/assets` with sortable target table, target detail profile drawer, findings count drill-down, and single target registration | M6 | Survey (R1) |
-| 21 | 8-Step Live Target Verification Pipeline Modal | Interactive probe pipeline modal wired to `POST /api/v1/assets/{id}/verify` with real-time step results and fingerprint inspect | M6 | Survey (R1) |
-| 22 | Live Scanning Interface & Real-Time Telemetry HUD | Overhaul `/scans` and `/active-assessments` with 7 scan profiles, 5-stage pipeline stepper, real-time metrics HUD, and SSE log terminal | M6 | Survey (R1) |
-| 23 | Dual-Track E2E Test Suite & Full Verification | Comprehensive E2E verification (`TEST_INFRA.md`, `TEST_READY.md`, `pytest`, `scripts/verify_empire_e2e.py`, `npm run build`, `npm run lint`) | M7 | Survey (R2) |
-| 24 | Batch Domain Model & Migration | `ScanBatch` model (`scan_batches` table), SQLite WAL mode, foreign keys, busy timeout | M8 | Orchestrator (M8) |
-| 25 | Batch Orchestration & Resource Throttling | `POST /api/v1/scans/batch`, `psutil` CPU/RAM throttling, concurrency bounds (1-4), cooperative cancel & emergency stop | M8 | Orchestrator (M8) |
-| 26 | Live Telemetry & "trackcurrent" Feed | `GET /api/v1/scans/trackcurrent`, active worker thread matrix, lifecycle alerts in `security_alerts` | M8 | Orchestrator (M8) |
-| 27 | Brand Asset & Liquid Glass Shell Header | Official brand logo integration in `Shell.tsx` across desktop, tablet, and mobile | M9 | Orchestrator (M9) |
-| 28 | Liquid Glass Toast Notification System | `toast.tsx` (`ToastProvider`, `useToast()`) with backdrop-blur, specular highlight, auto-dismiss | M9 | Orchestrator (M9) |
-| 29 | "Scan All" Batch Dispatch UI Hero Card | In `/scans`, Hero Card & Modal for "Scan All" across all targets/engines/profiles with concurrency slider | M9 | Orchestrator (M9) |
-| 30 | Multi-Worker Thread Tracking ("trackcurrent") HUD | In `/active-assessments`, active worker matrix, focus switcher, batch progress bar, cooperative cancel | M9 | Orchestrator (M9) |
-| 31 | Dual-Track Test Suite & Full Regression Pass | Automated tests `tests/test_scan_all_batch_orchestration.py` (BAT-01..BAT-13), `pytest`, `verify_empire_e2e.py`, `npm run build`, `npm run lint` | M10 | Orchestrator (M10) |
+| 1 | Empire Pentest Checklist Catalog | 39 check definitions across 6 categories (WEB-001..010, API-001..011, FILE-001..005, AUTH-001..005, INFRA-001..004, DEP-001..005) with bilingual VI/EN metadata | M11 | R1 |
+| 2 | Immutable 7-State Result Engine | Check results stored as immutable records with strict 7 states (`PASS`, `FAIL`, `NEEDS_REVIEW`, `NOT_APPLICABLE`, `BLOCKED`, `NOT_RUN`, `ERROR`) and state invariant guards | M11 | R1 |
+| 3 | Honest Coverage & Review Formulas | Automated coverage % and manual review completion % computed without score fabrication | M11 | R1 |
+| 4 | Immutable Scope Authorization Gate | Preflight validation requiring active unexpired scope record; blocks ungranted scans by default | M11 | R2 |
+| 5 | Network & SSRF Boundaries | Rejects unauthorized targets, private IPs without approval, and loopback/cloud metadata | M11 | R2 |
+| 6 | 4-Tier Emergency Stop | Platform, Batch, Target, and Worker level emergency stop terminating scanner processes in < 3s | M11 | R2 |
+| 7 | Synthetic Identity Test Harness | BOLA/BFLA test harness using `SyntheticIdentity` credentials, marking checks `BLOCKED` when missing | M11 | R4 |
+| 8 | Public by Design File Policy Engine | `/media` policy engine evaluating educational media to `PASS` and unauthorized sensitive leaks to `FAIL` | M11 | R4 |
+| 9 | Standalone Process Safety Manager | Extracted `process_safety.py` with process groups (`os.setsid`), non-root user execution, and resource limits (`RLIMIT_AS`, `RLIMIT_CPU`) | M12 | R3 |
+| 10 | Scanner Adapter Framework & Normalization | Real adapters for OWASP ZAP, Nuclei, and Trivy with structured argument arrays (`shell=False`) and normalized finding output | M12 | R3 |
+| 11 | Canonical 10-State Finding Lifecycle | Exact 10 states (`NEW`, `NEEDS_TRIAGE`, `CONFIRMED`, `FALSE_POSITIVE`, `ACCEPTED_RISK`, `ASSIGNED`, `IN_PROGRESS`, `FIXED_PENDING_RETEST`, `RESOLVED`, `REOPENED`) with immutable audit trail | M12 | R5 |
+| 12 | Secret Redaction & Targeted Retesting | Multi-pattern secret redaction and affirmative defensive retesting pipeline | M12 | R5 |
+| 13 | Reporting Engine & Coverage Gap Disclosure | ReportLab vector PDF, Jinja2 HTML, and JSON reports with honest coverage gaps & exclusions disclosure and Warm Light theme support | M12 | R6 |
+| 14 | Dual-Theme Liquid Glass UI Tokens | CSS variables and Tailwind tokens supporting Obsidian Dark and Warm Invert Light (`Theme: Invert (Light) / Light Theme: Warm`) | M13 | R6 |
+| 15 | Theme Switcher & Bilingual Persistence | Navigation bar theme toggle in `Shell.tsx`, `ThemeProvider` with localStorage persistence, and bilingual keys | M13 | R6 |
+| 16 | Checklist Catalog & Assessment View | Dedicated frontend view `/checklist` for browsing check definitions, execution runs, and coverage statistics | M13 | R1, R6 |
+| 17 | Live Assessment Monitor & Triage Polish | Real-time telemetry HUD (`trackcurrent`), SSE stream with Last-Event-ID replay, and triage drawer integration with dual themes | M13 | R5, R6 |
+| 18 | Empire Documentation Package | Complete 8 markdown files (`EMPIRE_PENTEST_SCOPE.md`, `EMPIRE_PENTEST_CHECKLIST.md`, `EMPIRE_TOOL_COVERAGE_MATRIX.md`, `EMPIRE_ASSESSMENT_WORKFLOW.md`, `EMPIRE_TEST_ACCOUNT_SETUP.md`, `EMPIRE_REPORT_METHODOLOGY.md`, `EMPIRE_DEPLOYMENT_RUNBOOK.md`, `EMPIRE_ACCEPTANCE_REPORT.md`) | M14 | Docs |
+| 19 | Verification Script & Auth Hardening | `scripts/verify_empire_e2e.py` authenticated owner token integration and demo data seeding | M14 | Verification |
+| 20 | Programmatic Pytest Verification Suite | Comprehensive automated pytest suite testing checklist catalog, result invariants, scope gate, adapters, and file policy | M14 | Verification |
+| 21 | Frontend Typecheck & Lint Cleanliness | Clean TypeScript compilation (`tsc --noEmit`) and ESLint (`npm run lint`) with zero errors and warnings across both themes | M14 | Verification |
+| 22 | Final Dual-Track E2E & Victory Audit | 100% E2E test verification pass, live baseline scan execution on `https://empire.edu.vn/`, and Sentinel Victory Audit | M15 | Final |
 
 ## Milestones
 | # | Name | Scope | Dependencies | Status |
 |---|------|-------|-------------|--------|
-| M1 | Platform Core (AGENT 1) | Target management, primary root asset seeding (`https://empire.edu.vn/`), 8-step live verification engine, bulk import preview API | none | DONE |
-| M2 | Scanning & Intelligence (AGENT 2) | Quality state machine, process safety, bounded BFS crawler, raw evidence logging, Empire finding taxonomy & retesting | M1 | DONE |
-| M3 | UI & Product Experience (AGENT 3) | 14 views in Shell sidebar, Black/White/Liquid Glass styling, Vietnamese/English i18n, 8-step verification modal, tabbed evidence viewer, SSE live stream | M1 | DONE |
-| M4 | Integration, E2E Verification & Live Assessment | Dual-track E2E verification test suite, 10/10 automated tests passing, real baseline scan execution on `https://empire.edu.vn/` | M1, M2, M3 | DONE |
-| M5 | UI Foundation, Primitives, Responsive Shell & Chart Engine | Create `components/ui/` primitives, zero-dependency interactive SVG chart library (`components/charts/`), `.eslintrc.json`, and responsive `Shell.tsx` | M4 | DONE |
-| M6 | SaaS Command Center Views Overhaul | Overhaul `/dashboard`, `/findings`, `/remediation`, `/assets`, `/scans`, and `/active-assessments` with real interactive components, sorting, filtering, modals, and SSE telemetry. Achieved unanimous approval across 2 Reviewers, 2 Challengers, and Forensic Auditor (CLEAN). | M5 | DONE |
-| M7 | Dual-Track E2E Test Suite, Full Regression & Quality Verification | Publish `TEST_INFRA.md` & `TEST_READY.md`, execute `npm run build`, `npm run lint`, `pytest tests/`, and `python scripts/verify_empire_e2e.py` (182 pytest items passing, 10/10 E2E checks passing, 0 lint/typecheck errors, 18/18 static pages). | M6 | DONE |
-| M8 | Batch Scan & Resource Optimization | `ScanBatch` model, WAL mode, batch scan API, `psutil` CPU/RAM throttling, worker tracking telemetry | M7 | DONE |
-| M9 | Liquid Glass UI, Brand Logo & HUD | Brand logo in `Shell.tsx`, toast notification system, "Scan All" Hero Card, worker matrix ("trackcurrent") HUD | M8 | DONE |
-| M10 | Dual-Track Acceptance & Final Sign-Off | Backend pytest (244/244), live E2E (10/10), Next.js build (18/18), ESLint (0 errors/warnings) | M8, M9 | DONE |
+| M11 | Checklist Catalog, Scope Gate & Synthetic Test Harness (Agent B) | Models, schemas, catalog seeder (39 checks, 6 categories), 7-state result engine, scope authorization gate, 4-tier emergency stop, synthetic BOLA/BFLA harness, /media file policy engine, `/api/v1/checklist` and `/api/v1/scope` routes | none | DONE |
+| M12 | Scanner Adapters, Process Safety, 10-State Lifecycle & Reporting (Agent B) | `process_safety.py` extraction, process group & resource limits, ZAP/Nuclei/Trivy adapter safety, 10-state finding lifecycle alignment, secret redaction, ReportLab PDF / HTML / JSON with coverage gap disclosure & warm light styling | M11 | DONE |
+| M13 | Dual-Theme Liquid Glass UI & Checklist Experience (Agent C) | Warm Invert Light theme tokens, `ThemeProvider`, theme switcher in `Shell.tsx` and settings, `/checklist` view, triage drawer polish, dual-theme report preview, frontend node_modules setup | M11 | DONE |
+| M14 | Documentation Package & Verification Hardening | Complete 8 `EMPIRE_*.md` documents, `scripts/verify_empire_e2e.py` auth fix, comprehensive pytest suite, TypeScript and ESLint verification | M11, M12, M13 | DONE |
+| M15 | Final Dual-Track E2E & Victory Audit | Full E2E test pass (10/10 automated tests), live baseline on `https://empire.edu.vn/`, adversarial verification, and Sentinel Victory Audit | M14 | READY_FOR_VICTORY_AUDIT |
 
 ## Interface Contracts
-### UI Primitives & Charting Components (M5 ↔ M6)
-- `Card`, `CardHeader`, `CardTitle`, `CardDescription`, `CardContent`, `CardFooter`, `StatCard` (`src/components/ui/`)
-- `Button` (`src/components/ui/button.tsx`) supporting variants (`primary`, `secondary`, `destructive`, `outline`, `ghost`, `glass`) and sizes (`sm`, `md`, `lg`, `icon`).
-- `Badge` (`src/components/ui/badge.tsx`) supporting severity colors (`critical`, `high`, `medium`, `low`, `info`, `status`, `neutral`).
-- `Table`, `TableHeader`, `TableBody`, `TableRow`, `TableHead`, `TableCell` (`src/components/ui/table.tsx`).
-- `Modal` / `Dialog` (`src/components/ui/modal.tsx`) with backdrop blur, keyboard escape, and body scroll lock.
-- `InteractiveAreaChart`, `InteractiveBarChart`, `InteractiveDonutChart`, `InteractiveGaugeChart` (`src/components/charts/`) accepting structured datasets with tooltip callbacks and dimension props.
+### Checklist Engine ↔ Frontend (M11 ↔ M13)
+- `GET /api/v1/checklist/definitions`: Query check catalog, optional category filter. Returns `List[ChecklistDefinitionRead]`.
+- `GET /api/v1/checklist/runs`: List assessment runs with coverage statistics (`total_checks`, `automated_coverage_pct`, `manual_completion_pct`, counts per state).
+- `POST /api/v1/checklist/runs`: Initiate checklist evaluation for an asset. Payload `{ "asset_id": UUID, "mode": "AUTOMATED" | "FULL" }`.
+- `GET /api/v1/checklist/runs/{id}/results`: Query 7-state results with forensic evidence.
 
-### Target Management ↔ Frontend (M6 ↔ Backend)
-- `POST /api/v1/assets`: Ingest target, returns `AssetRead`.
-- `POST /api/v1/assets/bulk-preview`: Previews incoming targets, detects duplicates, returns `{ "total": int, "new": [...], "duplicate": [...] }`.
-- `POST /api/v1/assets/{id}/verify`: Executes the 8-step live probe pipeline, returns `{ "status": "VERIFIED" | "FAILED", "steps": [ { "step": int, "name": str, "status": "PASS" | "FAIL", "detail": str, "metadata": dict } ], "fingerprint": dict }`.
+### Scope Authorization Gate ↔ Scanners (M11 ↔ M12)
+- `ScopeValidator.validate_preflight(asset_id: UUID, requested_checks: list) -> ScopeValidationResult`:
+  Raises `ScopeEnforcementError` if scope is missing, expired, emergency stop active, or origin mismatch.
+- `ScopeValidator.check_rate_and_budget(asset_id: UUID, request_count: int, bytes_count: int) -> bool`.
+- `POST /api/v1/assets/{id}/emergency-stop`: Immediately toggles `emergency_stop_active=True` and invokes `terminate_process_tree` on all active scans for the asset.
 
-### Scanner Engine & Live Telemetry ↔ Frontend (M6 ↔ Backend)
-- `POST /api/v1/scans`: Creates scan in `QUEUED` state with profile payload `{ "asset_id": int, "profile": str, "engine_preferences": list, "description": str }`.
-- `GET /api/v1/scans/{id}/logs/stream`: SSE `text/event-stream` yielding JSON log chunks `{ "id": int, "scan_id": int, "timestamp": str, "level": str, "message": str, "source": str }`.
-- `POST /api/v1/scans/{id}/cancel`: Cooperatively aborts scan execution.
+### Process Safety & Scanner Adapters (M12)
+- `backend/app/core/process_safety.py`:
+  - `ProcessSafetyManager.register_pid(scan_id: UUID, pid: int, pgid: Optional[int] = None)`
+  - `ProcessSafetyManager.terminate_process_tree(scan_id: UUID, timeout: float = 3.0) -> bool`
+  - `ProcessSafetyManager.get_safe_subprocess_kwargs() -> dict`: sets `preexec_fn` for `os.setsid` and `resource.setrlimit`.
 
-### Vulnerability Management ↔ Frontend (M6 ↔ Backend)
-- `GET /api/v1/findings`: Query parameters for pagination and filtering (`severity`, `status`, `module`, `asset_id`, `search`).
-- `POST /api/v1/findings/{id}/triage`: Updates finding state (`status`, `triage_note`, `assignee`).
-- `POST /api/v1/findings/{id}/retest`: Dispatches immediate HTTP probe to re-verify finding remediation.
+### Finding Lifecycle ↔ Triage (M12 ↔ M13)
+- `POST /api/v1/findings/{id}/triage`:
+  Accepts `status` matching canonical 10 states: `NEW`, `NEEDS_TRIAGE`, `CONFIRMED`, `FALSE_POSITIVE`, `ACCEPTED_RISK`, `ASSIGNED`, `IN_PROGRESS`, `FIXED_PENDING_RETEST`, `RESOLVED`, `REOPENED`.
+  Logs immutable `FindingChange` audit entry.
 
-### Analytics Telemetry ↔ Frontend (M6 ↔ Backend)
-- `GET /api/v1/metrics/overview`: Returns 10 core KPIs.
-- `GET /api/v1/metrics/charts/*`: 8 dedicated endpoints providing structured telemetry for severity distribution, vulnerability trends, module risk, assessment coverage, risk trajectory, scanner performance, intelligence feeds, and remediation progress.
+### Dual-Theme Styling (M13)
+- `:root` (Dark Obsidian): `--bg-primary: #09090B`, `--bg-surface: #0C0C0E`, `--border-subtle: rgba(255, 255, 255, 0.07)`, `--text-primary: #FAFAFA`.
+- `.theme-warm` / `[data-theme='warm']` (Warm Invert Light): `--bg-primary: #FAF8F5`, `--bg-surface: #FFFFFF`, `--border-subtle: rgba(0, 0, 0, 0.08)`, `--border-strong: rgba(0, 0, 0, 0.16)`, `--text-primary: #18181B`, `--text-secondary: #52525B`, `--text-muted: #71717A`.
+- `ThemeProvider` manages active theme with `'obsidian-dark'` and `'warm-light'` keys, updating `document.documentElement` class and `data-theme` attribute.
 
 ## Code Layout
-- `backend/app/api/`: FastAPI REST routers (`assets.py`, `scans.py`, `findings.py`, `metrics.py`, `empire_modules.py`, etc.).
-- `backend/app/core/`: Configuration, database session, SSRF gatekeeper, `empire_seeder.py`, process dispatcher, `target_verifier.py`.
-- `backend/app/models/`: SQLAlchemy 2.0 ORM models (`asset.py`, `scan.py`, `finding.py`, `base.py`).
-- `backend/app/schemas/`: Pydantic V2 schemas (`asset.py`, `scan.py`, `finding.py`, `common.py`).
-- `backend/app/scanners/`: Real scanner adapters (`nuclei.py`, `zap.py`, `empire_engine.py`, `crawler.py`).
-- `frontend/src/app/`: Next.js 14 App Router views (`dashboard`, `assets`, `scans`, `active-assessments`, `findings`, `remediation`, etc.).
-- `frontend/src/components/ui/`: Reusable UI primitives (Card, Button, Badge, Table, Modal, Tooltip, Input, Tabs, StatCard).
-- `frontend/src/components/charts/`: Reusable interactive SVG chart components (AreaChart, BarChart, DonutChart, GaugeChart).
-- `frontend/src/components/`: Layout (`Shell.tsx`), cards, tables, evidence viewer, verification modal.
-- `frontend/src/lib/`: Utilities, API client (`api.ts`), `i18n.tsx` (Vietnamese default + English dictionary).
-- `frontend/src/styles/`: `globals.css` with Black/White/Liquid Glass design tokens.
-- `frontend/.eslintrc.json`: ESLint configuration extending `next/core-web-vitals`.
+- `backend/app/api/`: FastAPI REST routers (`assets.py`, `scans.py`, `findings.py`, `checklist.py`, `scope.py`, etc.).
+- `backend/app/core/`: Configuration, database session, `process_safety.py`, `ssrf.py`, `empire_seeder.py`, `dispatcher.py`.
+- `backend/app/models/`: SQLAlchemy 2.0 ORM models (`checklist.py`, `scope.py`, `synthetic_identity.py`, `baseline.py`, `finding.py`, `asset.py`, `scan.py`).
+- `backend/app/schemas/`: Pydantic V2 schemas (`checklist.py`, `scope.py`, `finding.py`, `scan.py`, `common.py`).
+- `backend/app/scanners/`: Scanner adapters (`nuclei.py`, `zap.py`, `trivy.py`, `empire_engine.py`, `synthetic_harness.py`, `file_policy.py`).
+- `backend/app/reporting/`: Multi-format reporting engine (`generator.py`, `pdf_builder.py`, `templates/html_report.jinja2`, `templates/executive_summary.jinja2`).
+- `frontend/src/app/`: Next.js 14 App Router views (`dashboard`, `assets`, `scans`, `active-assessments`, `findings`, `remediation`, `checklist`, `settings`, `reports`).
+- `frontend/src/components/`: Layout (`Shell.tsx`), theme switcher (`ThemeToggle.tsx`), checklist components, evidence viewer, verification modal.
+- `frontend/src/providers/`: Context providers (`ThemeProvider.tsx`).
+- `frontend/src/styles/`: `globals.css` with Black/White/Liquid Glass dark & warm-light tokens.
 - `scripts/`: Verification scripts (`verify_empire_e2e.py`).
-- `tests/`: Pytest automated test suites.
+- `tests/`: Automated pytest test suites (`test_checklist_catalog.py`, `test_scope_gate.py`, `test_synthetic_harness.py`, `test_scanner_adapters.py`, etc.).
+- Root Documentation: 8 `EMPIRE_*.md` files.

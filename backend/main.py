@@ -25,6 +25,7 @@ from backend.app.api.alerts import router as alerts_router
 from backend.app.api.assets import router as assets_router
 from backend.app.api.auth import router as auth_router
 from backend.app.api.baselines import router as baselines_router
+from backend.app.api.checklist import router as checklist_router
 from backend.app.api.empire_modules import router as empire_modules_router
 from backend.app.api.engines import router as engines_router
 from backend.app.api.executions import router as executions_router
@@ -147,8 +148,8 @@ def create_app() -> FastAPI:
 
     for r in (auth_router, assets_router, scans_router, findings_router, settings_router, reports_router,
               metrics_router, intel_router, rules_router, empire_modules_router, baselines_router,
-              schedules_router, alerts_router, logs_router, system_router, executions_router, engines_router,
-              operations_router, console_router):
+              checklist_router, schedules_router, alerts_router, logs_router, system_router,
+              executions_router, engines_router, operations_router, console_router):
         app.include_router(r, prefix=settings.API_V1_STR)
 
     @app.get("/healthz/live", tags=["Health"])

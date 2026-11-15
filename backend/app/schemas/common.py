@@ -94,18 +94,58 @@ class FindingSeverity(str, Enum):
 
 
 class FindingStatus(str, Enum):
+    """Canonical 10-state lifecycle for security findings (R5)."""
+
     NEW = "NEW"
-    POTENTIAL = "POTENTIAL"
+    NEEDS_TRIAGE = "NEEDS_TRIAGE"
     CONFIRMED = "CONFIRMED"
-    OPEN = "OPEN"
-    IN_REMEDIATION = "IN_REMEDIATION"
-    FIXED = "FIXED"
-    REOPENED = "REOPENED"
-    ACCEPTED_RISK = "ACCEPTED_RISK"
     FALSE_POSITIVE = "FALSE_POSITIVE"
-    NOT_AFFECTED = "NOT_AFFECTED"
+    ACCEPTED_RISK = "ACCEPTED_RISK"
+    ASSIGNED = "ASSIGNED"
+    IN_PROGRESS = "IN_PROGRESS"
+    FIXED_PENDING_RETEST = "FIXED_PENDING_RETEST"
     RESOLVED = "RESOLVED"
-    MUTED = "MUTED"
+    REOPENED = "REOPENED"
+
+    # Backward-compatibility aliases for legacy state names
+    OPEN = "NEEDS_TRIAGE"
+    POTENTIAL = "NEEDS_TRIAGE"
+    IN_REMEDIATION = "IN_PROGRESS"
+    FIXED = "FIXED_PENDING_RETEST"
+    NOT_AFFECTED = "FALSE_POSITIVE"
+    MUTED = "ACCEPTED_RISK"
+
+    @classmethod
+    def _missing_(cls, value: object):
+        if isinstance(value, str):
+            legacy = {
+                "OPEN": cls.NEEDS_TRIAGE,
+                "POTENTIAL": cls.NEEDS_TRIAGE,
+                "IN_REMEDIATION": cls.IN_PROGRESS,
+                "FIXED": cls.FIXED_PENDING_RETEST,
+                "NOT_AFFECTED": cls.FALSE_POSITIVE,
+                "MUTED": cls.ACCEPTED_RISK,
+            }
+            norm = value.upper()
+            if norm in legacy:
+                return legacy[norm]
+        return None
+
+    @classmethod
+    def canonical_states(cls) -> List[str]:
+        """Returns the list of 10 canonical finding lifecycle status values."""
+        return [
+            cls.NEW.value,
+            cls.NEEDS_TRIAGE.value,
+            cls.CONFIRMED.value,
+            cls.FALSE_POSITIVE.value,
+            cls.ACCEPTED_RISK.value,
+            cls.ASSIGNED.value,
+            cls.IN_PROGRESS.value,
+            cls.FIXED_PENDING_RETEST.value,
+            cls.RESOLVED.value,
+            cls.REOPENED.value,
+        ]
 
 
 class ExposureClassification(str, Enum):

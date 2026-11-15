@@ -228,6 +228,9 @@ class ReportLabPDFBuilder:
         else:
             self._add_strategic_recommendations(story)
 
+        # 5. Coverage Gaps & Exclusions
+        self._add_coverage_gaps_section(story)
+
         # Build Document
         os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
         doc.build(story, canvasmaker=NumberedCanvas)
@@ -506,3 +509,72 @@ class ReportLabPDFBuilder:
             story.append(Paragraph(f"<b>{title}</b>", self.styles["SubSectionHeading"]))
             story.append(Paragraph(text, self.styles["ReportBody"]))
             story.append(Spacer(1, 4))
+
+    def _add_coverage_gaps_section(self, story: List[Any]) -> None:
+        """Adds explicit Coverage Gaps & Exclusions section to disclose unassessed or excluded targets/checks."""
+        story.append(Spacer(1, 16))
+        report_type = self.data.get("report_type", "technical")
+        section_heading = "3. Coverage Gaps & Exclusions" if report_type == "technical" and not self.data.get("findings") else ("4. Coverage Gaps & Exclusions" if report_type == "executive" else "3. Coverage Gaps & Exclusions")
+        story.append(Paragraph(section_heading, self.styles["SectionHeading"]))
+        story.append(HRFlowable(width="100%", thickness=1, color=BORDER_SUBTLE, spaceAfter=8))
+
+        gaps = self.data.get("coverage_gaps", [])
+        metrics = self.data.get("coverage_metrics", {})
+        cov_pct = metrics.get("coverage_pct", 100.0)
+
+        intro_text = (
+            f"<b>Assessment Integrity Disclosure:</b> Evaluated scope coverage is recorded at <b>{cov_pct}%</b>. "
+            "To uphold rigorous audit integrity, all targets, scan engines, or test categories that could not be "
+            "executed due to authorization boundaries, rate limiting, network unavailability, or policy exclusions "
+            "are explicitly itemized below."
+        )
+        story.append(Paragraph(intro_text, self.styles["ReportBody"]))
+        story.append(Spacer(1, 8))
+
+        if not gaps:
+            no_gaps_text = "<b>Zero Unassessed Exclusions:</b> All in-scope execution targets and approved engine modules were successfully evaluated without network timeouts, permission rejections, or unhandled scope exclusions."
+            table_data = [[Paragraph(no_gaps_text, self.styles["ReportBody"])]]
+            t = Table(table_data, colWidths=[504])
+            t.setStyle(
+                TableStyle([
+                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F0FDF4")),
+                    ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#86EFAC")),
+                    ("PADDING", (0, 0), (-1, -1), 8),
+                ])
+            )
+            story.append(t)
+            story.append(Spacer(1, 12))
+        else:
+            table_data = [
+                [
+                    Paragraph("<font color='white'><b>Target Locator</b></font>", self.styles["ReportBody"]),
+                    Paragraph("<font color='white'><b>Engine</b></font>", self.styles["ReportBody"]),
+                    Paragraph("<font color='white'><b>Status</b></font>", self.styles["ReportBody"]),
+                    Paragraph("<font color='white'><b>Exclusion Rationale / Details</b></font>", self.styles["ReportBody"]),
+                ]
+            ]
+            for g in gaps:
+                target_str = str(g.get("target_locator") or g.get("target") or "Unknown")
+                engine_str = str(g.get("engine") or "All")
+                status_str = str(g.get("status") or "EXCLUDED")
+                reason_str = str(g.get("reason") or "Scope boundary exclusion")
+
+                table_data.append([
+                    Paragraph(f"<code>{target_str[:40]}</code>", self.styles["ReportBody"]),
+                    Paragraph(engine_str, self.styles["ReportBody"]),
+                    Paragraph(f"<b>{status_str}</b>", self.styles["ReportBody"]),
+                    Paragraph(reason_str[:120], self.styles["ReportBody"]),
+                ])
+
+            t = Table(table_data, colWidths=[150, 70, 84, 200])
+            t.setStyle(
+                TableStyle([
+                    ("BACKGROUND", (0, 0), (-1, 0), NAVY_PRIMARY),
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
+                    ("PADDING", (0, 0), (-1, -1), 6),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ])
+            )
+            story.append(t)
+            story.append(Spacer(1, 12))
+

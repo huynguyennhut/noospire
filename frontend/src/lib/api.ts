@@ -23,6 +23,13 @@ import {
   SystemResourcesInfo,
   ThreatIntelItem,
   TrackCurrentResponse,
+  ChecklistCategory,
+  ChecklistResultState,
+  AutomationType,
+  ChecklistDefinition,
+  ChecklistResult,
+  ChecklistAssessmentRun,
+  ChecklistCoverageSummary,
 } from './types';
 
 
@@ -1029,6 +1036,48 @@ class ApiClient {
 
   public async resetBaseline(): Promise<{ message: string; assets: number; findings: number; scans: number; schedules?: number }> {
     return this.fetchJson('/system/reset', { method: 'POST' });
+  }
+
+  // =========================================================================
+  // Checklist Assessment Engine (R1 / R6)
+  // =========================================================================
+
+  public async getChecklistDefinitions(category?: string): Promise<ChecklistDefinition[]> {
+    const query = category ? `?category=${encodeURIComponent(category)}` : '';
+    return this.fetchJson<ChecklistDefinition[]>(`/checklist/definitions${query}`);
+  }
+
+  public async getChecklistRuns(assetId?: string): Promise<ChecklistAssessmentRun[]> {
+    const query = assetId ? `?asset_id=${encodeURIComponent(assetId)}` : '';
+    return this.fetchJson<ChecklistAssessmentRun[]>(`/checklist/runs${query}`);
+  }
+
+  public async getChecklistRun(id: string): Promise<ChecklistAssessmentRun> {
+    return this.fetchJson<ChecklistAssessmentRun>(`/checklist/runs/${id}`);
+  }
+
+  public async getChecklistRunResults(id: string): Promise<ChecklistResult[]> {
+    return this.fetchJson<ChecklistResult[]>(`/checklist/runs/${id}/results`);
+  }
+
+  public async createChecklistRun(payload: { asset_id: string; profile?: string; mode?: string }): Promise<ChecklistAssessmentRun> {
+    return this.fetchJson<ChecklistAssessmentRun>('/checklist/runs', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  public async reviewChecklistResult(
+    runId: string,
+    checkId: string,
+    payload: { state?: ChecklistResultState; status?: ChecklistResultState; review_notes?: string; notes?: string }
+  ): Promise<ChecklistResult> {
+    const state = payload.state || payload.status || 'NEEDS_REVIEW';
+    const review_notes = payload.review_notes !== undefined ? payload.review_notes : payload.notes;
+    return this.fetchJson<ChecklistResult>(`/checklist/runs/${runId}/review/${checkId}`, {
+      method: 'POST',
+      body: JSON.stringify({ state, review_notes }),
+    });
   }
 }
 

@@ -62,8 +62,10 @@ async def init_db() -> None:
     import backend.app.models.defensive
     import backend.app.models.operations  # noqa: F401
     import backend.app.models.lifecycle  # noqa: F401
+    import backend.app.models.checklist  # noqa: F401
     import backend.app.reporting.generator
     from backend.app.core.empire_seeder import seed_empire_ecosystem
+    from backend.app.core.checklist_seeder import seed_checklist_catalog
 
     async with engine.begin() as conn:
         if settings.DATABASE_URL.startswith("sqlite"):
@@ -164,3 +166,7 @@ async def init_db() -> None:
     if settings.SEED_DEMO_DATA and not settings.is_production:
         async with AsyncSessionLocal() as session:
             await seed_empire_ecosystem(session)
+
+    # Checklist catalog definitions must be available for assessment runs
+    async with AsyncSessionLocal() as session:
+        await seed_checklist_catalog(session)

@@ -1,6 +1,6 @@
 import asyncio
 from collections import deque
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import logging
 import os
 from typing import Any, AsyncGenerator, Dict, List, Optional
@@ -156,47 +156,8 @@ class ScanLogBuffer:
 
 log_buffer = ScanLogBuffer()
 
+from backend.app.core.process_safety import ProcessSafetyManager, process_safety
 
-class ProcessSafetyManager:
-    """Tracks PID trees spawned during scan jobs and ensures recursive process tree termination."""
-
-    def __init__(self) -> None:
-        self._scan_pids: Dict[uuid.UUID, List[int]] = {}
-        self._lock: Optional[asyncio.Lock] = None
-
-    def _get_lock(self) -> asyncio.Lock:
-        try:
-            current_loop = asyncio.get_running_loop()
-        except RuntimeError:
-            current_loop = None
-
-        if self._lock is None:
-            self._lock = asyncio.Lock()
-        elif current_loop and getattr(self._lock, "_loop", None) is not None and self._lock._loop != current_loop:
-            self._lock = asyncio.Lock()
-        return self._lock
-
-    async def register_pid(self, scan_id: uuid.UUID, pid: int) -> None:
-        async with self._get_lock():
-            self._scan_pids.setdefault(scan_id, []).append(pid)
-
-    def terminate_process_tree(self, scan_id: uuid.UUID) -> None:
-        pids = self._scan_pids.pop(scan_id, [])
-        for pid in pids:
-            try:
-                parent = psutil.Process(pid)
-                children = parent.children(recursive=True)
-                for child in children:
-                    child.terminate()
-                parent.terminate()
-                _, alive = psutil.wait_procs(children + [parent], timeout=3)
-                for p in alive:
-                    p.kill()
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                pass
-
-
-process_safety = ProcessSafetyManager()
 
 
 class ITaskDispatcher:

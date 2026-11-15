@@ -23,16 +23,21 @@ import {
   AlertOctagon,
   Calendar,
   X,
+  Palette,
+  Sun,
+  Moon,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { BaselineException } from '@/lib/types';
 import { useI18n } from '@/lib/i18n';
+import { useTheme } from '@/providers/ThemeProvider';
 import { useToast } from '@/components/ui/toast';
 
 export default function SettingsPage() {
   const { t } = useI18n();
+  const { theme, setTheme, toggleTheme, isDark } = useTheme();
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState<'baselines' | 'synthetic' | 'policy' | 'ssrf' | 'maintenance'>('baselines');
+  const [activeTab, setActiveTab] = useState<'appearance' | 'baselines' | 'synthetic' | 'policy' | 'ssrf' | 'maintenance'>('appearance');
   const [baselines, setBaselines] = useState<BaselineException[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -236,6 +241,18 @@ export default function SettingsPage() {
       {/* Tabs */}
       <div className="flex flex-wrap border-b border-white/10 gap-2 text-xs">
         <button
+          onClick={() => setActiveTab('appearance')}
+          className={`px-4 py-2 font-bold border-b-2 transition flex items-center gap-2 ${
+            activeTab === 'appearance'
+              ? 'border-cyan-500 text-cyan-400'
+              : 'border-transparent text-slate-400 hover:text-white'
+          }`}
+        >
+          <Palette className="w-3.5 h-3.5" />
+          <span>{t('theme.appearance', 'Giao diện & Chủ đề / Theme & Appearance')}</span>
+        </button>
+
+        <button
           onClick={() => setActiveTab('baselines')}
           className={`px-4 py-2 font-bold border-b-2 transition flex items-center gap-2 ${
             activeTab === 'baselines'
@@ -295,6 +312,164 @@ export default function SettingsPage() {
           <span>System Maintenance & Baseline Reset</span>
         </button>
       </div>
+
+      {/* TAB: THEME & APPEARANCE (R6) */}
+      {activeTab === 'appearance' && (
+        <div className="space-y-6 text-xs">
+          {/* Overview Info Card */}
+          <div className="p-5 rounded-2xl liquid-glass-card border border-white/10 shadow-xl space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <Palette className="w-5 h-5 text-cyan-400" />
+                <h3 className="font-bold text-white text-base">
+                  {t('theme.appearance', 'Giao diện & Chủ đề / Theme & Appearance')}
+                </h3>
+              </div>
+              <span className="px-2.5 py-1 rounded-full bg-cyan-950 text-cyan-400 border border-cyan-800 text-[10px] font-mono font-bold tracking-wider uppercase">
+                {t('theme.wcagCompliance', 'WCAG 2.1 AA Compliant')}
+              </span>
+            </div>
+            <p className="text-slate-400 text-xs leading-relaxed max-w-3xl">
+              {t('theme.appearanceDesc', 'Tùy chỉnh hệ thống giao diện Liquid Glass giữa chế độ Tối Obsidian và Sáng Ấm (Warm Invert Light).')}
+            </p>
+          </div>
+
+          {/* Theme Selector Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Theme Card 1: Dark Obsidian */}
+            <div
+              onClick={() => {
+                setTheme('obsidian-dark');
+                toast({
+                  title: t('theme.dark', 'Dark Obsidian (Default)'),
+                  description: t('theme.obsidianPalette', 'Obsidian Space Black palette activated.'),
+                });
+              }}
+              className={`p-5 rounded-2xl liquid-glass-card border transition-all cursor-pointer relative flex flex-col justify-between ${
+                theme === 'obsidian-dark'
+                  ? 'border-cyan-500 shadow-xl ring-2 ring-cyan-500/20'
+                  : 'border-white/10 hover:border-white/20'
+              }`}
+            >
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <Moon className="w-4 h-4 text-cyan-400" />
+                    <span className="font-bold text-white text-sm">
+                      {t('theme.dark', 'Dark Obsidian (Default)')}
+                    </span>
+                  </div>
+                  {theme === 'obsidian-dark' && (
+                    <span className="px-2 py-0.5 rounded-md bg-cyan-950 text-cyan-400 border border-cyan-700 text-[10px] font-bold">
+                      {t('theme.activeBadge', 'ĐANG SỬ DỤNG')}
+                    </span>
+                  )}
+                </div>
+
+                <p className="text-slate-400 text-xs mb-4">
+                  {t('theme.obsidianPalette', 'Bảng màu Obsidian Space Black (#09090B), viền kính bán trong suốt và điểm nhấn cyan.')}
+                </p>
+
+                {/* Visual Swatch Preview */}
+                <div className="rounded-xl overflow-hidden border border-white/15 p-3.5 bg-[#09090B] space-y-2.5 shadow-inner">
+                  <div className="flex items-center justify-between">
+                    <div className="h-2.5 w-20 rounded bg-white/20" />
+                    <div className="h-2 w-8 rounded bg-cyan-400/80" />
+                  </div>
+                  <div className="p-3 rounded-lg bg-[#0C0C0E] border border-white/10 space-y-1.5 shadow-sm">
+                    <div className="h-2 w-28 rounded bg-white/40" />
+                    <div className="h-1.5 w-36 rounded bg-white/15" />
+                  </div>
+                  <div className="flex gap-2">
+                    <span className="px-2 py-0.5 rounded bg-white/5 border border-white/10 text-[9px] font-mono text-zinc-300">#09090B</span>
+                    <span className="px-2 py-0.5 rounded bg-white/5 border border-white/10 text-[9px] font-mono text-cyan-300">Spec Cyan</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-5 pt-3 border-t border-white/10 flex items-center justify-between">
+                <span className="text-[11px] text-slate-400 font-mono">Contrast 14.8:1</span>
+                <button
+                  type="button"
+                  className={`px-3 py-1.5 rounded-xl font-bold text-xs transition ${
+                    theme === 'obsidian-dark'
+                      ? 'bg-cyan-500 text-black shadow-md'
+                      : 'bg-white/10 text-white hover:bg-white/20'
+                  }`}
+                >
+                  {theme === 'obsidian-dark' ? '✓ ' + t('theme.activeBadge', 'ĐANG SỬ DỤNG') : t('theme.selectTheme', 'Chọn chủ đề này')}
+                </button>
+              </div>
+            </div>
+
+            {/* Theme Card 2: Warm Invert Light */}
+            <div
+              onClick={() => {
+                setTheme('warm-light');
+                toast({
+                  title: t('theme.warm', 'Warm Invert Light'),
+                  description: t('theme.warmPalette', 'Warm Linen Cream palette activated.'),
+                });
+              }}
+              className={`p-5 rounded-2xl liquid-glass-card border transition-all cursor-pointer relative flex flex-col justify-between ${
+                theme === 'warm-light'
+                  ? 'border-amber-600 shadow-xl ring-2 ring-amber-500/20'
+                  : 'border-white/10 hover:border-white/20'
+              }`}
+            >
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <Sun className="w-4 h-4 text-amber-500" />
+                    <span className="font-bold text-white text-sm">
+                      {t('theme.warm', 'Warm Invert Light')}
+                    </span>
+                  </div>
+                  {theme === 'warm-light' && (
+                    <span className="px-2 py-0.5 rounded-md bg-amber-950 text-amber-400 border border-amber-700 text-[10px] font-bold">
+                      {t('theme.activeBadge', 'ĐANG SỬ DỤNG')}
+                    </span>
+                  )}
+                </div>
+
+                <p className="text-slate-400 text-xs mb-4">
+                  {t('theme.warmPalette', 'Bảng màu Linen Cream (#FAF8F5), bề mặt trắng sứ (#FFFFFF) và viền kính ấm áp.')}
+                </p>
+
+                {/* Visual Swatch Preview */}
+                <div className="rounded-xl overflow-hidden border border-black/10 p-3.5 bg-[#FAF8F5] space-y-2.5 shadow-inner">
+                  <div className="flex items-center justify-between">
+                    <div className="h-2.5 w-20 rounded bg-black/30" />
+                    <div className="h-2 w-8 rounded bg-amber-600/80" />
+                  </div>
+                  <div className="p-3 rounded-lg bg-[#FFFFFF] border border-black/10 space-y-1.5 shadow-sm">
+                    <div className="h-2 w-28 rounded bg-black/60" />
+                    <div className="h-1.5 w-36 rounded bg-black/20" />
+                  </div>
+                  <div className="flex gap-2">
+                    <span className="px-2 py-0.5 rounded bg-black/5 border border-black/10 text-[9px] font-mono text-zinc-800">#FAF8F5</span>
+                    <span className="px-2 py-0.5 rounded bg-black/5 border border-black/10 text-[9px] font-mono text-amber-800">Warm Linen</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-5 pt-3 border-t border-white/10 flex items-center justify-between">
+                <span className="text-[11px] text-slate-400 font-mono">Contrast 13.2:1</span>
+                <button
+                  type="button"
+                  className={`px-3 py-1.5 rounded-xl font-bold text-xs transition ${
+                    theme === 'warm-light'
+                      ? 'bg-amber-600 text-white shadow-md'
+                      : 'bg-white/10 text-white hover:bg-white/20'
+                  }`}
+                >
+                  {theme === 'warm-light' ? '✓ ' + t('theme.activeBadge', 'ĐANG SỬ DỤNG') : t('theme.selectTheme', 'Chọn chủ đề này')}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* TAB 1: APPROVED PUBLIC MEDIA BASELINE */}
       {activeTab === 'baselines' && (

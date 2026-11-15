@@ -62,7 +62,7 @@ class NormalizedFinding(Base, TimestampMixin):
 
     # Lifecycle & Deduplication stats
     status: Mapped[str] = mapped_column(
-        String(32), default=FindingStatus.OPEN.value, nullable=False, index=True
+        String(32), default=FindingStatus.NEW.value, nullable=False, index=True
     )
     remediation_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     assignee: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)

@@ -480,6 +480,24 @@ async def seed_empire_ecosystem(session: AsyncSession) -> None:
         )
         session.add(daily_schedule)
 
+    from backend.app.models.operations import MonitorSchedule
+    mon_check = await session.execute(select(MonitorSchedule).limit(1))
+    if mon_check.scalars().first() is None:
+        mon_schedule = MonitorSchedule(
+            id=uuid.uuid4(),
+            name="Empire Hourly Security Assessment Pipeline",
+            selection={"kind": "all"},
+            engines=["sbom", "tls_health"],
+            profile="light",
+            interval_minutes=60,
+            max_workers=2,
+            is_active=True,
+            start_after=now,
+            next_run_at=now,
+            created_by=settings.SOLE_OWNER_ACCOUNT_ID,
+        )
+        session.add(mon_schedule)
+
     # -------------------------------------------------------------------------
     # 6. SEED INITIAL SOC ALERTS
     # -------------------------------------------------------------------------

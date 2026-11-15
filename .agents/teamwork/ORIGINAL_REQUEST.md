@@ -100,3 +100,69 @@ Rely on existing repository code, fixtures (`fixtures/`), templates (`backend/ap
 - [ ] Every feature in the verification agreement matrix has independently recorded Pass A (API/worker/contract) and Pass B (built UI/browser replay) evidence on isolated local targets.
 - [ ] Full smoke verification flow passes on clean deployment and migrated deployment.
 - [ ] Handover documentation delivered with verification ledger, tested startup/upgrade/rollback commands, and sanitized sample report.
+
+
+## 2026-11-15T04:37:48Z
+
+# Teamwork Project Prompt
+
+Requested team: Full multi-agent team (Agent A: Principal Architect / Orchestrator, Agent B: Backend / Scanner / Data Engineer, Agent C: Frontend Product / UX Engineer)
+
+NOOSFORGE Security Intelligence / Noospire enterprise self-hosted security platform: Turn the agreed Empire Education Platform pentest checklist into a versioned, auditable assessment workflow backed by real scanners (OWASP ZAP, Nuclei, Trivy), custom synthetic test harness, scope authorization gates, and bilingual reporting with dual-theme Liquid Glass support.
+
+Working directory: /home/nhut-nguyen/noospire
+Integrity mode: development
+
+## Requirements
+
+### R1. Empire Pentest Checklist Catalog & Result Engine
+Implement the versioned checklist catalog covering Web (WEB-001..010), API (API-001..011), Files & Learning Materials (FILE-001..005), Auth (AUTH-001..005), Public Infra (INFRA-001..004), and Dependencies/Containers (DEP-001..005). Enforce immutable result states: `PASS`, `FAIL`, `NEEDS_REVIEW`, `NOT_APPLICABLE`, `BLOCKED`, `NOT_RUN`, `ERROR`. Never convert unrun, blocked, or error states to PASS. Support bilingual Vietnamese (default) and English metadata.
+
+### R2. Customer Scope & Authorization Gate
+Treat scope as an immutable backend gate. Require recorded authorization records for all live assets (domains, subdomains, URLs, IPs, CIDRs, environments). Block all active/destructive scans by default. Enforce strict preflight validation, rate limits, request budgets, and an emergency stop at organization, batch, target, and worker levels.
+
+### R3. Scanner Adapter Framework & Process Isolation
+Integrate real scanner engines (OWASP ZAP for web DAST/API passive baseline, Nuclei for curated non-destructive exposure checks, Trivy for filesystem/container/dependency/secret analysis) using structured argument arrays (`shell=False`), non-root execution, strict resource/time limits, and complete process-tree cancellation. Normalize all tool outputs into the unified finding schema.
+
+### R4. Custom Synthetic Test Harness & File Policy Engine
+Implement a dedicated test harness for API authorization (BOLA/IDOR, BFLA) using customer-approved synthetic accounts and test records. Enforce the `/media` `PUBLIC_BY_DESIGN` policy state to distinguish intentional public files from unauthorized private file access without false positives.
+
+### R5. Live Assessment Monitor, Triage & Remediation Lifecycle
+Provide real-time telemetry (active check ID, worker utilization, queue depth, SSE stream) with pause/cancel controls. Support the complete finding lifecycle (`NEW`, `NEEDS_TRIAGE`, `CONFIRMED`, `FALSE_POSITIVE`, `ACCEPTED_RISK`, `ASSIGNED`, `IN_PROGRESS`, `FIXED_PENDING_RETEST`, `RESOLVED`, `REOPENED`) with sanitized evidence, secret redaction, and targeted retest capabilities.
+
+### R6. Dual Theme (Dark Obsidian & Warm Invert Light) Liquid Glass UI & Reporting
+Build responsive, high-density Liquid Glass interfaces for Admin, Analyst, Developer, and Executive roles. Support both the primary Obsidian Dark Mode and the requested Warm / Inverted Light Theme (`Theme: Invert (Light) / Light Theme: Warm`). Generate reproducible PDF, HTML, and JSON executive & technical reports with verified risk summaries, methodology, and honest coverage gap disclosures.
+
+## Verification Resources & Mechanisms
+- **Programmatic Backend Test Suite**: `pytest` covering checklist definitions, scope enforcement, result state invariants, secret redaction, risk calculation, and scanner parser fixtures.
+- **Isolated Lab Targets & Fixtures**: Dedicated local test containers and mock endpoints (Juice Shop / synthetic API fixtures) for safe scanner verification without hitting live targets.
+- **E2E Assessment Verification**: Integration runner (`scripts/verify_empire_e2e.py`) validating the full assessment cycle: target onboarding → scope check → baseline scan → evidence capture → triage → report generation.
+- **Frontend Quality Assurance**: Strict TypeScript compilation (`npm run build` / `tsc --noEmit`) and ESLint checks with zero errors and zero warnings across both Dark and Warm Light themes.
+
+## Acceptance Criteria
+
+### Checklist Catalog & Data Model
+- [ ] Versioned checklist catalog seeded with all 39 Empire check definitions across 6 categories.
+- [ ] Results stored separately as immutable check runs with strict 7-state semantics (`PASS`, `FAIL`, `NEEDS_REVIEW`, `NOT_APPLICABLE`, `BLOCKED`, `NOT_RUN`, `ERROR`).
+- [ ] Automated coverage percentage and manual review completion percentage calculated without score fabrication.
+
+### Scope & Authorization Gate
+- [ ] Scope validator rejects unauthorized targets, private IPs without explicit approval, and dangerous metadata/loopback endpoints.
+- [ ] Emergency stop terminates scanner processes and transitions jobs to `CANCELLED` within 3 seconds.
+
+### Real Tool Adapters & Safety
+- [ ] OWASP ZAP, Nuclei, and Trivy adapters execute with structured argument arrays and parse real tool output into normalized findings.
+- [ ] Zero unredacted credentials, cookies, tokens, or PII in logs, database records, UI evidence, or reports.
+
+### Custom Test Harness & File Policy
+- [ ] BOLA/BFLA test harness runs with synthetic test credentials and marks checks `BLOCKED` when accounts are missing.
+- [ ] `/media` files evaluated against `PUBLIC_BY_DESIGN` policy; public files marked `PASS`, unauthorized private files marked `FAIL`.
+
+### UI, Live Monitor & Dual Theme
+- [ ] Liquid Glass UI supports Obsidian Dark Mode and Warm/Invert Light Theme with seamless switching.
+- [ ] Live assessment monitor displays real-time check transitions, worker metrics, and functional cancel buttons.
+- [ ] Finding triage interface supports status changes, notes, developer assignment, and targeted retesting.
+
+### Reporting & Documentation
+- [ ] Executive and Technical reports exported in PDF, HTML, and JSON formats reflecting real findings and explicit coverage gaps.
+- [ ] Complete documentation package created: `EMPIRE_PENTEST_SCOPE.md`, `EMPIRE_PENTEST_CHECKLIST.md`, `EMPIRE_TOOL_COVERAGE_MATRIX.md`, `EMPIRE_ASSESSMENT_WORKFLOW.md`, `EMPIRE_TEST_ACCOUNT_SETUP.md`, `EMPIRE_REPORT_METHODOLOGY.md`, `EMPIRE_DEPLOYMENT_RUNBOOK.md`, and `EMPIRE_ACCEPTANCE_REPORT.md`.

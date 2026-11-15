@@ -31,8 +31,12 @@ import {
   WifiOff,
   CheckCheck,
   Clock,
+  Sun,
+  Moon,
+  ShieldCheck,
 } from 'lucide-react';
 import { useI18n, Locale } from '@/lib/i18n';
+import { useTheme } from '@/providers/ThemeProvider';
 import { api } from '@/lib/api';
 
 // ============================================================================
@@ -77,6 +81,7 @@ const NAVIGATION_GROUPS: NavGroup[] = [
     defaultTitle: 'Intelligence & Modules',
     items: [
       { name: 'Empire Modules', i18nKey: 'nav.modules', href: '/empire-modules', icon: Layers, badge: 'Empire' },
+      { name: 'Empire Checklist', i18nKey: 'nav.checklist', href: '/checklist', icon: ShieldCheck, badge: '39' },
       { name: 'Findings & Evidence', i18nKey: 'nav.findings', href: '/findings', icon: AlertTriangle },
       { name: 'Vulnerability Intelligence', i18nKey: 'nav.intel', href: '/threat-intel', icon: Flame },
       { name: 'Remediation Tracking', i18nKey: 'nav.remediation', href: '/remediation', icon: CheckCircle2 },
@@ -153,6 +158,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { locale, setLocale, t } = useI18n();
+  const { theme, toggleTheme, isDark } = useTheme();
 
   // Responsive & Interactive States
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -432,6 +438,20 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               )}
             </button>
           </div>
+
+          {/* Dual Theme Toggle (Mobile) */}
+          <button
+            onClick={toggleTheme}
+            className="p-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-xs font-mono transition-all cursor-pointer flex items-center justify-center"
+            title={isDark ? t('theme.toggleToWarm', 'Giao diện: Sáng (Ấm) / Light Theme: Warm') : t('theme.toggleToDark', 'Giao diện: Tối Obsidian / Dark Obsidian')}
+            aria-label="Toggle theme"
+          >
+            {isDark ? (
+              <Sun className="w-3.5 h-3.5 text-amber-400" />
+            ) : (
+              <Moon className="w-3.5 h-3.5 text-amber-600" />
+            )}
+          </button>
 
           {/* Bilingual Language Switcher */}
           <button
@@ -878,6 +898,30 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                 </div>
               , document.body)}
             </div>
+
+            {/* Dual Theme Toggle (Dark Obsidian & Warm Invert Light) */}
+            <button
+              onClick={toggleTheme}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-nf-900/90 hover:bg-white/[0.08] border border-white/10 shadow-inner text-xs font-mono backdrop-blur-md transition-all cursor-pointer"
+              title={isDark ? t('theme.toggleToWarm', 'Giao diện: Sáng (Ấm) / Light Theme: Warm') : t('theme.toggleToDark', 'Giao diện: Tối Obsidian / Dark Obsidian')}
+              aria-label="Toggle Theme"
+            >
+              {isDark ? (
+                <>
+                  <Sun className="w-3.5 h-3.5 text-amber-400" />
+                  <span className="hidden xl:inline text-[11px] font-bold text-nf-300">
+                    {t('theme.darkLabel', 'Dark Obsidian')}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <Moon className="w-3.5 h-3.5 text-amber-700" />
+                  <span className="hidden xl:inline text-[11px] font-bold text-nf-800">
+                    {t('theme.warmLabel', 'Warm Light')}
+                  </span>
+                </>
+              )}
+            </button>
 
             {/* Bilingual Segmented Locale Toggle Button */}
             <div className="flex items-center p-0.5 rounded-xl bg-nf-900/90 border border-white/10 shadow-inner text-xs font-mono backdrop-blur-md">

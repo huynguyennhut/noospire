@@ -9,7 +9,14 @@ from backend.app.models.baseline import BaselineException
 from backend.app.models.schedule import DailySchedule
 from backend.app.models.alert import SecurityAlert
 from backend.app.models.synthetic_identity import SyntheticIdentity
-from backend.app.reporting.generator import Report
+
+
+def __getattr__(name: str):
+    if name == "Report":
+        from backend.app.reporting.generator import Report
+        return Report
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     "Base",

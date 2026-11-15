@@ -156,12 +156,14 @@ class ZAPAdapter(BaseScannerAdapter):
                 report_file = os.path.join(tempfile.gettempdir(), f"zap_report_{request.scan_id}.json")
                 try:
                     cmd = [zap_binary, "-cmd", "-quickurl", request.target_locator, "-quickout", report_file]
+                    from backend.app.core.process_safety import process_safety
+                    safe_kwargs = process_safety.get_safe_subprocess_kwargs()
                     proc = await asyncio.create_subprocess_exec(
                         *cmd,
                         stdout=asyncio.subprocess.PIPE,
                         stderr=asyncio.subprocess.PIPE,
+                        **safe_kwargs,
                     )
-                    from backend.app.core.dispatcher import process_safety
                     await process_safety.register_pid(request.scan_id, proc.pid)
                     stdout_data, stderr_data = await asyncio.wait_for(
                         proc.communicate(), timeout=float(request.timeout_seconds)
