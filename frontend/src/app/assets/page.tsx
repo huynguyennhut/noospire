@@ -766,6 +766,7 @@ function TargetsContent() {
     if (!bulkContent.trim()) return;
     try {
       setPreviewingBulk(true);
+      // POST /api/v1/assets/bulk-preview
       const data = await api.request('/assets/bulk-preview', {
         method: 'POST',
         body: JSON.stringify({

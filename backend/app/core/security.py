@@ -62,6 +62,7 @@ def create_access_token(
         "iat_ms": int(now_utc.timestamp() * 1000),
         "jti": str(uuid.uuid4()),
         "role": role_upper,
+        "is_superuser": bool(is_superuser),
     }
     if claims:
         to_encode.update(claims)

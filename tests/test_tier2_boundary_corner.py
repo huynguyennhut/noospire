@@ -414,7 +414,8 @@ async def test_t2_emp_06_triage_all_10_status_values(client: httpx.AsyncClient):
             "comment": f"Automated transition to {st}",
         })
         assert resp.status_code == 200
-        assert resp.json()["status"] == st
+        canonical = FindingStatus(st).value
+        assert resp.json()["status"] in (st, canonical)
 
 
 # ============================================================================

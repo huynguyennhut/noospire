@@ -36,7 +36,7 @@ from backend.app.api.metrics import router as metrics_router
 from backend.app.api.reports import router as reports_router
 from backend.app.api.rules import router as rules_router
 from backend.app.api.scans import router as scans_router
-from backend.app.api.operations import legacy_schedules_router as schedules_router
+from backend.app.api.schedules import router as schedules_router
 from backend.app.api.operations import router as operations_router
 from backend.app.api.console import router as console_router
 from backend.app.api.settings import router as settings_router

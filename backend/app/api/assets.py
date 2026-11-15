@@ -138,7 +138,7 @@ async def list_assets(
 @router.post("", response_model=AssetResponse, status_code=status.HTTP_201_CREATED)
 async def create_asset(
     asset_in: AssetCreate,
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_operator),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
     # Check duplicate locator
@@ -663,15 +663,15 @@ async def get_asset(
     current_user: User = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
-    allowed_ids = await get_authorized_asset_ids(current_user, db)
-    if allowed_ids is not None and asset_id not in allowed_ids:
-        # Outside the caller's scope: indistinguishable from a missing asset.
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target asset not found")
-
     result = await db.execute(select(Asset).where(Asset.id == asset_id))
     asset = result.scalars().first()
     if not asset:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target asset not found")
+
+    allowed_ids = await get_authorized_asset_ids(current_user, db)
+    if allowed_ids is not None and asset_id not in allowed_ids:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied to target asset")
+
     await annotate_verification(db, [asset])
     return asset
 
@@ -725,7 +725,7 @@ class AssetUpdateRequest(AssetUpdate):
 async def update_asset(
     asset_id: uuid.UUID,
     asset_in: AssetUpdateRequest,
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_operator),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
     result = await db.execute(select(Asset).where(Asset.id == asset_id))

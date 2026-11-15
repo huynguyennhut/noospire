@@ -295,7 +295,7 @@ class UltraScanPlanner:
             accounted_rows.append(row)
             execution_target_map[inv_id] = locator
 
-        indep_count = sum(1 for r in accounted_rows if r.classification == InventoryRowClassification.EXECUTION_TARGET)
+        indep_count = sum(1 for r in accounted_rows if r.classification in (InventoryRowClassification.EXECUTION_TARGET, InventoryRowClassification.NO_APPLICABLE_ENGINE))
         alias_count = sum(1 for r in accounted_rows if r.classification == InventoryRowClassification.ALIAS)
         excl_count = sum(1 for r in accounted_rows if r.classification == InventoryRowClassification.EXCLUDED)
 

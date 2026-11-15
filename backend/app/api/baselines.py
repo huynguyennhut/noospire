@@ -56,7 +56,7 @@ async def list_baselines(
 async def create_baseline(
     payload: BaselineCreateRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_operator),
 ) -> Any:
     now = datetime.now(timezone.utc)
     approver = current_user.username if current_user and current_user.username else "operator"

@@ -72,6 +72,7 @@ class ScanQualityStatus(str, Enum):
 
 
 class ScanProfile(str, Enum):
+    PUBLIC_SURFACE_ONLY = "PUBLIC_SURFACE_ONLY"
     QUICK = "QUICK"
     DAILY_SECURITY = "DAILY_SECURITY"
     STANDARD = "STANDARD"

@@ -139,7 +139,7 @@ async def download_report(
 
     fmt = format.lower().strip()
     if fmt not in ("pdf", "html", "json"):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid report format requested")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Requested report format is not available")
 
     file_paths = report.file_paths or {}
     path_str = file_paths.get(fmt)

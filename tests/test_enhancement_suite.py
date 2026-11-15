@@ -37,7 +37,13 @@ from backend.app.core.security import create_access_token, get_password_hash
 @pytest_asyncio.fixture(autouse=True)
 async def authenticate_client(client: AsyncClient):
     async with AsyncSessionLocal() as session:
-        user = await session.scalar(select(User).where(User.username == "dangnhutnguyen0910@gmail.com"))
+        user = await session.scalar(
+            select(User).where(
+                (User.username == "dangnhutnguyen0910@gmail.com")
+                | (User.email == "dangnhutnguyen0910@gmail.com")
+                | (User.id == uuid.UUID("00000000-0000-0000-0000-000000000001"))
+            )
+        )
         if not user:
             user = User(
                 id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
@@ -50,7 +56,15 @@ async def authenticate_client(client: AsyncClient):
             )
             session.add(user)
             await session.commit()
-    token = create_access_token("dangnhutnguyen0910@gmail.com", role="SUPER_ADMIN")
+        else:
+            user.username = "dangnhutnguyen0910@gmail.com"
+            user.email = "dangnhutnguyen0910@gmail.com"
+            user.hashed_password = get_password_hash("REDACTED-ROTATE-ME")
+            user.role = "SUPER_ADMIN"
+            user.is_superuser = True
+            user.is_active = True
+            await session.commit()
+    token = create_access_token("dangnhutnguyen0910@gmail.com", role="SUPER_ADMIN", is_superuser=True)
     client.headers["Authorization"] = f"Bearer {token}"
 
 

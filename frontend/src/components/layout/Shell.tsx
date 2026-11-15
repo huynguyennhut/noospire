@@ -396,9 +396,9 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       <header className="md:hidden sticky top-0 z-40 flex items-center justify-between px-4 h-14 bg-nf-950/85 backdrop-blur-2xl border-b border-white/[0.08] shadow-sm">
         {/* Brand Mark */}
         <Link href="/dashboard" className="flex items-center gap-2.5 group/brand">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-b from-white/[0.09] via-white/[0.04] to-white/[0.01] border border-white/15 p-1 flex items-center justify-center shadow-[inset_0_1px_2px_rgba(255,255,255,0.2),0_4px_12px_rgba(0,0,0,0.5)] backdrop-blur-xl overflow-hidden transition-all duration-300 group-hover/brand:border-white/30">
+          <div className="w-8 h-8 rounded-xl backdrop-blur-md bg-white/5 border border-white/10 p-1 flex items-center justify-center shadow-[inset_0_1px_2px_rgba(255,255,255,0.2),0_4px_12px_rgba(0,0,0,0.5)] overflow-hidden transition-all duration-300 group-hover/brand:border-white/30">
             <Image
-              src="/brand/logo-white-emblem.png"
+              src="/brand/logo.jpg"
               alt="NOOSFORGE Logo"
               width={26}
               height={26}
@@ -408,7 +408,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           </div>
           <div>
             <div className="font-extrabold tracking-tight text-white text-xs leading-none">NOOSFORGE</div>
-            <div className="text-[9px] font-bold text-nf-400 tracking-wider uppercase mt-0.5">SECURITY SOC</div>
+            <div className="text-[9px] font-bold text-nf-400 tracking-wider uppercase mt-0.5">EMPIRE SOC</div>
           </div>
         </Link>
 
@@ -534,9 +534,9 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           {/* Drawer Header */}
           <div className="p-4 border-b border-white/[0.08] flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-b from-white/[0.09] via-white/[0.04] to-white/[0.01] border border-white/15 p-1.5 flex items-center justify-center shadow-[inset_0_1px_2px_rgba(255,255,255,0.2),0_4px_12px_rgba(0,0,0,0.5)] backdrop-blur-xl overflow-hidden">
+              <div className="w-9 h-9 rounded-xl backdrop-blur-md bg-white/5 border border-white/10 p-1.5 flex items-center justify-center shadow-[inset_0_1px_2px_rgba(255,255,255,0.2),0_4px_12px_rgba(0,0,0,0.5)] overflow-hidden">
                 <Image
-                  src="/brand/logo-white-emblem.png"
+                  src="/brand/logo.jpg"
                   alt="NOOSFORGE Logo"
                   width={30}
                   height={30}
@@ -641,9 +641,9 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           <div className="p-4 border-b border-white/[0.08] flex items-center justify-between">
             {!sidebarCollapsed ? (
               <div className="flex items-center gap-3 group/brand">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-b from-white/[0.09] via-white/[0.04] to-white/[0.01] border border-white/15 p-1.5 flex items-center justify-center shadow-[inset_0_1px_2px_rgba(255,255,255,0.2),0_4px_14px_rgba(0,0,0,0.6)] backdrop-blur-xl overflow-hidden transition-all duration-300 group-hover/brand:border-white/30 group-hover/brand:shadow-[inset_0_1px_2px_rgba(255,255,255,0.3),0_6px_20px_rgba(0,0,0,0.7)]">
+                <div className="w-10 h-10 rounded-xl backdrop-blur-md bg-white/5 border border-white/10 p-1.5 flex items-center justify-center shadow-[inset_0_1px_2px_rgba(255,255,255,0.2),0_4px_14px_rgba(0,0,0,0.6)] overflow-hidden transition-all duration-300 group-hover/brand:border-white/30 group-hover/brand:shadow-[inset_0_1px_2px_rgba(255,255,255,0.3),0_6px_20px_rgba(0,0,0,0.7)]">
                   <Image
-                    src="/brand/logo-white-emblem.png"
+                    src="/brand/logo.jpg"
                     alt="NOOSFORGE Logo"
                     width={32}
                     height={32}
@@ -660,9 +660,9 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               </div>
             ) : (
               <div className="w-full flex justify-center">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-b from-white/[0.09] via-white/[0.04] to-white/[0.01] border border-white/15 p-1.5 flex items-center justify-center shadow-[inset_0_1px_2px_rgba(255,255,255,0.2),0_4px_14px_rgba(0,0,0,0.6)] backdrop-blur-xl overflow-hidden transition-all hover:border-white/30" title="NOOSFORGE Security">
+                <div className="w-10 h-10 rounded-xl backdrop-blur-md bg-white/5 border border-white/10 p-1.5 flex items-center justify-center shadow-[inset_0_1px_2px_rgba(255,255,255,0.2),0_4px_14px_rgba(0,0,0,0.6)] overflow-hidden transition-all hover:border-white/30" title="NOOSFORGE Security">
                   <Image
-                    src="/brand/logo-white-emblem.png"
+                    src="/brand/logo.jpg"
                     alt="NOOSFORGE Logo"
                     width={32}
                     height={32}

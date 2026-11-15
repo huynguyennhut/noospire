@@ -140,7 +140,7 @@ async def get_severity_distribution(db: AsyncSession = Depends(get_db)) -> Any:
 # CHART 2: Vulnerability Trend (New, Fixed, Reopened)
 # -----------------------------------------------------------------------------
 @router.get("/charts/vulnerability-trend")
-async def get_vulnerability_trend(days: int = Query(default=7, ge=1, le=90), db: AsyncSession = Depends(get_db)) -> Any:
+async def get_vulnerability_trend(days: int = Query(default=7, ge=0, le=90), db: AsyncSession = Depends(get_db)) -> Any:
     findings_res = await db.execute(select(NormalizedFinding))
     findings = findings_res.scalars().all()
     today = datetime.now(timezone.utc).date()

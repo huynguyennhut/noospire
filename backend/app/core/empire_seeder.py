@@ -206,7 +206,9 @@ async def seed_empire_ecosystem(session: AsyncSession) -> None:
     # -------------------------------------------------------------------------
     # 2. SEED INITIAL HISTORICAL AUDIT SCAN & THE 6 VERIFIED VULNERABILITIES
     # -------------------------------------------------------------------------
-    findings_check = await session.execute(select(NormalizedFinding).limit(1))
+    findings_check = await session.execute(
+        select(NormalizedFinding).where(NormalizedFinding.scanner_rule_id == "VULN-01").limit(1)
+    )
     if not settings.is_production and findings_check.scalars().first() is None and "https://id.empire.edu.vn" in assets_map:
         initial_scan = Scan(
             id=uuid.uuid4(),

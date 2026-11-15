@@ -41,6 +41,7 @@ from backend.app.schemas.common import AssetType, EmpireModule, ScanProfile, Sca
 
 # Helper to get auth headers for operator / admin
 async def get_auth_headers(db, role: str = UserRole.ADMIN.value):
+    is_super = role in (UserRole.ADMIN.value, UserRole.OWNER.value)
     user = User(
         id=uuid.uuid4(),
         username=f"test_{role.lower()}_{uuid.uuid4().hex[:8]}",
@@ -48,12 +49,13 @@ async def get_auth_headers(db, role: str = UserRole.ADMIN.value):
         hashed_password="hashed_pw_test",
         role=role,
         is_active=True,
+        is_superuser=is_super,
     )
     db.add(user)
     await db.commit()
     await db.refresh(user)
 
-    token = create_access_token(subject=user.username, role=user.role)
+    token = create_access_token(subject=str(user.id), role=user.role, is_superuser=is_super)
     return {"Authorization": f"Bearer {token}"}, token, user
 
 
@@ -531,6 +533,8 @@ async def test_durable_scan_events_persistence_and_cursor_replay(client: httpx.A
     headers, token, user = await get_auth_headers(db_session, UserRole.VIEWER.value)
     asset = await create_test_asset(db_session, "https://event-replay-test.local")
 
+    from backend.app.models.user import UserAssetGrant
+    db_session.add(UserAssetGrant(id=uuid.uuid4(), user_id=user.id, asset_id=asset.id, permissions="READ,SCAN", granted_by="owner_admin"))
     scan = Scan(
         id=uuid.uuid4(),
         asset_id=asset.id,

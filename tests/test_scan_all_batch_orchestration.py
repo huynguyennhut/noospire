@@ -423,10 +423,12 @@ async def test_scan_lifecycle_alert_notifications(client: AsyncClient, db_sessio
 
 def test_frontend_logo_and_brand_contract():
     """BAT-11: Confirms official logo asset exists and Shell.tsx integrates brand presentation."""
-    # Check source official logo file from prompt
-    source_logo_path = Path(
-        "C:/Users/nguye/.gemini/antigravity-cli/brain/6fde3f07-9d36-4bda-a864-b53b67d53f2e/.user_uploaded/uploaded_media_1794171615086.jpg"
-    )
+    # Check official logo file in repository public assets
+    source_logo_path = REPO_ROOT / "frontend" / "public" / "brand" / "logo.jpg"
+    if not source_logo_path.is_file():
+        source_logo_path = Path(
+            "C:/Users/nguye/.gemini/antigravity-cli/brain/6fde3f07-9d36-4bda-a864-b53b67d53f2e/.user_uploaded/uploaded_media_1794171615086.jpg"
+        )
     assert source_logo_path.is_file(), f"Official source logo missing at {source_logo_path}"
     assert source_logo_path.stat().st_size > 10000, "Logo image file appears corrupted or empty"
 

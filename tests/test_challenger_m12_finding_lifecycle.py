@@ -14,6 +14,7 @@ Tests:
    - Non-secret preservation invariant
 """
 
+import hashlib
 import uuid
 import pytest
 from sqlalchemy import select
@@ -175,7 +176,7 @@ async def test_adversarial_triage_all_10_states_and_audit_trail(db_session: Asyn
         id=finding_id,
         asset_id=asset_id,
         scan_id=uuid.uuid4(),
-        fingerprint=f"fp-{uuid.uuid4().hex[:12]}",
+        fingerprint=hashlib.sha256(f"fp-{uuid.uuid4().hex}".encode()).hexdigest(),
         scanner_engine="nuclei",
         scanner_rule_id="SEC-TEST-001",
         title="Adversarial Test Vulnerability",

@@ -116,6 +116,11 @@ def viewer_headers() -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
+@pytest_asyncio.fixture
+async def client(unauth_client: httpx.AsyncClient) -> httpx.AsyncClient:
+    return unauth_client
+
+
 # -----------------------------------------------------------------------------
 # F01: Hardcoded Secrets Elimination & Rejection of Missing Secrets in Prod
 # -----------------------------------------------------------------------------

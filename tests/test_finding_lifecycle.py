@@ -5,6 +5,7 @@ Secret Redaction, and Honest Reporting (Milestone 12).
 
 from __future__ import annotations
 
+import hashlib
 import uuid
 from pathlib import Path
 from typing import Dict, List
@@ -135,7 +136,7 @@ class TestFindingTriageAndAuditTrail:
                 id=finding_id,
                 asset_id=asset_id,
                 scan_id=scan_id,
-                fingerprint=f"fp-{uuid.uuid4().hex[:12]}",
+                fingerprint=hashlib.sha256(f"fp-{uuid.uuid4().hex}".encode()).hexdigest(),
                 scanner_engine="nuclei",
                 scanner_rule_id="cve-2023-test",
                 title="Cross-Site Scripting in Student Portal",
@@ -214,7 +215,7 @@ class TestFindingTriageAndAuditTrail:
                 id=finding_id,
                 asset_id=asset_id,
                 scan_id=uuid.uuid4(),
-                fingerprint=f"fp-{uuid.uuid4().hex[:12]}",
+                fingerprint=hashlib.sha256(f"fp-{uuid.uuid4().hex}".encode()).hexdigest(),
                 scanner_engine="zap",
                 scanner_rule_id="auth-leak",
                 title="Leaked Authorization Headers",

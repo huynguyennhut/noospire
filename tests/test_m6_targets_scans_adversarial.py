@@ -212,7 +212,7 @@ def test_live_scanning_hud_and_terminal_contract():
 # ============================================================================
 
 @pytest.mark.asyncio
-async def test_bulk_preview_duplicate_partitioning_empirical():
+async def test_bulk_preview_duplicate_partitioning_empirical(client: AsyncClient):
     """
     Simulate importing 5 targets with 2 duplicates:
     - Target 1: Existing primary root https://empire.edu.vn (duplicate vs DB)
@@ -223,113 +223,107 @@ async def test_bulk_preview_duplicate_partitioning_empirical():
 
     Verifies preview accurately partitions 3 new valid candidates and 2 duplicates.
     """
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
-        # Input with 5 lines
-        raw_input = (
-            "https://empire.edu.vn\n"
-            "https://id-preview-test.empire.edu.vn\n"
-            "https://id-preview-test.empire.edu.vn\n"
-            "https://api-preview-test.empire.edu.vn\n"
-            "https://media-preview-test.empire.edu.vn\n"
-        )
+    # Input with 5 lines
+    raw_input = (
+        "https://empire.edu.vn\n"
+        "https://id-preview-test.empire.edu.vn\n"
+        "https://id-preview-test.empire.edu.vn\n"
+        "https://api-preview-test.empire.edu.vn\n"
+        "https://media-preview-test.empire.edu.vn\n"
+    )
 
-        res = await client.post(
-            "/api/v1/assets/bulk-preview",
-            json={
-                "import_type": "TXT",
-                "raw_content": raw_input,
-            },
-        )
-        assert res.status_code == 200, f"bulk-preview failed: {res.text}"
-        data = res.json()
+    res = await client.post(
+        "/api/v1/assets/bulk-preview",
+        json={
+            "import_type": "TXT",
+            "raw_content": raw_input,
+        },
+    )
+    assert res.status_code == 200, f"bulk-preview failed: {res.text}"
+    data = res.json()
 
-        assert data["total"] == 5, f"Expected 5 total targets, got {data['total']}"
-        new_items = data["new"]
-        dup_items = data["duplicate"]
+    assert data["total"] == 5, f"Expected 5 total targets, got {data['total']}"
+    new_items = data["new"]
+    dup_items = data["duplicate"]
 
-        assert len(new_items) == 3, f"Expected exactly 3 new valid candidates, got {len(new_items)}"
-        assert len(dup_items) == 2, f"Expected exactly 2 duplicates, got {len(dup_items)}"
+    assert len(new_items) == 3, f"Expected exactly 3 new valid candidates, got {len(new_items)}"
+    assert len(dup_items) == 2, f"Expected exactly 2 duplicates, got {len(dup_items)}"
 
-        # Check duplicate reasons
-        dup_locators = [d["target_locator"] for d in dup_items]
-        assert "https://empire.edu.vn" in dup_locators
-        assert "https://id-preview-test.empire.edu.vn" in dup_locators
+    # Check duplicate reasons
+    dup_locators = [d["target_locator"] for d in dup_items]
+    assert "https://empire.edu.vn" in dup_locators
+    assert "https://id-preview-test.empire.edu.vn" in dup_locators
 
-        # Target 1 should cite existing inventory
-        db_dup = next(d for d in dup_items if d["target_locator"] == "https://empire.edu.vn")
-        assert "already registered" in db_dup["reason"].lower()
-        assert db_dup["existing_asset_id"] is not None
+    # Target 1 should cite existing inventory
+    db_dup = next(d for d in dup_items if d["target_locator"] == "https://empire.edu.vn")
+    assert "already registered" in db_dup["reason"].lower()
+    assert db_dup["existing_asset_id"] is not None
 
-        # Target 3 should cite intra-batch duplicate
-        batch_dup = next(d for d in dup_items if d["target_locator"] == "https://id-preview-test.empire.edu.vn")
-        assert "current import batch" in batch_dup["reason"].lower()
-        assert batch_dup["existing_asset_id"] is None
+    # Target 3 should cite intra-batch duplicate
+    batch_dup = next(d for d in dup_items if d["target_locator"] == "https://id-preview-test.empire.edu.vn")
+    assert "current import batch" in batch_dup["reason"].lower()
+    assert batch_dup["existing_asset_id"] is None
 
 
 @pytest.mark.asyncio
-async def test_eight_step_verification_probe_empirical():
+async def test_eight_step_verification_probe_empirical(client: AsyncClient):
     """Verify live 8-step probe execution on the primary target."""
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
-        # Find primary asset
-        assets_res = await client.get("/api/v1/assets?search=empire.edu.vn")
-        assert assets_res.status_code == 200
-        items = assets_res.json()["items"]
-        assert len(items) > 0, "Primary empire.edu.vn asset not found"
-        asset_id = items[0]["id"]
+    # Find primary asset
+    assets_res = await client.get("/api/v1/assets?search=empire.edu.vn")
+    assert assets_res.status_code == 200
+    items = assets_res.json()["items"]
+    assert len(items) > 0, "Primary empire.edu.vn asset not found"
+    asset_id = items[0]["id"]
 
-        # Run verification probe via POST /api/v1/assets/{id}/verify
-        probe_res = await client.post(
-            f"/api/v1/assets/{asset_id}/verify",
-            json={"allow_private": True, "verification_type": "DNS_TXT"},
-        )
-        assert probe_res.status_code == 200, f"Verify probe failed: {probe_res.text}"
-        data = probe_res.json()
+    # Run verification probe via POST /api/v1/assets/{id}/verify
+    probe_res = await client.post(
+        f"/api/v1/assets/{asset_id}/verify",
+        json={"allow_private": True, "verification_type": "DNS_TXT"},
+    )
+    assert probe_res.status_code == 200, f"Verify probe failed: {probe_res.text}"
+    data = probe_res.json()
 
-        assert "status" in data
-        assert "steps" in data
-        assert len(data["steps"]) == 8, f"Expected 8 steps, got {len(data['steps'])}"
+    assert "status" in data
+    assert "steps" in data
+    assert len(data["steps"]) == 8, f"Expected 8 steps, got {len(data['steps'])}"
 
-        # All 8 steps must be present
-        step_numbers = [s["step"] for s in data["steps"]]
-        assert step_numbers == [1, 2, 3, 4, 5, 6, 7, 8]
+    # All 8 steps must be present
+    step_numbers = [s["step"] for s in data["steps"]]
+    assert step_numbers == [1, 2, 3, 4, 5, 6, 7, 8]
 
-        # Fingerprint inspection
-        assert "fingerprint" in data
-        fp = data["fingerprint"]
-        assert isinstance(fp, dict)
+    # Fingerprint inspection
+    assert "fingerprint" in data
+    fp = data["fingerprint"]
+    assert isinstance(fp, dict)
 
 
 @pytest.mark.asyncio
-async def test_scan_dispatch_with_profiles_empirical():
+async def test_scan_dispatch_with_profiles_empirical(client: AsyncClient):
     """Verify scan creation with 7 profiles and engine combinations."""
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
-        # Find asset
-        assets_res = await client.get("/api/v1/assets?search=empire.edu.vn")
-        asset_id = assets_res.json()["items"][0]["id"]
+    # Find asset
+    assets_res = await client.get("/api/v1/assets?search=empire.edu.vn")
+    asset_id = assets_res.json()["items"][0]["id"]
 
-        # Test profile dispatch (BASELINE)
-        scan_res = await client.post(
-            "/api/v1/scans",
-            json={
-                "asset_id": asset_id,
-                "engine": "all",
-                "profile": "BASELINE",
-                "allow_private_targets": True,
-                "timeout_seconds": 60,
-            },
-        )
-        assert scan_res.status_code in (200, 201), f"Scan dispatch failed: {scan_res.text}"
-        scan_data = scan_res.json()
-        assert scan_data["profile"] == "BASELINE"
-        assert scan_data["status"] in ("QUEUED", "RUNNING", "INITIALIZING")
-        scan_id = scan_data["id"]
+    # Test profile dispatch (BASELINE)
+    scan_res = await client.post(
+        "/api/v1/scans",
+        json={
+            "asset_id": asset_id,
+            "engine": "all",
+            "profile": "BASELINE",
+            "allow_private_targets": True,
+            "timeout_seconds": 60,
+        },
+    )
+    assert scan_res.status_code in (200, 201), f"Scan dispatch failed: {scan_res.text}"
+    scan_data = scan_res.json()
+    assert scan_data["profile"] == "BASELINE"
+    assert scan_data["status"] in ("QUEUED", "RUNNING", "INITIALIZING")
+    scan_id = scan_data["id"]
 
-        # Check log retrieval (paginated response items)
-        logs_res = await client.get(f"/api/v1/scans/{scan_id}/logs")
-        assert logs_res.status_code == 200
-        logs_data = logs_res.json()
-        logs = logs_data.get("items", logs_data if isinstance(logs_data, list) else [])
-        assert isinstance(logs, list)
+    # Check log retrieval (paginated response items)
+    logs_res = await client.get(f"/api/v1/scans/{scan_id}/logs")
+    assert logs_res.status_code == 200
+    logs_data = logs_res.json()
+    logs = logs_data.get("items", logs_data if isinstance(logs_data, list) else [])
+    assert isinstance(logs, list)

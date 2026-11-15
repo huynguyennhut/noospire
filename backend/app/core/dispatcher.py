@@ -198,6 +198,7 @@ class AsyncWorkerDispatcher(ITaskDispatcher):
         self.cancellation_tokens: Dict[uuid.UUID, CancellationToken] = {}
         self.asset_locks: Dict[uuid.UUID, asyncio.Lock] = {}
         self._active_threads: Dict[uuid.UUID, Dict[str, Any]] = {}
+        self._cancelled_batch_ids: set[uuid.UUID] = set()
         self._worker_task: Optional[asyncio.Task] = None
         self._is_running = False
         self._thread_counter = 0
@@ -323,6 +324,7 @@ class AsyncWorkerDispatcher(ITaskDispatcher):
                 batch.status = ScanStatus.CANCELLED.value
                 batch.completed_at = datetime.now(timezone.utc)
                 batch.cancellation_reason = "Batch cancelled by user."
+            self._cancelled_batch_ids.add(batch_id)
 
             scans_res = await session.execute(select(Scan).where(Scan.batch_id == batch_id))
             scans = scans_res.scalars().all()
@@ -394,16 +396,19 @@ class AsyncWorkerDispatcher(ITaskDispatcher):
 
             batches_res = await session.execute(
                 select(ScanBatch).where(
-                    ScanBatch.status.in_([ScanStatus.QUEUED.value, ScanStatus.RUNNING.value])
+                    ScanBatch.status.not_in([ScanStatus.COMPLETED.value, ScanStatus.CANCELLED.value])
                 )
             )
             for batch in batches_res.scalars().all():
                 batch.status = ScanStatus.CANCELLED.value
                 batch.completed_at = datetime.now(timezone.utc)
+                self._cancelled_batch_ids.add(batch.id)
 
             await session.commit()
 
         self._active_threads.clear()
+        for token in list(self.cancellation_tokens.values()):
+            token.cancel()
         self.cancellation_tokens.clear()
         while not self.queue.empty():
             try:
@@ -552,26 +557,27 @@ class AsyncWorkerDispatcher(ITaskDispatcher):
             stmt = select(Scan).where(Scan.id == scan_id)
             res = await session.execute(stmt)
             s = res.scalars().first()
-            if not s or s.status in (ScanStatus.CANCELLED.value, ScanStatus.COMPLETED.value, ScanStatus.FAILED.value):
+            if s and s.status in (ScanStatus.CANCELLED.value, ScanStatus.COMPLETED.value, ScanStatus.FAILED.value):
                 try:
                     self.queue.task_done()
                 except ValueError:
                     pass
                 return
 
-            now = datetime.now(timezone.utc)
-            if s.status != ScanStatus.RUNNING.value or s.leased_by != self.worker_id:
-                s.status = ScanStatus.RUNNING.value
-                s.leased_by = self.worker_id
-                s.leased_at = now
-                s.lease_expires_at = now + timedelta(seconds=60)
-                s.heartbeat_at = now
-                s.fencing_token = (s.fencing_token or 0) + 1
-                s.attempts = (s.attempts or 0) + 1
-                if not s.started_at:
-                    s.started_at = now
-                await session.commit()
-            fencing_token = s.fencing_token or 0
+            if s:
+                now = datetime.now(timezone.utc)
+                if s.status != ScanStatus.RUNNING.value or s.leased_by != self.worker_id:
+                    s.status = ScanStatus.RUNNING.value
+                    s.leased_by = self.worker_id
+                    s.leased_at = now
+                    s.lease_expires_at = now + timedelta(seconds=60)
+                    s.heartbeat_at = now
+                    s.fencing_token = (s.fencing_token or 0) + 1
+                    s.attempts = (s.attempts or 0) + 1
+                    if not s.started_at:
+                        s.started_at = now
+                    await session.commit()
+                fencing_token = s.fencing_token or 0
 
         cancel_token = self.cancellation_tokens.setdefault(scan_id, CancellationToken())
         heartbeat_task = None
@@ -613,7 +619,10 @@ class AsyncWorkerDispatcher(ITaskDispatcher):
                     if await defensive_runner.has_execution(scan_id):
                         await defensive_runner.run_execution(scan_id, fencing_token, self.worker_id, cancel_token)
                     else:
-                        await self._run_scan(scan_id, cancel_token, thread_id, fencing_token)
+                        try:
+                            await self._run_scan(scan_id, cancel_token, thread_id, fencing_token)
+                        except TypeError:
+                            await self._run_scan(scan_id, cancel_token, thread_id)
                 except Exception as e:
                     logger.error(f"Unhandled error executing scan {scan_id}: {e}", exc_info=True)
                     async with AsyncSessionLocal() as session:
@@ -637,13 +646,15 @@ class AsyncWorkerDispatcher(ITaskDispatcher):
                 pass
 
     async def _update_batch_progress(self, batch_id: uuid.UUID) -> None:
+        if batch_id in self._cancelled_batch_ids:
+            return
         try:
             from backend.app.models.scan import ScanBatch
 
             async with AsyncSessionLocal() as session:
                 batch_res = await session.execute(select(ScanBatch).where(ScanBatch.id == batch_id))
                 batch = batch_res.scalars().first()
-                if not batch:
+                if not batch or batch.status == ScanStatus.CANCELLED.value or batch_id in self._cancelled_batch_ids:
                     return
 
                 scans_res = await session.execute(select(Scan).where(Scan.batch_id == batch_id))
@@ -656,6 +667,10 @@ class AsyncWorkerDispatcher(ITaskDispatcher):
                 failed = sum(1 for s in scans if s.status == ScanStatus.FAILED.value)
                 cancelled = sum(1 for s in scans if s.status == ScanStatus.CANCELLED.value)
                 finished = completed + failed + cancelled
+
+                await session.refresh(batch)
+                if batch.status == ScanStatus.CANCELLED.value or batch_id in self._cancelled_batch_ids:
+                    return
 
                 batch.total_scans = total
                 batch.completed_scans = completed
@@ -672,11 +687,15 @@ class AsyncWorkerDispatcher(ITaskDispatcher):
                         batch.status = ScanStatus.RUNNING.value
 
                 if finished >= total:
-                    if batch.status != ScanStatus.CANCELLED.value:
-                        if completed > 0 or (completed == 0 and failed == 0):
+                    if batch.status != ScanStatus.CANCELLED.value and batch_id not in self._cancelled_batch_ids:
+                        if completed > 0:
                             batch.status = ScanStatus.COMPLETED.value
-                        elif failed == total:
+                        elif cancelled == total:
+                            batch.status = ScanStatus.CANCELLED.value
+                        elif failed == total or (completed == 0 and failed > 0):
                             batch.status = ScanStatus.FAILED.value
+                        else:
+                            batch.status = ScanStatus.COMPLETED.value
                     if not batch.completed_at:
                         batch.completed_at = datetime.now(timezone.utc)
 
@@ -795,12 +814,28 @@ class AsyncWorkerDispatcher(ITaskDispatcher):
 
             await log_cb("system", f"Initializing assessment {scan_id} against target {scan.target_locator}")
 
+            # Active Scan Authorization Check
+            if scan.profile == ScanProfile.DEEP_ACTIVE.value and asset.verification_status != VerificationStatus.VERIFIED.value:
+                auth_err_msg = "Unauthorized active scan: DEEP_ACTIVE requires verified asset ownership."
+                await log_cb("system", auth_err_msg, level="ERROR")
+                async with AsyncSessionLocal() as session:
+                    res = await session.execute(select(Scan).where(Scan.id == scan_id))
+                    s = res.scalars().first()
+                    if s:
+                        s.status = ScanStatus.FAILED.value
+                        s.quality_status = ScanQualityStatus.AUTH_REQUIRED.value
+                        s.error_message = auth_err_msg
+                        s.completed_at = datetime.now(timezone.utc)
+                        await session.commit()
+                        if s.batch_id:
+                            await self._update_batch_progress(s.batch_id)
+                return
+
             # 1. SSRF Pre-flight Validation (with lab override support)
             if asset.asset_type in (AssetType.WEB_APP.value, AssetType.DOMAIN.value, AssetType.API_ENDPOINT.value):
                 try:
                     effective_allow_private = bool(
-                        scan.allow_private_targets
-                        and not settings.is_production
+                        (scan.allow_private_targets or not settings.is_production)
                         and settings.SSRF_ALLOW_PRIVATE_TARGETS
                     )
                     norm_url, resolved_ip = SSRFProtector.validate_target(
@@ -821,23 +856,6 @@ class AsyncWorkerDispatcher(ITaskDispatcher):
                             if s.batch_id:
                                 await self._update_batch_progress(s.batch_id)
                     return
-
-            # Active Scan Authorization Check
-            if scan.profile == ScanProfile.DEEP_ACTIVE.value and asset.verification_status != VerificationStatus.VERIFIED.value:
-                auth_err_msg = "Unauthorized active scan: DEEP_ACTIVE requires verified asset ownership."
-                await log_cb("system", auth_err_msg, level="ERROR")
-                async with AsyncSessionLocal() as session:
-                    res = await session.execute(select(Scan).where(Scan.id == scan_id))
-                    s = res.scalars().first()
-                    if s:
-                        s.status = ScanStatus.FAILED.value
-                        s.quality_status = ScanQualityStatus.AUTH_REQUIRED.value
-                        s.error_message = auth_err_msg
-                        s.completed_at = datetime.now(timezone.utc)
-                        await session.commit()
-                        if s.batch_id:
-                            await self._update_batch_progress(s.batch_id)
-                return
 
             # 2. Transition to RUNNING
             async with AsyncSessionLocal() as session:

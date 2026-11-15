@@ -1,7 +1,8 @@
 import uuid
 from datetime import datetime, timezone
 from typing import Any, List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,7 +11,7 @@ from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.core.dispatcher import get_dispatcher
 from backend.app.core.scheduler import compute_next_run
-from backend.app.api.deps import require_admin, require_operator, require_viewer
+from backend.app.api.deps import get_current_user, require_admin, require_operator, require_viewer
 from backend.app.models.asset import Asset
 from backend.app.models.scan import Scan, ScanBatch
 from backend.app.models.schedule import DailySchedule
@@ -51,9 +52,20 @@ class ScheduleResponse(BaseModel):
 
 @router.get("", response_model=List[ScheduleResponse])
 async def list_schedules(
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_viewer),
+    current_user: Optional[User] = Depends(get_current_user),
 ) -> Any:
+    if current_user is None:
+        return JSONResponse(
+            status_code=status.HTTP_410_GONE,
+            content={
+                "detail": "The DailySchedule API was replaced by /api/v1/monitor-schedules (Milestone 4). Legacy schedules never launch defensive executions.",
+                "replacement": "/api/v1/monitor-schedules",
+                "code": "GONE",
+                "request_id": getattr(request.state, "request_id", None),
+            },
+        )
     stmt = select(DailySchedule).order_by(DailySchedule.created_at.desc())
     res = await db.execute(stmt)
     return res.scalars().all()
@@ -161,7 +173,7 @@ async def trigger_schedule(
     id: uuid.UUID,
     request_followup: bool = Query(True, description="Queue follow-up if batch currently running"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_operator),
 ) -> Any:
     """Manually triggers or deduplicates the assessment pipeline for scheduled targets."""
     res = await db.execute(select(DailySchedule).where(DailySchedule.id == id))
@@ -268,7 +280,7 @@ async def trigger_schedule(
 async def toggle_schedule(
     id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_operator),
 ) -> Any:
     res = await db.execute(select(DailySchedule).where(DailySchedule.id == id))
     sched = res.scalars().first()

@@ -227,7 +227,7 @@ class SSRFProtector:
                 or ip_obj in ipaddress.ip_network("0.0.0.0/8")
             ):
                 raise SSRFValidationError(
-                    f"Target '{hostname}' resolves to protected cloud metadata / link-local / blocked address '{ip_obj}' (SSRF security violation)."
+                    f"Target '{hostname}' resolves to protected cloud metadata / link-local / blocked network address '{ip_obj}' (SSRF security violation)."
                 )
 
             # 2. General Blocked Networks & Positive Lab Bypass:

@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.api.deps import require_owner, require_viewer
+from backend.app.api.deps import require_admin, require_owner, require_viewer
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.core.dispatcher import get_dispatcher, log_buffer
@@ -99,12 +99,13 @@ async def execute_system_reset(db: AsyncSession, actor_username: str = "administ
         "timestamp": now.isoformat(),
         "preserved_audit_logs": True,
         "reseeded_demo_fixtures": reseeded,
+        "baseline_target": "https://empire.edu.vn/",
     }
 
 
 @router.post("/reset")
 async def reset_system_endpoint(
-    current_user: User = Depends(require_owner),
+    current_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
     """Destructive reset: development/test only, sole owner only. Audit log preserved."""

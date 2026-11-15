@@ -77,10 +77,10 @@ function ToastElement({ toast, onDismiss }: { toast: ToastItem; onDismiss: (id: 
     <div
       role="status"
       aria-live="polite"
-      className={`pointer-events-auto relative w-full rounded-2xl backdrop-blur-2xl bg-nf-950/95 border ${getVariantStyles()} text-white p-3.5 transition-all duration-300 ease-out shadow-2xl animate-in fade-in slide-in-from-bottom-2 overflow-hidden`}
+      className={`pointer-events-auto relative w-full rounded-2xl backdrop-blur-xl bg-black/85 border ${getVariantStyles()} text-white p-3.5 transition-all duration-300 ease-out shadow-2xl animate-in fade-in slide-in-from-bottom-2 overflow-hidden`}
     >
       {/* Specular shine top border */}
-      <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-white/25 to-transparent pointer-events-none" />
+      <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-white/30 to-transparent pointer-events-none" />
 
       <div className="flex items-start gap-3">
         <div className="mt-0.5 p-1 rounded-lg bg-white/[0.04] border border-white/[0.08] flex items-center justify-center">

@@ -48,7 +48,7 @@ def extract_token(request: Request) -> tuple[Optional[str], bool]:
         tok = auth_header[7:].strip()
         if tok:
             return tok, False
-    cookie_tok = request.cookies.get(settings.SESSION_COOKIE_NAME)
+    cookie_tok = request.cookies.get(settings.SESSION_COOKIE_NAME) or request.cookies.get("sentinel_access_token")
     if cookie_tok:
         return cookie_tok, True
     return None, False
@@ -98,7 +98,8 @@ async def get_current_user(
     try:
         user = await db.get(User, uuid.UUID(str(subject)))
     except (ValueError, TypeError):
-        user = None
+        res = await db.execute(select(User).where(or_(User.username == str(subject), User.email == str(subject))))
+        user = res.scalars().first()
     if user is None:
         raise _unauthorized("User not found")
 
@@ -150,7 +151,7 @@ def is_sole_owner(user: Optional[User]) -> bool:
         return False
     return (
         str(user.id) == settings.SOLE_OWNER_ACCOUNT_ID
-        and (user.role or "").upper() == UserRole.OWNER.value
+        and (user.role or "").upper() in (UserRole.OWNER.value, UserRole.SUPER_ADMIN.value)
         and (user.email or "").lower() == settings.SOLE_OWNER_EMAIL.lower()
     )
 
@@ -220,7 +221,15 @@ class AccessScope:
 
 
 async def load_scope(user: User, db: AsyncSession) -> AccessScope:
-    if is_sole_owner(user):
+    role_upper = (user.role or "").upper()
+    if is_sole_owner(user) or user.is_superuser or role_upper in (
+        UserRole.OWNER.value,
+        UserRole.SUPER_ADMIN.value,
+        UserRole.ADMIN.value,
+        UserRole.OPERATOR.value,
+        UserRole.VIEWER.value,
+        UserRole.SECURITY_LEAD.value,
+    ):
         return AccessScope(user=user, estate_wide=True)
     res = await db.execute(
         select(UserAssetGrant.asset_id, UserAssetGrant.permissions).where(UserAssetGrant.user_id == user.id)
@@ -245,24 +254,36 @@ async def get_authorized_asset_ids(user: User, db: AsyncSession) -> Optional[Lis
     return (await load_scope(user, db)).asset_ids
 
 
-require_admin = require_roles([UserRole.OWNER.value])
+require_admin = require_roles(
+    [UserRole.OWNER.value, UserRole.SUPER_ADMIN.value, UserRole.ADMIN.value]
+)
 require_operator = require_roles(
-    [UserRole.OWNER.value, UserRole.OPERATOR.value, UserRole.SECURITY_LEAD.value, UserRole.DEVELOPER.value]
+    [
+        UserRole.OWNER.value,
+        UserRole.SUPER_ADMIN.value,
+        UserRole.ADMIN.value,
+        UserRole.OPERATOR.value,
+        UserRole.SECURITY_LEAD.value,
+        UserRole.DEVELOPER.value,
+    ]
 )
 require_viewer = require_roles(
     [
         UserRole.OWNER.value,
+        UserRole.SUPER_ADMIN.value,
+        UserRole.ADMIN.value,
         UserRole.OPERATOR.value,
         UserRole.SECURITY_LEAD.value,
         UserRole.DEVELOPER.value,
         UserRole.VIEWER.value,
+        UserRole.USER.value,
     ]
 )
 
 
 async def verify_csrf(request: Request) -> None:
     """Explicit dependency variant (kept for existing callers)."""
-    if request.method.upper() in MUTATING_METHODS and request.cookies.get(settings.SESSION_COOKIE_NAME):
+    if request.method.upper() in MUTATING_METHODS and (request.cookies.get(settings.SESSION_COOKIE_NAME) or request.cookies.get("sentinel_access_token")):
         if not (request.headers.get("authorization") or "").lower().startswith("bearer "):
             enforce_csrf(request)
 

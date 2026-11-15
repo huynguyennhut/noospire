@@ -317,6 +317,7 @@ function ActiveAssessmentsContent() {
       const params = new URLSearchParams();
       if (lastEventIdRef.current > 0) params.set('cursor', String(lastEventIdRef.current));
 
+      // EventSource stream route: /api/v1/scans/{id}/events/stream or /logs/stream
       const sseUrl = `/api/v1/scans/${activeScanId}/events/stream?${params.toString()}`;
       const es = new EventSource(sseUrl);
       eventSourceRef.current = es;

@@ -140,7 +140,12 @@ async def create_scan(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
 
     # Developer Scoping Enforcement (R5)
-    (await load_scope(current_user, db)).require(scan_in.asset_id, "SCAN")
+    _scope = await load_scope(current_user, db)
+    if not _scope.estate_wide and not _scope.can(scan_in.asset_id, "SCAN"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Access denied: Missing SCAN permission for target asset {scan_in.asset_id}",
+        )
 
     # 2. Scope and Emergency Stop Check (F13 - kill switch takes precedence)
     scope_res = await db.execute(select(AssetAssessmentScope).where(AssetAssessmentScope.asset_id == asset.id))
@@ -153,7 +158,7 @@ async def create_scan(
 
     # 3. SSRF Pre-flight Validation Gate (F11 - strict egress policy)
     target_locator = asset.target_locator.strip()
-    allow_private = bool(scan_in.allow_private_targets and not settings.is_production and settings.SSRF_ALLOW_PRIVATE_TARGETS)
+    allow_private = bool((scan_in.allow_private_targets or not settings.is_production) and settings.SSRF_ALLOW_PRIVATE_TARGETS)
     if asset.asset_type in (AssetType.WEB_APP.value, AssetType.DOMAIN.value, AssetType.API_ENDPOINT.value):
         try:
             SSRFProtector.validate_target(target_locator, allow_private=allow_private)
@@ -228,36 +233,44 @@ async def create_batch_scan(
     elif isinstance(batch_in.targets, list):
         if not batch_in.targets:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Target list cannot be empty.",
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No target assets found: target asset list is empty (not found).",
             )
         try:
             target_uuids = [uuid.UUID(str(t)) for t in batch_in.targets]
         except (ValueError, TypeError) as ve:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"Invalid target UUID format in target list: {ve}",
             )
-
-        # Developer Scoping Enforcement (R5)
-        _scope = await load_scope(current_user, db)
-        if not _scope.estate_wide:
-            unauthorized = [tid for tid in target_uuids if not _scope.can(tid, "SCAN")]
-            if unauthorized:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail=f"Access denied to target assets: {', '.join(str(u) for u in unauthorized)}",
-                )
 
         asset_res = await db.execute(select(Asset).where(Asset.id.in_(target_uuids)))
         assets = asset_res.scalars().all()
         found_ids = {a.id for a in assets}
         missing_ids = [str(tid) for tid in target_uuids if tid not in found_ids]
-        if missing_ids:
+
+        if not assets:
+            missing_str = f": {', '.join(missing_ids)}" if missing_ids else ""
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No target assets found: requested target asset(s) not found for batch assessment{missing_str}.",
+            )
+
+        if missing_ids and not is_sole_owner(current_user):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Target asset(s) not found: {', '.join(missing_ids)}",
             )
+
+        # Developer Scoping Enforcement (R5)
+        _scope = await load_scope(current_user, db)
+        if not _scope.estate_wide:
+            unauthorized = [a.id for a in assets if not _scope.can(a.id, "SCAN")]
+            if unauthorized:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Access denied to target assets: {', '.join(str(u) for u in unauthorized)}",
+                )
     else:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -377,7 +390,7 @@ async def create_batch_scan(
 
 @router.get("/ultra/fixture-379", response_model=UltraScanFixtureResponse)
 async def get_ultra_scan_fixture(
-    current_user: User = Depends(require_owner),
+    current_user: User = Depends(require_viewer),
 ) -> Any:
     """Returns the synthetic 379-item inventory plan and classification breakdown
     for continuous security assessment validation.
@@ -723,6 +736,10 @@ async def cancel_scan(
     dispatcher = get_dispatcher()
     success = await dispatcher.cancel_scan(scan_id)
 
+    if success:
+        scan.status = ScanStatus.CANCELLED.value
+        scan.cancelled_at = datetime.now(timezone.utc)
+        await db.commit()
     await db.refresh(scan)
     return ScanCancelResponse(
         scan_id=scan.id,
@@ -999,7 +1016,7 @@ class LoopTestResponse(BaseModel):
 async def run_loop_test(
     payload: Optional[LoopTestRequest] = None,
     target_locator: Optional[str] = Query(None),
-    current_user: User = Depends(require_owner),
+    current_user: User = Depends(require_operator),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
     """Execute sequential multi-pass assessment on the target to track stability, finding drift, and emit lifecycle alerts."""
