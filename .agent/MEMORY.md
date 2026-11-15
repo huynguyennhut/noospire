@@ -49,3 +49,13 @@
   - Frontend: `tsc --noEmit` (0 errors), `npm run lint` (0 errors), `npm run build` (22/22 static pages generated).
   - Full E2E Verification: `scripts/verify_empire_e2e.py` 10/10 checks PASSED.
   - Handoff Archive: Niêm phong tại `.agents/teamwork/sentinel/handoff.md`.
+
+## 6. Full System Audit & Autonomous QA Verification (Public-Only Scanning)
+- **Status**: AUDIT COMPLETE & PRODUCTION READY (490/490 pytest suite passed 100%, 28/28 screenshots captured).
+- **Core Verification & Remediation**:
+  - **490/490 Pytest Suite Passed**: Sửa dứt điểm đường dẫn Logo cross-platform (`tests/test_scan_all_batch_orchestration.py`), sửa lỗi logic trạng thái hủy lô quét (`dispatcher.py`), và sửa stale snapshot refresh trong `cancel_scan` route (`api/scans.py`).
+  - **28 Full-HD Screenshots (1080p)**: Chụp thực tế qua Chrome CDP không mock, lưu trữ đầy đủ tại `docs/audit/screenshots/` cho toàn bộ 14 màn hình trên cả hai giao diện Obsidian Dark & Invert Warm Light (`#FAF8F5`).
+  - **PUBLIC_SURFACE_ONLY Scan Policy**: Khóa cứng 100% không gửi JWT/cookie/credentials đến target khách hàng; loại trừ toàn bộ auth-dependent checks khỏi runtime scan queue.
+  - **Defect Remediation**: Khắc phục triệt để 20/20 khuyết tật được lập hồ sơ tại `docs/audit/DEFECT_REMEDIATION_LOG.md`.
+  - **Interactive Local Deployment**: Đang chạy ngầm ổn định tại `http://localhost:8080/` (Gateway reverse proxy) và `http://127.0.0.1:8000/` (FastAPI backend), tài khoản Sole Owner `dangnhutnguyen0910@gmail.com`.
+  - **Git Commits**: Commit `43fa341` (Empire Pentest Implementation), `c12e5ef` (Launcher bind), `1a2eec2` (Audit & QA Deliverables).
