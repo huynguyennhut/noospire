@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.core.inventory_reconciliation import execution_block_reasons
 from backend.app.core.config import settings
 from backend.app.core.ssrf import SSRFProtector, SSRFValidationError
 from backend.app.models.asset import Asset
@@ -86,6 +87,11 @@ class ScopeValidator:
                 status_code=404,
                 reason="ASSET_NOT_FOUND",
             )
+
+        inventory_blocks = await execution_block_reasons(db, [asset])
+        if inventory_blocks:
+            raise ScopeEnforcementError("Synthetic or unproven seeded inventory requires reconciliation.",
+                                        status_code=409, reason=inventory_blocks[str(asset.id)])
 
         # 2. Scope record existence
         scope_res = await db.execute(select(AssetAssessmentScope).where(AssetAssessmentScope.asset_id == asset_id))

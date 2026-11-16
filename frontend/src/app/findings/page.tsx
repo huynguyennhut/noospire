@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Finding } from '@/lib/types';
+import { canonicalFindingStatus, FINDING_STATUSES, TRIAGE_STATUSES } from '@/lib/finding-status';
 import { useI18n } from '@/lib/i18n';
 import EvidenceViewer from '@/components/evidence/EvidenceViewer';
 import {
@@ -90,7 +91,7 @@ function FindingsContent() {
 
   // Bulk Selection
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [bulkStatus, setBulkStatus] = useState<string>('IN_REMEDIATION');
+  const [bulkStatus, setBulkStatus] = useState<string>('IN_PROGRESS');
   const [bulkAssignee, setBulkAssignee] = useState<string>('');
   const [bulkProcessing, setBulkProcessing] = useState(false);
 
@@ -157,7 +158,7 @@ function FindingsContent() {
       const matchesSeverity =
         severityFilter === 'ALL' || (f.severity || '').toUpperCase() === severityFilter;
       const matchesStatus =
-        statusFilter === 'ALL' || (f.status || '').toUpperCase() === statusFilter;
+        statusFilter === 'ALL' || canonicalFindingStatus(f.status) === statusFilter;
       const matchesModule =
         moduleFilter === 'ALL' || f.empire_module === moduleFilter;
 
@@ -347,9 +348,9 @@ function FindingsContent() {
       return <ArrowUpDown className="w-3 h-3 text-slate-600 group-hover:text-slate-400" />;
     }
     return sortDirection === 'asc' ? (
-      <ArrowUp className="w-3 h-3 text-cyan-400" />
+      <ArrowUp className="w-3 h-3 text-[var(--text-primary)]" />
     ) : (
-      <ArrowDown className="w-3 h-3 text-cyan-400" />
+      <ArrowDown className="w-3 h-3 text-[var(--text-primary)]" />
     );
   };
 
@@ -360,7 +361,7 @@ function FindingsContent() {
         <div>
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-6 h-6 text-rose-500" />
-            <h1 className="text-2xl font-black tracking-tight text-white">
+            <h1 className="text-2xl font-black tracking-tight text-[var(--text-primary)]">
               {t('findings.title', 'FINDINGS & EVIDENCE COMMAND CENTER')}
             </h1>
           </div>
@@ -427,7 +428,7 @@ function FindingsContent() {
               setSeverityFilter(e.target.value);
               setCurrentPage(1);
             }}
-            className="px-3 py-1.5 rounded-xl bg-cyber-950/80 border border-white/10 text-slate-300 focus:outline-none focus:border-cyan-500 text-xs"
+            className="px-3 py-1.5 rounded-xl bg-[var(--bg-surface)] border border-white/10 text-slate-300 focus:outline-none focus:border-cyan-500 text-xs"
           >
             <option value="ALL">{t('findings.allSeverities', 'All Severities')}</option>
             <option value="CRITICAL">{t('severity.critical', 'Critical')}</option>
@@ -443,7 +444,7 @@ function FindingsContent() {
               setModuleFilter(e.target.value);
               setCurrentPage(1);
             }}
-            className="px-3 py-1.5 rounded-xl bg-cyber-950/80 border border-white/10 text-slate-300 focus:outline-none focus:border-cyan-500 text-xs"
+            className="px-3 py-1.5 rounded-xl bg-[var(--bg-surface)] border border-white/10 text-slate-300 focus:outline-none focus:border-cyan-500 text-xs"
           >
             <option value="ALL">{t('targets.allModules', 'All Empire Modules')}</option>
             <option value="STUDENT_MANAGEMENT">Student Management</option>
@@ -460,15 +461,10 @@ function FindingsContent() {
               setStatusFilter(e.target.value);
               setCurrentPage(1);
             }}
-            className="px-3 py-1.5 rounded-xl bg-cyber-950/80 border border-white/10 text-slate-300 focus:outline-none focus:border-cyan-500 text-xs"
+            className="px-3 py-1.5 rounded-xl bg-[var(--bg-surface)] border border-white/10 text-slate-300 focus:outline-none focus:border-cyan-500 text-xs"
           >
             <option value="ALL">{t('findings.allLifecycle', 'All Lifecycle States')}</option>
-            <option value="OPEN">OPEN</option>
-            <option value="IN_REMEDIATION">IN REMEDIATION</option>
-            <option value="FIXED">FIXED</option>
-            <option value="REOPENED">REOPENED</option>
-            <option value="ACCEPTED_RISK">ACCEPTED RISK</option>
-            <option value="FALSE_POSITIVE">FALSE POSITIVE</option>
+            {FINDING_STATUSES.map((status) => <option key={status} value={status}>{status.replaceAll('_', ' ')}</option>)}
           </select>
 
           {(searchTerm || severityFilter !== 'ALL' || moduleFilter !== 'ALL' || statusFilter !== 'ALL') && (
@@ -491,7 +487,7 @@ function FindingsContent() {
         {/* Results Counter & Page Size Selector */}
         <div className="flex items-center gap-3 text-slate-400 text-xs">
           <div>
-            Showing <strong className="text-white font-mono">{sortedFindings.length}</strong> matching
+            Showing <strong className="text-[var(--text-primary)] font-mono">{sortedFindings.length}</strong> matching
           </div>
           <select
             value={pageSize}
@@ -499,7 +495,7 @@ function FindingsContent() {
               setPageSize(Number(e.target.value));
               setCurrentPage(1);
             }}
-            className="px-2 py-1 rounded-lg bg-cyber-950/80 border border-white/10 text-slate-300 text-xs focus:outline-none"
+            className="px-2 py-1 rounded-lg bg-[var(--bg-surface)] border border-white/10 text-slate-300 text-xs focus:outline-none"
           >
             <option value={10}>10 / page</option>
             <option value={25}>25 / page</option>
@@ -519,13 +515,13 @@ function FindingsContent() {
                 <button
                   type="button"
                   onClick={toggleSelectAllPage}
-                  className="p-1 rounded text-slate-400 hover:text-white"
+                  className="p-1 rounded text-slate-400 hover:text-[var(--text-primary)]"
                   title="Select all on current page"
                 >
                   {allCurrentPageSelected ? (
-                    <CheckSquare className="w-4 h-4 text-cyan-400" />
+                    <CheckSquare className="w-4 h-4 text-[var(--text-primary)]" />
                   ) : someCurrentPageSelected ? (
-                    <MinusSquare className="w-4 h-4 text-cyan-400" />
+                    <MinusSquare className="w-4 h-4 text-[var(--text-primary)]" />
                   ) : (
                     <Square className="w-4 h-4 text-slate-600" />
                   )}
@@ -632,10 +628,10 @@ function FindingsContent() {
                     <TableCell className="text-center" onClick={(e) => toggleSelectRow(f.id, e)}>
                       <button
                         type="button"
-                        className="p-1 rounded text-slate-400 hover:text-white"
+                        className="p-1 rounded text-slate-400 hover:text-[var(--text-primary)]"
                       >
                         {isSelected ? (
-                          <CheckSquare className="w-4 h-4 text-cyan-400" />
+                          <CheckSquare className="w-4 h-4 text-[var(--text-primary)]" />
                         ) : (
                           <Square className="w-4 h-4 text-slate-600" />
                         )}
@@ -651,9 +647,9 @@ function FindingsContent() {
 
                     {/* Title & Rule */}
                     <TableCell>
-                      <div className="font-bold text-white text-xs">{f.title}</div>
+                      <div className="font-bold text-[var(--text-primary)] text-xs">{f.title}</div>
                       <div className="flex flex-wrap items-center gap-2 mt-1 text-[11px] text-slate-400">
-                        <span className="font-mono text-cyan-400 font-semibold">
+                        <span className="font-mono text-[var(--text-primary)] font-semibold">
                           {f.scanner_rule_id}
                         </span>
                         {f.cve_id && (
@@ -681,23 +677,11 @@ function FindingsContent() {
 
                     {/* Lifecycle Status */}
                     <TableCell className="text-center">
-                      <span
-                        className={`px-2 py-0.5 rounded-md text-[10px] font-bold border uppercase ${
-                          f.status === 'FIXED'
-                            ? 'bg-emerald-950/80 text-emerald-400 border-emerald-800'
-                            : f.status === 'REOPENED'
-                            ? 'bg-rose-950/80 text-rose-400 border-rose-800 animate-pulse'
-                            : f.status === 'IN_REMEDIATION'
-                            ? 'bg-blue-950/80 text-blue-400 border-blue-800'
-                            : f.status === 'ACCEPTED_RISK'
-                            ? 'bg-slate-900/80 text-slate-400 border-slate-700'
-                            : f.status === 'FALSE_POSITIVE'
-                            ? 'bg-slate-950/80 text-slate-500 border-slate-800 line-through'
-                            : 'bg-rose-950/60 text-rose-300 border-rose-900/60'
-                        }`}
-                      >
-                        {f.status || 'OPEN'}
-                      </span>
+                      <Badge severity={canonicalFindingStatus(f.status) === 'RESOLVED' ? 'low'
+                        : canonicalFindingStatus(f.status) === 'FIXED_PENDING_RETEST' ? 'medium'
+                        : canonicalFindingStatus(f.status) === 'REOPENED' ? 'critical' : 'neutral'}>
+                        {canonicalFindingStatus(f.status).replaceAll('_', ' ')}
+                      </Badge>
                     </TableCell>
 
                     {/* Detected Date */}
@@ -714,12 +698,12 @@ function FindingsContent() {
                           type="button"
                           onClick={(e) => handleRowRetest(f.id, e)}
                           disabled={rowRetestingId === f.id}
-                          title="Execute live probe retest against target"
-                          className="p-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-cyan-400 border border-white/10 hover:border-cyan-500/40 transition"
+                          title="Queue the same approved defensive control"
+                          className="p-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-[var(--text-primary)] border border-white/10 hover:border-cyan-500/40 transition"
                         >
                           <RotateCcw
                             className={`w-3.5 h-3.5 ${
-                              rowRetestingId === f.id ? 'animate-spin text-cyan-400' : ''
+                              rowRetestingId === f.id ? 'animate-spin text-[var(--text-primary)]' : ''
                             }`}
                           />
                         </button>
@@ -727,7 +711,7 @@ function FindingsContent() {
                           type="button"
                           onClick={() => setSelectedFinding(f)}
                           title="View forensic evidence & details"
-                          className="p-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 hover:text-white border border-white/10 transition"
+                          className="p-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 hover:text-[var(--text-primary)] border border-white/10 transition"
                         >
                           <Eye className="w-3.5 h-3.5" />
                         </button>
@@ -741,10 +725,10 @@ function FindingsContent() {
         </Table>
 
         {/* Pagination Controls Footer */}
-        <div className="p-3.5 bg-cyber-950/80 border-t border-white/10 flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div className="p-3.5 bg-[var(--bg-surface)] border-t border-white/10 flex flex-wrap items-center justify-between gap-3 text-xs">
           <div className="text-slate-400">
-            Page <strong className="text-white font-mono">{currentPage}</strong> of{' '}
-            <strong className="text-white font-mono">{totalPages}</strong> (
+            Page <strong className="text-[var(--text-primary)] font-mono">{currentPage}</strong> of{' '}
+            <strong className="text-[var(--text-primary)] font-mono">{totalPages}</strong> (
             {sortedFindings.length} findings)
           </div>
 
@@ -793,15 +777,15 @@ function FindingsContent() {
       {/* Floating Bulk Action Bar */}
       {selectedIds.size > 0 && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 w-full max-w-3xl px-4 animate-fadeIn">
-          <div className="p-3.5 rounded-2xl liquid-glass-modal border border-cyan-400/40 shadow-2xl flex flex-wrap items-center justify-between gap-3 text-xs bg-cyber-950/95 backdrop-blur-xl">
+          <div className="p-3.5 rounded-2xl liquid-glass-modal border border-cyan-400/40 shadow-2xl flex flex-wrap items-center justify-between gap-3 text-xs bg-[var(--bg-surface)]/95 backdrop-blur-xl">
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
-              <strong className="text-white font-mono">{selectedIds.size}</strong>
+              <strong className="text-[var(--text-primary)] font-mono">{selectedIds.size}</strong>
               <span className="text-slate-300">findings selected</span>
               <button
                 type="button"
                 onClick={() => setSelectedIds(new Set())}
-                className="text-[11px] text-slate-400 hover:text-white underline ml-1"
+                className="text-[11px] text-slate-400 hover:text-[var(--text-primary)] underline ml-1"
               >
                 Clear
               </button>
@@ -811,13 +795,9 @@ function FindingsContent() {
               <select
                 value={bulkStatus}
                 onChange={(e) => setBulkStatus(e.target.value)}
-                className="px-2.5 py-1.5 rounded-xl bg-cyber-900 border border-white/20 text-white text-xs focus:outline-none focus:border-cyan-400"
+                className="px-2.5 py-1.5 rounded-xl bg-[var(--bg-surface)] border border-white/20 text-[var(--text-primary)] text-xs focus:outline-none focus:border-cyan-400"
               >
-                <option value="OPEN">Mark as OPEN</option>
-                <option value="IN_REMEDIATION">Mark as IN REMEDIATION</option>
-                <option value="FIXED">Mark as FIXED</option>
-                <option value="ACCEPTED_RISK">Mark as ACCEPTED RISK</option>
-                <option value="FALSE_POSITIVE">Mark as FALSE POSITIVE</option>
+                {TRIAGE_STATUSES.map((status) => <option key={status} value={status}>Mark as {status.replaceAll('_', ' ')}</option>)}
               </select>
 
               <input
@@ -825,7 +805,7 @@ function FindingsContent() {
                 placeholder="Assignee email..."
                 value={bulkAssignee}
                 onChange={(e) => setBulkAssignee(e.target.value)}
-                className="w-36 px-2.5 py-1.5 rounded-xl bg-cyber-900 border border-white/20 text-white text-xs placeholder-slate-500 focus:outline-none focus:border-cyan-400"
+                className="w-36 px-2.5 py-1.5 rounded-xl bg-[var(--bg-surface)] border border-white/20 text-[var(--text-primary)] text-xs placeholder-slate-500 focus:outline-none focus:border-cyan-400"
               />
 
               <Button
@@ -858,7 +838,7 @@ function FindingsContent() {
           size="full"
           title={
             <div className="flex items-center gap-2">
-              <ShieldAlert className="w-5 h-5 text-cyan-400" />
+              <ShieldAlert className="w-5 h-5 text-[var(--text-primary)]" />
               <span>{selectedFinding.title}</span>
             </div>
           }

@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Finding } from '@/lib/types';
+import { canonicalFindingStatus, findingStage, TRIAGE_STATUSES } from '@/lib/finding-status';
 import { useI18n } from '@/lib/i18n';
 import { Badge, Button, Modal } from '@/components/ui';
 import EvidenceViewer from '@/components/evidence/EvidenceViewer';
@@ -26,21 +27,27 @@ interface KanbanColumnConfig {
 
 const LIFECYCLE_COLUMNS: KanbanColumnConfig[] = [
   {
-    key: 'OPEN',
-    title: 'Open & Unassigned',
-    color: 'border-rose-500/50 text-rose-400 bg-rose-500/10',
+    key: 'TRIAGE',
+    title: 'Triage & Assignment',
+    color: 'border-rose-500/50 text-[var(--text-primary)] bg-rose-500/10',
     headerBorder: 'border-rose-500/40',
   },
   {
-    key: 'IN_REMEDIATION',
+    key: 'IN_PROGRESS',
     title: 'In Remediation',
-    color: 'border-blue-500/50 text-blue-400 bg-blue-500/10',
+    color: 'border-blue-500/50 text-[var(--text-primary)] bg-blue-500/10',
     headerBorder: 'border-blue-500/40',
   },
   {
-    key: 'FIXED',
+    key: 'FIXED_PENDING_RETEST',
+    title: 'Awaiting Retest',
+    color: 'border-amber-500/50 text-[var(--text-primary)] bg-amber-500/10',
+    headerBorder: 'border-amber-500/40',
+  },
+  {
+    key: 'RESOLVED',
     title: 'Fixed & Verified',
-    color: 'border-emerald-500/50 text-emerald-400 bg-emerald-500/10',
+    color: 'border-emerald-500/50 text-[var(--text-primary)] bg-emerald-500/10',
     headerBorder: 'border-emerald-500/40',
   },
   {
@@ -50,8 +57,8 @@ const LIFECYCLE_COLUMNS: KanbanColumnConfig[] = [
     headerBorder: 'border-red-600/40',
   },
   {
-    key: 'ACCEPTED_RISK',
-    title: 'Accepted Baseline Risk',
+    key: 'OTHER',
+    title: 'Dismissed / Other',
     color: 'border-slate-500/50 text-slate-400 bg-slate-500/10',
     headerBorder: 'border-slate-500/40',
   },
@@ -77,21 +84,21 @@ function calculateSla(finding: Finding) {
   if (diffHours < 0) {
     const overdueDays = Math.abs(diffDays);
     return {
-      badgeClass: 'bg-rose-950/90 text-rose-300 border-rose-800 animate-pulse font-bold',
+      badgeClass: 'bg-rose-500/10 text-[var(--text-primary)] border-rose-800 animate-pulse font-bold',
       text: `SLA Breached (${overdueDays}d overdue)`,
       isBreached: true,
       diffDays,
     };
   } else if (diffDays <= 2) {
     return {
-      badgeClass: 'bg-amber-950/80 text-amber-300 border-amber-800 font-semibold',
+      badgeClass: 'bg-amber-500/10 text-[var(--text-primary)] border-amber-800 font-semibold',
       text: `SLA Due Soon (${Math.round(diffHours)}h left)`,
       isBreached: false,
       diffDays,
     };
   } else {
     return {
-      badgeClass: 'bg-emerald-950/60 text-emerald-300 border-emerald-800/80',
+      badgeClass: 'bg-emerald-500/10 text-[var(--text-primary)] border-emerald-800/80',
       text: `SLA On Track (${diffDays}d left)`,
       isBreached: false,
       diffDays,
@@ -103,13 +110,14 @@ export default function RemediationPage() {
   const { t } = useI18n();
   const [findings, setFindings] = useState<Finding[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Card Selection & Detail Modal
   const [selectedFinding, setSelectedFinding] = useState<Finding | null>(null);
   const [viewEvidenceFinding, setViewEvidenceFinding] = useState<Finding | null>(null);
 
   // Edit / Triage State
-  const [targetStatus, setTargetStatus] = useState('IN_REMEDIATION');
+  const [targetStatus, setTargetStatus] = useState('IN_PROGRESS');
   const [assignee, setAssignee] = useState('');
   const [notes, setNotes] = useState('');
   const [updating, setUpdating] = useState(false);
@@ -123,8 +131,9 @@ export default function RemediationPage() {
       setLoading(true);
       const res = await api.listFindings();
       setFindings(res.items || []);
+      setLoadError(null);
     } catch (err) {
-      console.error('Failed to fetch remediation findings:', err);
+      setLoadError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
@@ -136,7 +145,7 @@ export default function RemediationPage() {
 
   const handleOpenEdit = (f: Finding) => {
     setSelectedFinding(f);
-    setTargetStatus(f.status || 'OPEN');
+    setTargetStatus(canonicalFindingStatus(f.status));
     setAssignee(f.assignee || '');
     setNotes(f.remediation_notes || '');
   };
@@ -209,7 +218,7 @@ export default function RemediationPage() {
         });
       }, 5000);
     } catch (err: unknown) {
-      alert(`Live retest failed: ${err instanceof Error ? err.message : String(err)}`);
+      alert(`Recheck refused: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setCardRetestingId(null);
     }
@@ -221,15 +230,15 @@ export default function RemediationPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-white/10">
         <div>
           <div className="flex items-center gap-2">
-            <CheckCircle2 className="w-6 h-6 text-emerald-400" />
-            <h1 className="text-2xl font-black tracking-tight text-white">
+            <CheckCircle2 className="w-6 h-6 text-[var(--text-primary)]" />
+            <h1 className="text-2xl font-black tracking-tight text-[var(--text-primary)]">
               {t('remediation.title', 'REMEDIATION TRACKING & SLA BOARD')}
             </h1>
           </div>
           <p className="text-xs text-slate-400 mt-1">
             {t(
               'remediation.subtitle',
-              'Track vulnerability lifecycle transitions (OPEN → IN REMEDIATION → FIXED → REOPENED), monitor SLAs, assign engineers, and trigger live retests.'
+              'Track vulnerability lifecycle transitions (TRIAGE → IN PROGRESS → AWAITING RETEST → RESOLVED), monitor SLAs, assign engineers, and queue defensive rechecks.'
             )}
           </p>
         </div>
@@ -245,11 +254,12 @@ export default function RemediationPage() {
         </Button>
       </div>
 
-      {/* 5-Column Kanban Board */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 items-start">
+      {loadError && <div role="alert" className="text-[var(--text-primary)]">{loadError}</div>}
+      {/* Every lifecycle state remains visible, including historical values. */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6 gap-4 items-start">
         {LIFECYCLE_COLUMNS.map((col) => {
           const colFindings = findings.filter(
-            (f) => (f.status || 'OPEN').toUpperCase() === col.key
+            (f) => findingStage(f.status) === col.key
           );
 
           return (
@@ -290,13 +300,13 @@ export default function RemediationPage() {
                           <Badge severity={f.severity.toLowerCase()} size="sm">
                             {f.severity}
                           </Badge>
-                          <span className="text-[10px] text-cyan-400 font-mono truncate max-w-[120px]">
+                          <span className="text-[10px] text-[var(--text-primary)] font-mono truncate max-w-[120px]">
                             {f.cve_id || f.scanner_rule_id}
                           </span>
                         </div>
 
                         {/* Title */}
-                        <div className="font-bold text-white text-xs leading-snug line-clamp-2 group-hover:text-cyan-300 transition-colors">
+                        <div className="font-bold text-[var(--text-primary)] text-xs leading-snug line-clamp-2 group-hover:text-[var(--text-primary)] transition-colors">
                           {f.title}
                         </div>
 
@@ -305,21 +315,23 @@ export default function RemediationPage() {
                           {f.target_location}
                         </div>
 
+                        <div className="text-[10px] text-[var(--text-secondary)]">{canonicalFindingStatus(f.status).replaceAll('_', ' ')}</div>
+
                         {/* SLA Indicator */}
-                        <div className="pt-1">
+                        {col.key !== 'RESOLVED' && col.key !== 'OTHER' && <div className="pt-1">
                           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] border ${sla.badgeClass}`}>
                             <Clock className="w-2.5 h-2.5" />
                             <span>{sla.text}</span>
                           </span>
-                        </div>
+                        </div>}
 
                         {/* Retest Result Badge if triggered */}
                         {retestStatusBadge && (
                           <div
                             className={`p-1.5 rounded-lg border text-[10px] font-bold text-center ${
-                              retestStatusBadge === 'VERIFIED_FIXED'
-                                ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800'
-                                : 'bg-rose-950/80 text-rose-300 border-rose-800'
+                              retestStatusBadge === 'RECHECK_QUEUED'
+                                ? 'bg-emerald-500/10 text-[var(--text-primary)] border-emerald-800'
+                                : 'bg-rose-500/10 text-[var(--text-primary)] border-rose-800'
                             }`}
                           >
                             Retest: {retestStatusBadge}
@@ -340,11 +352,11 @@ export default function RemediationPage() {
                               type="button"
                               onClick={(e) => handleCardRetest(f.id, e)}
                               disabled={isRetesting}
-                              title="Retest live against target"
-                              className="p-1 rounded bg-white/[0.04] hover:bg-white/[0.08] text-cyan-400 hover:text-cyan-300 transition"
+                              title="Queue the same approved defensive control"
+                              className="p-1 rounded bg-white/[0.04] hover:bg-white/[0.08] text-[var(--text-primary)] hover:text-[var(--text-primary)] transition"
                             >
                               <RotateCcw
-                                className={`w-3 h-3 ${isRetesting ? 'animate-spin text-cyan-400' : ''}`}
+                                className={`w-3 h-3 ${isRetesting ? 'animate-spin text-[var(--text-primary)]' : ''}`}
                               />
                             </button>
 
@@ -356,42 +368,42 @@ export default function RemediationPage() {
                                 setViewEvidenceFinding(f);
                               }}
                               title="Inspect forensic evidence"
-                              className="p-1 rounded bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 hover:text-white transition"
+                              className="p-1 rounded bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 hover:text-[var(--text-primary)] transition"
                             >
                               <Eye className="w-3 h-3" />
                             </button>
 
                             {/* Quick Move Forward Button */}
-                            {col.key === 'OPEN' && (
+                            {col.key === 'TRIAGE' && (
                               <button
                                 type="button"
-                                onClick={(e) => handleQuickMove(f.id, 'IN_REMEDIATION', e)}
+                                onClick={(e) => handleQuickMove(f.id, 'IN_PROGRESS', e)}
                                 title="Move to In Remediation"
-                                className="px-1.5 py-0.5 rounded bg-blue-950/80 text-blue-300 border border-blue-800 text-[9px] font-bold hover:bg-blue-900 transition flex items-center gap-0.5"
+                                className="px-1.5 py-0.5 rounded bg-blue-500/10 text-[var(--text-primary)] border border-blue-800 text-[9px] font-bold hover:bg-blue-900 transition flex items-center gap-0.5"
                               >
                                 <span>Fix</span>
                                 <ChevronRight className="w-2.5 h-2.5" />
                               </button>
                             )}
 
-                            {col.key === 'IN_REMEDIATION' && (
+                            {col.key === 'IN_PROGRESS' && (
                               <button
                                 type="button"
-                                onClick={(e) => handleQuickMove(f.id, 'FIXED', e)}
-                                title="Mark as Fixed & Verified"
-                                className="px-1.5 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-800 text-[9px] font-bold hover:bg-emerald-900 transition flex items-center gap-0.5"
+                                onClick={(e) => handleQuickMove(f.id, 'FIXED_PENDING_RETEST', e)}
+                                title="Claim a fix; engine verification is still required"
+                                className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-[var(--text-primary)] border border-emerald-800 text-[9px] font-bold hover:bg-emerald-900 transition flex items-center gap-0.5"
                               >
-                                <span>Verify</span>
+                                <span>Claim fix</span>
                                 <ChevronRight className="w-2.5 h-2.5" />
                               </button>
                             )}
 
-                            {col.key === 'FIXED' && (
+                            {col.key === 'RESOLVED' && (
                               <button
                                 type="button"
                                 onClick={(e) => handleQuickMove(f.id, 'REOPENED', e)}
                                 title="Reopen as Regression"
-                                className="px-1.5 py-0.5 rounded bg-rose-950/80 text-rose-300 border border-rose-800 text-[9px] font-bold hover:bg-rose-900 transition flex items-center gap-0.5"
+                                className="px-1.5 py-0.5 rounded bg-rose-500/10 text-[var(--text-primary)] border border-rose-800 text-[9px] font-bold hover:bg-rose-900 transition flex items-center gap-0.5"
                               >
                                 <span>Reopen</span>
                                 <ChevronRight className="w-2.5 h-2.5" />
@@ -417,7 +429,7 @@ export default function RemediationPage() {
           size="lg"
           title={
             <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-5 h-5 text-cyan-400" />
+              <CheckCircle2 className="w-5 h-5 text-[var(--text-primary)]" />
               <span>Vulnerability Lifecycle Transition</span>
             </div>
           }
@@ -428,7 +440,7 @@ export default function RemediationPage() {
               <label className="block text-slate-400 mb-1 font-semibold uppercase text-[10px]">
                 Finding Title
               </label>
-              <div className="font-bold text-white text-sm bg-white/[0.02] p-3 rounded-xl border border-white/10">
+              <div className="font-bold text-[var(--text-primary)] text-sm bg-white/[0.02] p-3 rounded-xl border border-white/10">
                 {selectedFinding.title}
               </div>
             </div>
@@ -441,14 +453,12 @@ export default function RemediationPage() {
                 <select
                   value={targetStatus}
                   onChange={(e) => setTargetStatus(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-cyber-950 border border-white/10 text-white focus:outline-none focus:border-cyan-500"
+                  className="w-full px-3 py-2 rounded-xl bg-[var(--bg-surface)] border border-white/10 text-[var(--text-primary)] focus:outline-none focus:border-cyan-500"
                 >
-                  <option value="OPEN">OPEN (Under Investigation)</option>
-                  <option value="IN_REMEDIATION">IN REMEDIATION</option>
-                  <option value="FIXED">FIXED & VERIFIED</option>
-                  <option value="REOPENED">REOPENED REGRESSION</option>
-                  <option value="ACCEPTED_RISK">ACCEPTED BASELINE RISK</option>
-                  <option value="FALSE_POSITIVE">FALSE POSITIVE</option>
+                  {canonicalFindingStatus(selectedFinding.status) === 'RESOLVED' && (
+                    <option value="RESOLVED">RESOLVED (engine verified)</option>
+                  )}
+                  {TRIAGE_STATUSES.map((status) => <option key={status} value={status}>{status.replaceAll('_', ' ')}</option>)}
                 </select>
               </div>
 
@@ -458,11 +468,10 @@ export default function RemediationPage() {
                 </label>
                 <input
                   type="text"
-                  required
-                  placeholder="e.g. tu.nguyen@empire.edu.vn"
+                  placeholder="Engineer username or email"
                   value={assignee}
                   onChange={(e) => setAssignee(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-cyber-950 border border-white/10 text-white focus:outline-none focus:border-cyan-500"
+                  className="w-full px-3 py-2 rounded-xl bg-[var(--bg-surface)] border border-white/10 text-[var(--text-primary)] focus:outline-none focus:border-cyan-500"
                 />
               </div>
             </div>
@@ -476,7 +485,7 @@ export default function RemediationPage() {
                 placeholder="Describe patch details, commit hash, verification steps, or rationale..."
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl bg-cyber-950 border border-white/10 text-white focus:outline-none focus:border-cyan-500 font-mono text-xs"
+                className="w-full px-3 py-2 rounded-xl bg-[var(--bg-surface)] border border-white/10 text-[var(--text-primary)] focus:outline-none focus:border-cyan-500 font-mono text-xs"
               />
             </div>
 
@@ -526,7 +535,7 @@ export default function RemediationPage() {
           size="full"
           title={
             <div className="flex items-center gap-2">
-              <ShieldAlert className="w-5 h-5 text-cyan-400" />
+              <ShieldAlert className="w-5 h-5 text-[var(--text-primary)]" />
               <span>{viewEvidenceFinding.title}</span>
             </div>
           }

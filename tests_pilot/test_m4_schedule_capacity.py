@@ -92,7 +92,8 @@ async def test_same_planner_for_whole_system_selection_and_schedule(client, owne
     h = await owner_session(client)
     a, b, c = await _estate(client, h)
 
-    whole = (await client.post(f"{API}/plans/preview", headers=h, json={"selection": {"kind": "all"}})).json()
+    whole = (await client.post(f"{API}/plans/preview", headers=h, json={"selection": {"kind": "all"},
+                                                                         "engines": ["sbom", "tls_health"]})).json()
     assert whole["summary"]["assets_in_scope"] == 3 and whole["summary"]["pairs"] == 6
     d = _decisions(whole)
     assert d[("svc-a", "sbom")] == ("queue", None) and d[("svc-b", "tls_health")] == ("queue", None)
@@ -104,7 +105,8 @@ async def test_same_planner_for_whole_system_selection_and_schedule(client, owne
         assert (await db.execute(select(func.count()).select_from(ExecutionRecord))).scalar() == 0
 
     one = (await client.post(f"{API}/plans/preview", headers=h,
-                             json={"selection": {"kind": "assets", "asset_ids": [str(a)]}})).json()
+                             json={"selection": {"kind": "assets", "asset_ids": [str(a)]},
+                                   "engines": ["sbom", "tls_health"]})).json()
     assert _decisions(one) == {k: v for k, v in d.items() if k[0] == "svc-a"}
 
     # The schedule's slot uses the same planner and reaches the same decisions.
@@ -347,6 +349,7 @@ async def test_estate_cap_is_enforced_in_the_claim(client, owner):
 
 
 async def test_worker_never_claims_beyond_its_slots(client, owner, monkeypatch):
+    monkeypatch.setattr(settings, "PROCESS_ROLE", "worker")
     monkeypatch.setattr(settings, "THROTTLE_MEM_PCT", 100.0)
     monkeypatch.setattr(settings, "THROTTLE_CPU_PCT", 100.0)
     h = await owner_session(client)

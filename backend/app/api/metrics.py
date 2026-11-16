@@ -19,7 +19,7 @@ from backend.app.models.finding import NormalizedFinding
 from backend.app.models.scan import Scan
 from backend.app.models.intelligence import VulnerabilityIntelligence
 from backend.app.models.rule import DetectionRule, RuleStatus
-from backend.app.schemas.common import EmpireModule, FindingSeverity, FindingStatus, ScanStatus, VerificationStatus
+from backend.app.schemas.common import OPEN_FINDING_STATES, RESOLVED_FINDING_STATES, EmpireModule, FindingSeverity, FindingStatus, ScanStatus, VerificationStatus
 
 Rule = DetectionRule
 
@@ -74,12 +74,12 @@ async def get_overview_metrics(
     findings_res = await db.execute(select(NormalizedFinding))
     findings = findings_res.scalars().all()
 
-    critical = sum(1 for f in findings if f.severity.upper() == "CRITICAL" and f.status != FindingStatus.FIXED.value)
-    high = sum(1 for f in findings if f.severity.upper() == "HIGH" and f.status != FindingStatus.FIXED.value)
+    critical = sum(1 for f in findings if f.severity.upper() == "CRITICAL" and f.status not in RESOLVED_FINDING_STATES)
+    high = sum(1 for f in findings if f.severity.upper() == "HIGH" and f.status not in RESOLVED_FINDING_STATES)
     open_findings = sum(
-        1 for f in findings if f.status in (FindingStatus.OPEN.value, FindingStatus.NEW.value, FindingStatus.CONFIRMED.value, FindingStatus.REOPENED.value, FindingStatus.IN_REMEDIATION.value)
+        1 for f in findings if f.status in OPEN_FINDING_STATES
     )
-    fixed_findings = sum(1 for f in findings if f.status == FindingStatus.FIXED.value)
+    fixed_findings = sum(1 for f in findings if f.status in RESOLVED_FINDING_STATES)
 
     # 6. Intelligence stats
     cves_res = await db.execute(select(func.count(VulnerabilityIntelligence.cve_id)))
@@ -153,7 +153,7 @@ async def get_vulnerability_trend(days: int = Query(default=7, ge=0, le=90), db:
         # Newly detected up to this date
         new_count = sum(1 for f in findings if f.created_at and f.created_at.date() <= d)
         # Fixed count
-        fixed_count = sum(1 for f in findings if f.status == FindingStatus.FIXED.value and f.updated_at and f.updated_at.date() <= d)
+        fixed_count = sum(1 for f in findings if f.status in RESOLVED_FINDING_STATES and f.updated_at and f.updated_at.date() <= d)
         # Reopened
         reopened_count = sum(1 for f in findings if f.status == FindingStatus.REOPENED.value and f.updated_at and f.updated_at.date() <= d)
 
@@ -186,9 +186,9 @@ async def get_module_risk_chart(db: AsyncSession = Depends(get_db)) -> Any:
     result = []
     for mod_key, label in module_names.items():
         mod_findings = [f for f in findings if f.empire_module == mod_key]
-        crit = sum(1 for f in mod_findings if f.severity.upper() == "CRITICAL" and f.status != FindingStatus.FIXED.value)
-        high = sum(1 for f in mod_findings if f.severity.upper() == "HIGH" and f.status != FindingStatus.FIXED.value)
-        med = sum(1 for f in mod_findings if f.severity.upper() == "MEDIUM" and f.status != FindingStatus.FIXED.value)
+        crit = sum(1 for f in mod_findings if f.severity.upper() == "CRITICAL" and f.status not in RESOLVED_FINDING_STATES)
+        high = sum(1 for f in mod_findings if f.severity.upper() == "HIGH" and f.status not in RESOLVED_FINDING_STATES)
+        med = sum(1 for f in mod_findings if f.severity.upper() == "MEDIUM" and f.status not in RESOLVED_FINDING_STATES)
         risk = min(100.0, round((crit * 35.0) + (high * 20.0) + (med * 5.0), 1))
 
         result.append({
@@ -241,7 +241,7 @@ async def get_risk_score_trend(days: int = Query(default=7, ge=1, le=90), db: As
         d = today - timedelta(days=i)
         d_str = d.strftime("%b %d")
 
-        active_f = [f for f in findings if f.created_at and f.created_at.date() <= d and f.status != FindingStatus.FIXED.value]
+        active_f = [f for f in findings if f.created_at and f.created_at.date() <= d and f.status not in RESOLVED_FINDING_STATES]
         crit = sum(1 for f in active_f if f.severity.upper() == "CRITICAL")
         high = sum(1 for f in active_f if f.severity.upper() == "HIGH")
         risk = min(100.0, round((crit * 25.0) + (high * 15.0) + len(active_f) * 2.0, 1))
@@ -366,9 +366,9 @@ async def get_remediation_progress(db: AsyncSession = Depends(get_db)) -> Any:
     findings = findings_res.scalars().all()
 
     states = {
-        "OPEN": sum(1 for f in findings if f.status in (FindingStatus.OPEN.value, FindingStatus.NEW.value)),
-        "IN_REMEDIATION": sum(1 for f in findings if f.status == FindingStatus.IN_REMEDIATION.value),
-        "FIXED": sum(1 for f in findings if f.status == FindingStatus.FIXED.value),
+        "OPEN": sum(1 for f in findings if f.status in ("NEW", "NEEDS_TRIAGE", "CONFIRMED", "ASSIGNED", "OPEN", "POTENTIAL")),
+        "IN_REMEDIATION": sum(1 for f in findings if f.status in ("IN_PROGRESS", "IN_REMEDIATION", "FIXED_PENDING_RETEST")),
+        "FIXED": sum(1 for f in findings if f.status in RESOLVED_FINDING_STATES),
         "REOPENED": sum(1 for f in findings if f.status == FindingStatus.REOPENED.value),
         "ACCEPTED_RISK": sum(1 for f in findings if f.status == FindingStatus.ACCEPTED_RISK.value),
         "FALSE_POSITIVE": sum(1 for f in findings if f.status == FindingStatus.FALSE_POSITIVE.value),

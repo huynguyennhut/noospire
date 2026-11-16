@@ -1,207 +1,122 @@
-# NOOSFORGE Security Intelligence — Empire Platform
-## Continuous Security Assessment, Attack Surface Monitoring & Vulnerability Management
+# NOOSFORGE / Noospire
 
----
+Self-hosted security intelligence, asset monitoring and evidence-based remediation.
+The console uses Obsidian Dark / Warm Light Liquid Glass and Vietnamese/English.
 
-## 1. Executive Summary & Product Architecture
+Start with [AGENTS.md](AGENTS.md) for repository boundaries and
+[the Skills guide](docs/AGENT_SKILLS.md) for the seven project workflows.
+The [current audit](docs/audit/PROJECT_CURRENT_STATE.md) records implemented fixes,
+actual validation and remaining gaps. Historical reports are not release evidence.
+The latest [local monitor handoff](docs/audit/LOCAL_MONITOR_HANDOFF_2026-11-16.md)
+documents the root-only two-hour monitor, measured execution and current limits.
 
-**NOOSFORGE Security Intelligence** is an enterprise-grade, continuous security assessment and attack surface management platform purpose-built for the **Empire Educational Ecosystem**. 
+## Current architecture
 
-Unlike generic vulnerability scanners that blindly execute network requests against arbitrary hostnames, NOOSFORGE deeply understands the **Empire business architecture**, mapping technical attack vectors directly to functional educational units. It continuously evaluates security posture, detects regressions, prevents credential leaks, enforces approved baseline exposure policies, and delivers multi-format audit-grade reporting strictly backed 1:1 by real persisted database findings (**Zero-Fabrication Guarantee**).
+| Layer | Implementation |
+| --- | --- |
+| Console | Next.js 14, React 18, TypeScript, Tailwind 3; static export in `frontend/out` |
+| API | FastAPI/Pydantic; `backend.main:app`; same-origin `/api/v1` |
+| Persistence | Async SQLAlchemy; SQLite WAL in the shipped deployment; additive boot schema |
+| Execution | Persistent DB queue, leases/fencing, worker heartbeats; separate API, worker and monitor-scheduler roles |
+| Defensive controls | Exact approved public URL HEAD/TLS/header observations; supplied CycloneDX/SPDX SBOMs with immutable advisory snapshots; separately approved TLS/health measurements |
+| Evidence | Execution input/output hashes, observations/change history, frozen HTML/JSON/PDF reports |
+| Gateway | Fixed upstream API origin and static console; optional Access/Tunnel; Docker Compose packaging |
 
-```
-                      +---------------------------------------+
-                      |   NOOSFORGE SECURITY INTELLIGENCE     |
-                      |   Empire Mission Control Hub (v16.0)  |
-                      +---------------------------------------+
-                                          |
-        +---------------------------------+---------------------------------+
-        |                                 |                                 |
-+---------------+                 +---------------+                 +---------------+
-|   MODULE A    |                 |   MODULE B    |                 |   MODULE C    |
-| Student Mgmt  |                 | Learning Mat. |                 | Support Tools |
-| Better-Auth   |                 | MinIO CDN     |                 | News / Dict   |
-| id.empire     |                 | voh.empire    |                 | gw.empire     |
-+---------------+                 +---------------+                 +---------------+
-        |                                 |                                 |
-+---------------+                 +---------------+                 +---------------+
-|   MODULE D    |                 |   MODULE E    |                 |   MODULE F/G  |
-| API Security  |                 | Web Console   |                 | Brute Force & |
-| Gateway BFLA  |                 | RBAC Bypass   |                 | Infrastructure|
-| gw.empire     |                 | console.io    |                 | Daily Sched.  |
-+---------------+                 +---------------+                 +---------------+
-```
+Nuclei, ZAP, Trivy and Empire/checklist paths exist in the source but are not all
+integrated into the fenced defensive execution flow. Engine health reports actual
+worker/feed readiness; offline self-tests do not certify network or worker execution.
+No upstream version check or update occurs through the driver-version dialog.
 
----
+The current pilot uses one immutable configured owner plus explicit per-asset grants.
+Legacy role names/superuser flags do not confer global administration or estate scope.
+This is not a claim of complete enterprise multi-tenant isolation.
 
-## 2. Empire Business Architecture Mapping
+## Customer assessment policy
 
-### Module A — Student Management (`id.empire.edu.vn`)
-- **Core Technology**: Better-Auth authentication endpoints (`/api/auth/*`), Next.js 14 frontend.
-- **Audit Focus**: Account enumeration, registration validation, negative-authentication error parity, BOLA/IDOR on student identity endpoints, session lifetime, and synthetic student credential testing (`studenttu1`).
-- **Safety Policy**: Strictly bounded negative-auth probes (max 5 attempts); zero mass extraction of real student accounts.
+The owner-adopted [Empire operations brief](docs/EMPIRE_PRODUCTION_AUTHORIZED_OPERATIONS.md)
+authorizes non-destructive assessment of verified in-scope production assets,
+including authenticated checks when approved target identities and safe test records
+are provisioned. Never invent credentials or forward platform credentials to targets.
+Approved public media remains `PUBLIC_BY_DESIGN`.
 
-### Module B — Educational Material Management (`voh.empire.edu.vn`, `mh.empire.edu.vn/media/*`)
-- **Core Technology**: MinIO S3 Object Storage, Course Content Delivery Service.
-- **Audit Focus**: S3 anonymous bucket listing, directory indexing, unpublished curriculum leakage (`/courses/*`), and unintended exposure of internal database backups (`.env`, `.sql`, `.zip`).
-- **Approved Public Exposure Policy**: `/media/*` educational assets (course thumbnails, public lectures, and syllabi) are classified as **`PUBLIC_BY_DESIGN`**. The assessment engine validates against registered `BaselineException` entities, completely eliminating false-positive alarms for approved public materials.
+The [current owner clarification](docs/EMPIRE_INVENTORY_GUIDANCE.md) designates only
+`https://empire.edu.vn/`; the 399-row database includes seeded/test assets and is not
+an approved production inventory. No target-auth profiles, secret-store references
+or customer health endpoints are supplied. Current automated checks therefore stay
+unauthenticated; authentication-dependent checks are named coverage gaps. See
+[inventory reconciliation and measured evidence](docs/audit/EMPIRE_PRODUCTION_RECONCILIATION.md).
 
-### Module C — Supporting Educational Tools (`gw.empire.edu.vn/news/*`, Dictionary, Vocabulary)
-- **Core Technology**: Microservice API integrations, RSS/News aggregation engines.
-- **Audit Focus**: Server-Side Request Forgery (SSRF) in news aggregator fetchers, blind out-of-band data exfiltration, DOM/Reflected Cross-Site Scripting (XSS) in vocabulary search tools.
+Legacy scanner/checklist outbound enforcement is still incomplete. Do not enable
+those customer workflows on the strength of old readiness claims. Known fixture
+execution and seed-only ownership are rejected; Ultra fixture previews cannot
+create or verify production assets. Platform login,
+CSRF and authorization regression tests remain required and use synthetic fixtures.
 
-### Module D — API Security (`gw.empire.edu.vn`)
-- **Core Technology**: API Gateway routing to educational services.
-- **Audit Focus**: OWASP API Top 10 vulnerabilities, Broken Object Level Authorization (BOLA), Broken Function-Level Authorization (BFLA) on administrative endpoints (`/api/v1/admin/*`), rate-limiting bypasses, and unauthorized social graph harvesting (`/social/v2/*`).
+## Local development
 
-### Module E — Web Application Security (`console.empire.io.vn`)
-- **Core Technology**: Administrative Single Page Application (SPA).
-- **Audit Focus**: Client-side Role-Based Access Control (RBAC) bypass, administrative route leakage, hardcoded API tokens in compiled JavaScript bundles, CORS origin validation, and CSP enforcement.
+Use existing project dependencies and configuration; preserve repository DB/storage.
+This checkout was validated with Python 3.12 and Node 20. Container manifests pin
+different versions; see [deployment documentation](deploy/README_DEPLOY.md).
 
-### Module F & G — Brute Force Defense & Server Infrastructure
-- **Audit Focus**: Rate limiting, IP throttling, HTTP 429 enforcement on authentication endpoints, TLS cipher suites, security response headers (`HSTS`, `X-Frame-Options`, `Content-Security-Policy`), server fingerprinting, and automated daily assessment scheduling.
+With dependencies and operator configuration prepared, the local supervisor
+starts the API on loopback port 8000 and the gateway on port 8080:
 
----
-
-## 3. Core Capabilities & Architectural Subsystems
-
-### 3.1. Zero-Fabrication Assessment Engine (`EmpireAssessmentEngine`)
-- Direct integration with target APIs using safe, non-destructive probe payloads.
-- Bounded 5-probe negative authentication test with zero credential spraying.
-- Real-time event and audit log emission streamed live via Server-Sent Events (SSE).
-- Automatic regression detection: if a previously marked `FIXED` finding is rediscovered, it is immediately transitioned to **`REOPENED`** and a High-Severity security alert is generated.
-
-### 3.2. Approved Public Exposure Policy Manager (`BaselineException`)
-- Allows security administrators to register whitelisted public paths (e.g. `https://mh.empire.edu.vn/media/*`).
-- Findings matching an approved baseline are classified as `PUBLIC_BY_DESIGN` with an audit record, preventing false positives while auditing against accidental leakage of sensitive files (`.csv`, `.xlsx`, `.pem`, `.env`).
-
-### 3.3. Vulnerability Triage & Lifecycle Engine
-- Supports all 10 standard vulnerability lifecycle states:
-  - `NEW` ➔ `POTENTIAL` ➔ `CONFIRMED` ➔ `OPEN` ➔ `IN_REMEDIATION` ➔ `FIXED` ➔ `REOPENED` ➔ `ACCEPTED_RISK` ➔ `FALSE_POSITIVE` ➔ `NOT_AFFECTED`.
-- Live **One-Click Retest Engine**: Re-evaluates live endpoints against original forensic evidence to automatically verify fixes or confirm ongoing exposure.
-
-### 3.4. Daily Assessment Scheduler (`Asia/Ho_Chi_Minh` ICT)
-- Pre-configured to execute full security assessments across all Empire targets daily at **02:00 AM ICT** (`0 2 * * *`).
-- Provides one-click instant manual trigger with live progress tracking across all targets.
-
-### 3.5. Multi-Format Audit-Grade Reporting
-- Multi-format generation in **Vector PDF** (via ReportLab with custom cybersecurity theme), **HTML**, and **JSON**.
-- 10 comprehensive report templates (Executive Summary, Technical Vulnerability Report, Module-Specific Audits, Compliance Reports).
-- 100% backed by database records — zero mock or placeholder findings.
-
----
-
-## 4. SOC Console: 13 Unified Navigation Views
-
-The web frontend is built with **Next.js 14 (App Router)**, **TypeScript**, and **Tailwind CSS** using a high-density, **Cyber-Slate Dark Mode** design language.
-
-| # | Route | Module Name | Primary Operational Capabilities |
-|---|---|---|---|
-| 1 | `/dashboard` | **Security Overview** | 10 KPI Summary Cards (Risk Score, Active Scans, Findings) + 8 real DB-backed charts |
-| 2 | `/assets` | **Target Management** | Asset inventory table, live health badges, and Bulk Importer (CSV/JSON/OpenAPI deduplication) |
-| 3 | `/empire-modules` | **Empire Modules** | 6 Business Unit cards (Student Mgmt, Materials, Tools, APIs, Web App, Infra) with risk scoring |
-| 4 | `/scans` | **Scan Center** | Launch assessments across 7 profiles (Daily Security, Thorough, API, Authenticated, etc.) |
-| 5 | `/active-assessments` | **Active Tracker** | Real-time SSE terminal log streaming, scan stage progress, and emergency job cancellation |
-| 6 | `/findings` | **Findings Explorer** | Comprehensive vulnerability triage table, forensic drawer, and one-click live retest |
-| 7 | `/remediation` | **Remediation Board** | 5-column Kanban board mapping findings from OPEN to VERIFIED_RESOLVED |
-| 8 | `/reports` | **Report Center** | 10 audit report templates with multi-format download (Vector PDF, HTML, JSON) |
-| 9 | `/schedules` | **Daily Scheduler** | Asia/Ho_Chi_Minh (02:00 AM ICT) assessment pipeline configuration and manual dispatch |
-| 10 | `/threat-intel` | **Threat Intelligence** | CVE search, CISA KEV catalog sync, EPSS exploitation scores, and vulnerability feeds |
-| 11 | `/detection-rules` | **Detection Rules** | Declarative YAML detection rules with syntax validation, test runners, and lifecycle gating |
-| 12 | `/integrations` | **Integrations & Scanners** | Status of integrated scanners (Nuclei, Empire Engine, Better-Auth Prober) & Webhooks |
-| 13 | `/health` & `/settings` | **Diagnostics & Settings** | System telemetry, /media Approved Baseline Policy manager, and Synthetic Student Identities |
-
----
-
-## 5. Quick Start & Operational Commands
-
-### 5.1. System Verification & Self-Test (Doctor Mode)
-Run the automated End-to-End Vertical Slice Verifier testing all 10 core capabilities:
-
-**Windows**:
-```cmd
-run.cmd --check
-```
-
-**Linux / macOS**:
 ```bash
-chmod +x run.sh
-./run.sh --check
+./run.sh start                  # console only
+./run.sh status
+./run.sh stop
+./run.sh start --enable-jobs    # also run worker and configured monitor schedules
+./run.sh logs worker --follow
 ```
 
-### 5.2. Launch Platform (Full Stack)
-Start both the FastAPI backend (Port 8000) and Next.js frontend (Port 3000):
+If the console export is missing, use `./run.sh start --build-console`. Dependencies
+must already be installed from the lockfile. All local services bind loopback;
+the launcher never seeds accounts/assets or claims legacy scanner jobs. Open
+[the local console](http://localhost:8080/). See [local operation, logs and recovery](docs/LOCAL_OPERATIONS.md).
+The launcher does not implement
+`--check`, `--preset` or a Next.js production server on port 3000.
+Windows uses `run.ps1` (`-Role`, `-BuildConsole`) through `run.cmd`.
 
-**Windows**:
-```cmd
-run.cmd --preset all -y
-```
+Owner bootstrap is an operator action on the intended DB, using the CLI's
+`bootstrap-owner --password-stdin` command and configured owner identity.
+HTTP bootstrap is disabled unless `SENTINEL_BOOTSTRAP_TOKEN` is explicitly set,
+and then requires the matching `X-Bootstrap-Token` header in every environment.
+Login always verifies the stored password hash. Do not use old fixed test passwords.
 
-**Linux / macOS**:
+## Safe verification
+
+Run from the repository root:
+
 ```bash
-./run.sh --preset all
+.venv/bin/python .agents/skills/noosforge-repository-audit/scripts/inventory.py
+.venv/bin/python .agents/skills/noosforge-release-review/scripts/validate_skills.py
+.venv/bin/python .agents/skills/noosforge-qa/scripts/run_checks.py pilot
+.venv/bin/python .agents/skills/noosforge-qa/scripts/run_checks.py frontend
+.venv/bin/python .agents/skills/noosforge-qa/scripts/run_checks.py contract
 ```
 
-Access the user interfaces:
-- **Web Mission Control**: [http://localhost:3000/dashboard](http://localhost:3000/dashboard)
-- **Empire Module Hub**: [http://localhost:3000/empire-modules](http://localhost:3000/empire-modules)
-- **Interactive OpenAPI Documentation**: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+The runner uses disposable DB/storage and records commands, exit codes, logs and
+JUnit results. Frontend checks include lifecycle unit tests, TypeScript, ESLint and
+static export. The pilot preset excludes a test that copies the repository DB.
+It is not a network sandbox: inspect changed tests before execution.
 
----
+Do not run legacy `pytest tests` or QA seed/setup scripts directly on this checkout;
+they can change shared users/data and delete stored reports. No customer scan is
+needed for regression verification.
 
-## 6. Directory Structure
+## Operations and lifecycle
 
-```text
-noospire/
-├── run.cmd                       # Unified Windows Launcher (interactive menu & CLI flags)
-├── run.sh                        # Unified Linux/macOS Shell Launcher
-├── README.md                     # Master Architecture & Technical Operations Manual
-├── noospire.db                   # SQLite Async Database with seeded Empire ecosystem
-│
-├── backend/                      # FastAPI Python 3.14 Async Engine
-│   ├── main.py                   # Application entrypoint & CORS middleware configuration
-│   └── app/
-│       ├── api/                  # 11 REST API Routers
-│       │   ├── assets.py         # Target onboarding & CSV/JSON bulk import deduplication
-│       │   ├── empire_modules.py # Empire business module health & risk metrics
-│       │   ├── baselines.py      # Approved Public Media (/media) policy exceptions
-│       │   ├── scans.py          # Assessment dispatch & SSE live log streaming
-│       │   ├── findings.py       # Vulnerability triage (10 states) & Live Retest engine
-│       │   ├── schedules.py      # Daily assessment scheduler (Asia/Ho_Chi_Minh)
-│       │   ├── alerts.py         # Security notifications & in-app alerts
-│       │   ├── metrics.py        # 10 Overview KPIs & 8 database-backed chart datasets
-│       │   ├── rules.py          # Declarative YAML detection rules & syntax validator
-│       │   └── intelligence.py   # CVE lookup & CISA KEV threat intelligence feeds
-│       ├── core/                 # Config, DB async engine, security, and seeder
-│       ├── models/               # SQLAlchemy ORM models (Asset, Finding, Baseline, Schedule, Alert)
-│       ├── scanners/             # EmpireAssessmentEngine & Nuclei integration
-│       └── reporting/            # Multi-format ReportLab PDF, HTML, & JSON builder
-│
-├── frontend/                     # Next.js 14 Cyber-Slate Dark UI
-│   ├── src/
-│   │   ├── app/                  # 13 Application Views (Dashboard, Assets, Modules, Scans, etc.)
-│   │   ├── components/           # UI Shell, Navigation, Notifications, Charts
-│   │   └── lib/                  # TypeScript Types & unified ApiClient
-│   └── package.json
-│
-└── scripts/                      # Operational Scripts & Test Harnesses
-    └── verify_empire_e2e.py      # 10-Step Automated Vertical Slice Verification Suite
-```
+Current schedules use `/api/v1/monitor-schedules`. All obsolete `/api/v1/schedules`
+operations return 410 and leave historical rows intact.
 
----
+A claimed fix is `FIXED_PENDING_RETEST` and remains open. `/retest` and `/recheck`
+queue the producing defensive control. Only comparable successful engine evidence
+can establish `RESOLVED`; manual triage cannot certify resolution. Rediscovery
+reopens resolved/pending findings. The board and filters use all ten canonical states.
 
-## 7. Verified Empire Historical Vulnerability Inventory
-
-The initial database seed incorporates confirmed technical findings from previous security assessments of Empire targets, ensuring immediate operational visibility:
-
-| ID | Title | Target Module | Endpoint / Target | Severity | CVSS | Status |
-|---|---|---|---|---|---|---|
-| **VULN-01** | MinIO Anonymous Bucket Access & Data Exposure | Learning Materials | `https://voh.empire.edu.vn` | **CRITICAL** | 9.8 | CONFIRMED |
-| **VULN-02** | Client-Side RBAC Enforcement Bypass | Web Application | `https://console.empire.io.vn` | **HIGH** | 8.8 | CONFIRMED |
-| **VULN-03** | User Enumeration via Inconsistent Auth Responses | Student Management | `https://id.empire.edu.vn/api/auth/*` | **HIGH** | 8.2 | CONFIRMED |
-| **VULN-04** | Unauthorized Social Graph Harvesting via IDOR | API Services | `https://gw.empire.edu.vn/social/v2/*` | **HIGH** | 7.5 | CONFIRMED |
-| **VULN-05** | Course & Video Curriculum Content Leakage | Learning Materials | `https://gw.empire.edu.vn/courses/*` | **HIGH** | 7.5 | CONFIRMED |
-| **VULN-06** | Hardcoded API Keys & Secrets in Frontend Bundle | Web Application | `https://console.empire.io.vn` | **MEDIUM** | 6.5 | CONFIRMED |
-
----
-**NOOSFORGE Security Intelligence** — *Continuous Attack Surface Superiority for Educational Platforms.*
+See [the runbook](docs/pilot/RUNBOOK.md), [deployment guide](deploy/README_DEPLOY.md),
+[implementation decisions](docs/DECISIONS.md) and
+[remaining work](docs/IMPLEMENTATION_ROADMAP.md). Review exact configuration,
+backup/rollback and approval before destructive operations or external deployment.
+Docker/scanner images, PostgreSQL and production recovery were not certified by
+this local audit.

@@ -22,6 +22,7 @@ import statistics
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 from urllib.parse import urlsplit
 
@@ -29,6 +30,8 @@ from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.core.inventory_reconciliation import execution_block_reasons
+from backend.app.core.config import settings
 from backend.app.models.asset import Asset
 from backend.app.models.defensive import (
     EXEC_QUEUED,
@@ -41,18 +44,18 @@ from backend.app.models.defensive import (
 from backend.app.models.operations import CapacitySettings
 from backend.app.models.scan import Scan, ScanBatch
 
-ENGINES = ("tls_health", "sbom")  # order = priority inside a plan (network-free work is cheap either way)
-DEFAULT_EST_SECONDS = {"tls_health": 3.0, "sbom": 2.0}
+ENGINES = ("public_web", "tls_health", "sbom")  # order = priority inside a plan (network-free work is cheap either way)
+DEFAULT_EST_SECONDS = {"public_web": 3.0, "tls_health": 3.0, "sbom": 2.0}
 LONG_LANE_SECONDS = 60.0  # items estimated above this are "long" regardless of window pressure
 
 PROFILES: Dict[str, dict] = {
     # light: quick checks, short budgets, no spacing
-    "light": {"timeouts": {"tls_health": 30, "sbom": 60}, "host_spacing_seconds": 0, "max_workers": None},
+    "light": {"timeouts": {"public_web": 12, "tls_health": 30, "sbom": 60}, "host_spacing_seconds": 0, "max_workers": None},
     # slow: gentle on targets: one worker, spaced requests to the same host, larger budgets
-    "slow": {"timeouts": {"tls_health": 60, "sbom": 300}, "host_spacing_seconds": 20, "max_workers": 1},
+    "slow": {"timeouts": {"public_web": 12, "tls_health": 60, "sbom": 300}, "host_spacing_seconds": 20, "max_workers": 1},
 }
 
-NOT_APPLICABLE = {"NO_ARTIFACT", "NO_APPROVED_ENDPOINT"}  # configuration gaps, not run failures
+NOT_APPLICABLE = {"NO_ARTIFACT", "NO_APPROVED_ENDPOINT", "NO_PUBLIC_WEB_APPROVAL"}  # configuration gaps, not run failures
 
 
 @dataclass
@@ -92,6 +95,8 @@ class PlanItem:
     input_sha256: Optional[str] = None
     health_revision: Optional[str] = None
     health_url: Optional[str] = None
+    public_web_revision: Optional[str] = None
+    public_web_url: Optional[str] = None
     active_execution_id: Optional[str] = None
     timeout_seconds: int = 60
 
@@ -226,6 +231,7 @@ async def build_plan(db: AsyncSession, *, selection: Selection, engines: Sequenc
     now = now or datetime.now(timezone.utc)
     prof = PROFILES[profile]
     cs = await capacity_settings(db)
+    stopped = cs.emergency_stop_active or (Path(settings.STORAGE_DIR) / "production-emergency-stop").exists()
     est = await engine_estimates(db)
     slots = cs.max_running_executions
     for cap in (max_workers, prof["max_workers"]):
@@ -235,6 +241,7 @@ async def build_plan(db: AsyncSession, *, selection: Selection, engines: Sequenc
     backlog = await queued_backlog_seconds(db, est, now)
     assets = await resolve_assets(db, selection, scope)
     asset_ids = [a.id for a in assets]
+    inventory_blocks = await execution_block_reasons(db, assets)
 
     active_rows = (await db.execute(select(ExecutionRecord.asset_id, ExecutionRecord.engine_id, ExecutionRecord.id)
                                     .where(ExecutionRecord.status.in_((EXEC_QUEUED, EXEC_RUNNING)),
@@ -251,7 +258,7 @@ async def build_plan(db: AsyncSession, *, selection: Selection, engines: Sequenc
     # Host usage inside the trailing hour (quota) and the newest request time per host (spacing).
     hour_ago = now - timedelta(hours=1)
     host_rows = (await db.execute(select(ExecutionRecord.target_host, ExecutionRecord.queued_at)
-                                  .where(ExecutionRecord.engine_id == "tls_health",
+                                  .where(ExecutionRecord.engine_id.in_(("tls_health", "public_web")),
                                          ExecutionRecord.target_host.is_not(None),
                                          ExecutionRecord.queued_at >= hour_ago,
                                          ExecutionRecord.status != "cancelled"))).all()
@@ -272,6 +279,16 @@ async def build_plan(db: AsyncSession, *, selection: Selection, engines: Sequenc
             it = PlanItem(asset_id=str(asset.id), asset_name=asset.name, module=asset.empire_module, engine=eng,
                           decision="queue", est_seconds=round(est[eng]["p50"], 3),
                           timeout_seconds=prof["timeouts"][eng])
+            if stopped:
+                it.decision, it.reason_code = "skip", "GLOBAL_STOP_ACTIVE"
+                it.reason = "Global emergency stop is active; no execution is queued."
+                items.append(it)
+                continue
+            if str(asset.id) in inventory_blocks:
+                it.decision, it.reason_code = "skip", inventory_blocks[str(asset.id)]
+                it.reason = "Synthetic or unproven seeded inventory requires reconciliation before execution."
+                items.append(it)
+                continue
             if (asset.id, eng) in active:
                 it.decision, it.reason_code = "skip", "ALREADY_ACTIVE"
                 it.active_execution_id = active[(asset.id, eng)]
@@ -289,12 +306,23 @@ async def build_plan(db: AsyncSession, *, selection: Selection, engines: Sequenc
                 else:
                     it.artifact_id, it.input_sha256 = str(art.id), art.sha256
             else:
-                hc = (asset.assessment_policy or {}).get("health_check") or {}
+                if eng == "public_web":
+                    from backend.app.engines.public_web import validate_approval, PolicyDenied
+                    try:
+                        hc = await validate_approval(db, asset)
+                    except PolicyDenied as exc:
+                        it.decision, it.reason_code, it.reason = "skip", exc.code, exc.detail
+                        items.append(it)
+                        continue
+                    it.public_web_url, it.public_web_revision = hc["url"], hc["revision"]
+                else:
+                    hc = (asset.assessment_policy or {}).get("health_check") or {}
                 if not hc.get("url"):
                     it.decision, it.reason_code = "skip", "NO_APPROVED_ENDPOINT"
                     it.reason = "Owner has not approved a health endpoint for this asset."
                 else:
-                    it.health_url, it.health_revision = hc["url"], hc.get("revision")
+                    if eng == "tls_health":
+                        it.health_url, it.health_revision = hc["url"], hc.get("revision")
                     it.target_host = _host_of(hc["url"])
                     times = sorted(host_times.get(it.target_host, []))
                     used_bytes = int(host_egress.get(it.target_host) or 0)
@@ -335,7 +363,8 @@ async def build_plan(db: AsyncSession, *, selection: Selection, engines: Sequenc
     avg = statistics.mean([est[e]["p50"] for e in engines])
     capacity = {"slots": slots, "avg_seconds_per_execution": round(avg, 3),
                 "theoretical_hourly_capacity": int(3600 * slots / max(avg, 0.001)),
-                "per_host_hourly_quota": cs.per_host_hourly_quota, "estimates": est}
+                "per_host_hourly_quota": cs.per_host_hourly_quota, "estimates": est,
+                "emergency_stop_active": bool(stopped)}
     return Plan(trigger=trigger, profile=profile, engines=list(engines), selection=asdict(selection),
                 window_seconds=window_seconds, slots=slots, items=items, planned_at=now.isoformat(),
                 backlog_seconds_before=backlog, capacity=capacity)
@@ -370,17 +399,18 @@ async def materialize(db: AsyncSession, plan: Plan, *, name: str, actor_id: Opti
         aid = uuid.UUID(it.asset_id)
         scan = Scan(asset_id=aid, batch_id=batch.id, engine=it.engine, profile="BASELINE", status="QUEUED",
                     target_locator=f"engine://{it.engine}/{aid}", timeout_seconds=it.timeout_seconds,
-                    max_retries=3, available_at=avail)
+                    max_retries=0 if it.engine == "public_web" else 3, available_at=avail)
         scan.created_at = now + timedelta(microseconds=n)
         db.add(scan)
         await db.flush()
-        descriptor = ({"artifact_id": it.artifact_id} if it.engine == "sbom"
+        descriptor = ({"artifact_id": it.artifact_id} if it.engine == "sbom" else
+                      {"public_web_revision": it.public_web_revision, "url": it.public_web_url} if it.engine == "public_web"
                       else {"health_check_revision": it.health_revision, "url": it.health_url})
         rec = ExecutionRecord(scan_id=scan.id, batch_id=batch.id, asset_id=aid, engine_id=it.engine,
                               execution_mode="native",
                               artifact_id=uuid.UUID(it.artifact_id) if it.artifact_id else None,
                               input_sha256=it.input_sha256, input_descriptor=descriptor,
-                              scope_revision=it.health_revision, trigger=plan.trigger, actor_id=actor_id,
+                              scope_revision=it.public_web_revision or it.health_revision, trigger=plan.trigger, actor_id=actor_id,
                               status=EXEC_QUEUED, queued_at=now, correlation_id=correlation_id,
                               schedule_slot_id=schedule_slot_id, lane=it.lane, target_host=it.target_host,
                               plan_note=(f"{it.reason_code}: {it.reason}"[:512] if it.reason_code else None))

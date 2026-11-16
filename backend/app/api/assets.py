@@ -8,17 +8,18 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
-from pydantic import Field
+from pydantic import BaseModel, Field
 import httpx
 import yaml
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.api.deps import get_authorized_asset_ids, load_scope, require_admin, require_operator, require_viewer
+from backend.app.api.deps import get_authorized_asset_ids, load_scope, require_admin, require_operator, require_owner, require_viewer
 from backend.app.core.database import get_db
 from backend.app.core.target_verifier import get_target_verifier
 from backend.app.models.asset import Asset
+from backend.app.core.inventory_reconciliation import reconcile, usable_proof, fixture_provenance, seeded_proof, PRIMARY_TARGET
 from backend.app.models.finding import NormalizedFinding
 from backend.app.models.proof import AssetOwnershipProof, OwnershipProofMethod, OwnershipProofStatus
 from backend.app.models.scope import AssetAssessmentScope
@@ -40,6 +41,8 @@ from backend.app.schemas.asset import (
 )
 
 from backend.app.schemas.common import (
+    OPEN_FINDING_STATES,
+    RESOLVED_FINDING_STATES,
     AssetType,
     Criticality,
     EmpireModule,
@@ -55,16 +58,50 @@ from backend.app.schemas.common import (
 router = APIRouter(prefix="/assets", tags=["Target & Asset Management"])
 
 
+class PublicWebApproval(BaseModel):
+    url: str = Field(..., max_length=2048)
+
+
+@router.put("/{asset_id}/public-web")
+async def approve_public_web(asset_id: uuid.UUID, payload: PublicWebApproval, request: Request,
+                             current_user: User = Depends(require_owner),
+                             db: AsyncSession = Depends(get_db)) -> Any:
+    """Approve one public HEAD observation within an existing ownership/scope grant."""
+    from backend.app.engines.public_web import PolicyDenied, approval_policy, validate_approval
+    from backend.app.models.base import AdminAuditLog
+
+    asset = await db.get(Asset, asset_id)
+    if asset is None:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    try:
+        policy = approval_policy(asset, payload.url, str(current_user.id))
+        asset.assessment_policy = {**(asset.assessment_policy or {}), "public_web": policy}
+        await validate_approval(db, asset)
+    except PolicyDenied as exc:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail=f"{exc.code}: {exc.detail}") from exc
+    db.add(AdminAuditLog(user_id=str(current_user.id), username=current_user.username,
+                         action="PUBLIC_WEB_APPROVAL", details=json.dumps({"asset_id": str(asset_id),
+                         "revision": policy["revision"], "method": "HEAD"}),
+                         ip_address=request.client.host if request.client else "unknown"))
+    await db.commit()
+    return policy
+
+
 async def annotate_verification(db: AsyncSession, assets) -> None:
     """Attach `verification_state` / `verification_proof` from the proof table (Milestone 6)."""
     assets = [a for a in assets if a is not None]
     if not assets:
         return
     rows = (await db.execute(select(AssetOwnershipProof).where(
-        AssetOwnershipProof.asset_id.in_([a.id for a in assets]),
-        AssetOwnershipProof.status == OwnershipProofStatus.VERIFIED.value)
+        AssetOwnershipProof.asset_id.in_([a.id for a in assets]))
         .order_by(AssetOwnershipProof.created_at))).scalars().all()
-    latest = {r.asset_id: r for r in rows}
+    latest = {r.asset_id: r for r in rows if usable_proof({
+        "status": r.status, "verified_at": r.verified_at,
+        "expires_at": r.expires_at, "proof_data": r.proof_data})}
+    scopes = (await db.execute(select(AssetAssessmentScope).where(
+        AssetAssessmentScope.asset_id.in_([a.id for a in assets])))).scalars().all()
+    now = datetime.now(timezone.utc)
     for a in assets:
         proof = latest.get(a.id)
         if proof is not None and a.verification_status == VerificationStatus.VERIFIED.value:
@@ -76,6 +113,37 @@ async def annotate_verification(db: AsyncSession, assets) -> None:
             a.verification_state = ("UNPROVEN" if a.verification_status == VerificationStatus.VERIFIED.value
                                     else a.verification_status)
             a.verification_proof = None
+        provenance = fixture_provenance(a.id, a.target_locator)
+        has_seed = any(p.asset_id == a.id and seeded_proof({"proof_data": p.proof_data}) for p in rows)
+        a.inventory_provenance = provenance or ("INITIAL_SEED_PROOF" if has_seed else None)
+        a.inventory_classification = ("SEEDED_OR_TEST" if provenance or (has_seed and not proof) else
+                                      "OWNER_DESIGNATED_PRIMARY" if a.target_locator.rstrip('/') == PRIMARY_TARGET.rstrip('/') else
+                                      "VERIFIED_ASSET" if proof else "UNKNOWN_OR_UNVERIFIED")
+        related = [s for s in scopes if s.asset_id == a.id]
+        active = [s for s in related if s.expires_at is None or
+                  (s.expires_at if s.expires_at.tzinfo else s.expires_at.replace(tzinfo=timezone.utc)) > now]
+        a.assessment_block_reason = (
+            "SYNTHETIC_INVENTORY" if provenance else
+            "SEEDED_OWNERSHIP_NOT_VERIFIED" if has_seed and not proof else
+            "OWNERSHIP_NOT_VERIFIED" if a.verification_state != "VERIFIED" else
+            "NO_ASSESSMENT_SCOPE" if not related else
+            "TARGET_EMERGENCY_STOP" if any(s.emergency_stop_active for s in related) else
+            "SCOPE_EXPIRED" if not active else None)
+        a.assessment_eligible = a.assessment_block_reason is None
+
+
+@router.get("/reconciliation")
+async def reconcile_inventory(current_user: User = Depends(require_owner),
+                              db: AsyncSession = Depends(get_db)) -> Any:
+    """Read-only, estate-wide inventory provenance. Never expands scan scope."""
+    assets = (await db.execute(select(Asset.id, Asset.target_locator, Asset.environment,
+                                     Asset.verification_status, Asset.assessment_policy, Asset.auth_profile))).mappings().all()
+    proofs = (await db.execute(select(AssetOwnershipProof.asset_id, AssetOwnershipProof.status,
+                                     AssetOwnershipProof.verified_at, AssetOwnershipProof.expires_at,
+                                     AssetOwnershipProof.proof_data))).mappings().all()
+    scopes = (await db.execute(select(AssetAssessmentScope.asset_id,
+                                     AssetAssessmentScope.emergency_stop_active))).mappings().all()
+    return reconcile([dict(r) for r in assets], [dict(r) for r in proofs], [dict(r) for r in scopes])
 
 
 @router.get("", response_model=PaginatedResponse[AssetResponse])
@@ -87,6 +155,7 @@ async def list_assets(
     environment: Optional[str] = None,
     verification_status: Optional[VerificationStatus] = None,
     search: Optional[str] = None,
+    assessment_eligible: Optional[bool] = None,
     current_user: User = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
@@ -114,6 +183,18 @@ async def list_assets(
             )
         )
 
+    # Derived eligibility must be filtered before pagination, otherwise an eligible
+    # target beyond the first page disappears from the launch/schedule selector.
+    if assessment_eligible is not None:
+        from sqlalchemy.orm import noload
+        candidates = (await db.execute(stmt.options(noload(Asset.scans), noload(Asset.findings))
+                                        .order_by(Asset.created_at.asc(), Asset.id.asc()))).scalars().all()
+        await annotate_verification(db, candidates)
+        selected = [a for a in candidates if a.assessment_eligible is assessment_eligible]
+        total = len(selected)
+        return {"items": selected[(page - 1) * size:page * size], "total": total,
+                "page": page, "size": size, "pages": (total + size - 1) // size if total else 1}
+
     # Count total
     count_stmt = select(func.count()).select_from(stmt.subquery())
     total_res = await db.execute(count_stmt)
@@ -138,7 +219,7 @@ async def list_assets(
 @router.post("", response_model=AssetResponse, status_code=status.HTTP_201_CREATED)
 async def create_asset(
     asset_in: AssetCreate,
-    current_user: User = Depends(require_operator),
+    current_user: User = Depends(require_owner),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
     # Check duplicate locator
@@ -668,9 +749,7 @@ async def get_asset(
     if not asset:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target asset not found")
 
-    allowed_ids = await get_authorized_asset_ids(current_user, db)
-    if allowed_ids is not None and asset_id not in allowed_ids:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied to target asset")
+    (await load_scope(current_user, db)).require(asset_id, "READ")
 
     await annotate_verification(db, [asset])
     return asset
@@ -691,10 +770,10 @@ async def get_asset_summary(
     findings_res = await db.execute(select(NormalizedFinding).where(NormalizedFinding.asset_id == asset_id))
     findings = findings_res.scalars().all()
 
-    critical_count = sum(1 for f in findings if f.severity == FindingSeverity.CRITICAL.value and f.status != FindingStatus.FIXED.value)
-    high_count = sum(1 for f in findings if f.severity == FindingSeverity.HIGH.value and f.status != FindingStatus.FIXED.value)
-    open_count = sum(1 for f in findings if f.status in (FindingStatus.OPEN.value, FindingStatus.NEW.value, FindingStatus.REOPENED.value))
-    fixed_count = sum(1 for f in findings if f.status == FindingStatus.FIXED.value)
+    critical_count = sum(1 for f in findings if f.severity == FindingSeverity.CRITICAL.value and f.status not in RESOLVED_FINDING_STATES)
+    high_count = sum(1 for f in findings if f.severity == FindingSeverity.HIGH.value and f.status not in RESOLVED_FINDING_STATES)
+    open_count = sum(1 for f in findings if f.status in OPEN_FINDING_STATES)
+    fixed_count = sum(1 for f in findings if f.status in RESOLVED_FINDING_STATES)
 
     last_scan_res = await db.execute(
         select(Scan).where(Scan.asset_id == asset_id, Scan.completed_at.is_not(None)).order_by(Scan.completed_at.desc()).limit(1)
@@ -725,7 +804,7 @@ class AssetUpdateRequest(AssetUpdate):
 async def update_asset(
     asset_id: uuid.UUID,
     asset_in: AssetUpdateRequest,
-    current_user: User = Depends(require_operator),
+    current_user: User = Depends(require_owner),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
     result = await db.execute(select(Asset).where(Asset.id == asset_id))
@@ -901,6 +980,7 @@ async def emergency_stop_asset(
     """
     from backend.app.core.dispatcher import process_safety
 
+    (await load_scope(current_user, db)).require(asset_id, "SCAN")
     result = await db.execute(select(Asset).where(Asset.id == asset_id))
     asset = result.scalars().first()
     if not asset:

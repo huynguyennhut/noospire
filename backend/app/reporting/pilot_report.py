@@ -26,15 +26,16 @@ from typing import Dict, List, Optional
 from sqlalchemy import select
 
 from backend.app.core.config import settings
+from backend.app.schemas.common import OPEN_FINDING_STATES, RESOLVED_FINDING_STATES
 from backend.app.engines.runner import redact, storage_root
 from backend.app.models.asset import Asset
 from backend.app.models.defensive import ExecutionRecord
 from backend.app.models.finding import NormalizedFinding
 from backend.app.models.lifecycle import FindingObservation, ReportSnapshot
 
-TEMPLATE_VERSION = "noospire-pilot-report/1.0"
+TEMPLATE_VERSION = "noospire-pilot-report/1.1"
 TZ = zoneinfo.ZoneInfo(settings.DEFAULT_TIMEZONE)
-OPEN_STATES = ("NEW", "OPEN", "CONFIRMED", "IN_REMEDIATION", "REOPENED")
+OPEN_STATES = OPEN_FINDING_STATES
 SEV_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "INFO": 4}
 
 
@@ -113,8 +114,8 @@ async def build_snapshot(db, *, title: str, assets: List[Asset], batch_id: Optio
         "previous_snapshot_id": str(prev.id) if prev else None,
         "previous_generated_at": _iso(prev.generated_at) if prev else None,
         "new": sorted(k for k in cur if k not in prev_states) if prev else [],
-        "fixed": sorted(k for k, s in cur.items() if s == "FIXED" and prev_states.get(k) not in (None, "FIXED")),
-        "reopened": sorted(k for k, s in cur.items() if s == "REOPENED" and prev_states.get(k) == "FIXED"),
+        "fixed": sorted(k for k, s in cur.items() if s in RESOLVED_FINDING_STATES and prev_states.get(k) is not None and prev_states.get(k) not in RESOLVED_FINDING_STATES),
+        "reopened": sorted(k for k, s in cur.items() if s == "REOPENED" and prev_states.get(k) in (*RESOLVED_FINDING_STATES, "FIXED_PENDING_RETEST")),
         "unchanged": sum(1 for k, s in cur.items() if prev_states.get(k) == s),
     }
     open_by_sev = {s: sum(1 for x in fx if x["severity"] == s and x["status"] in OPEN_STATES) for s in SEV_ORDER}
@@ -122,16 +123,20 @@ async def build_snapshot(db, *, title: str, assets: List[Asset], batch_id: Optio
     for a in assets:
         mine = [e for e in execs if e.asset_id == a.id]
         per_engine = {}
-        for eng in ("sbom", "tls_health"):
+        for eng in ("sbom", "tls_health", "public_web"):
             ok = [e for e in mine if e.engine_id == eng and e.status == "succeeded"]
             per_engine[eng] = {"runs": sum(1 for e in mine if e.engine_id == eng), "succeeded": len(ok),
-                               "last_success_at": _iso(max((e.finished_at for e in ok), default=None))}
+                               "last_success_at": _iso(max((e.finished_at for e in ok), default=None)),
+                               "coverage_gaps": sorted({gap for e in mine if e.engine_id == eng
+                                                        for gap in (e.summary or {}).get("coverage_gaps", [])})}
         coverage.append({"asset": a.name, "asset_id": str(a.id), "module": a.empire_module, "engines": per_engine})
     covered = sum(1 for c in coverage if any(v["succeeded"] for v in c["engines"].values()))
     appendix = [{"execution_id": str(e.id), "asset": names.get(e.asset_id), "engine": e.engine_id,
                  "status": e.status, "error_class": e.error_class,
-                 "reason": redact(e.status_reason or e.plan_note or "", 500)}
-                for e in execs if e.status not in ("succeeded", "queued", "running")]
+                 "reason": redact("; ".join(filter(None, [e.status_reason or e.plan_note,
+                                                          *(e.summary or {}).get("coverage_gaps", [])])), 1000)}
+                for e in execs if e.status not in ("succeeded", "queued", "running")
+                or (e.summary or {}).get("coverage_gaps")]
     return {
         "template_version": TEMPLATE_VERSION, "title": title,
         "generated_at_utc": now.isoformat(), "generated_at_local": _ict(now), "display_timezone": str(TZ),
@@ -186,7 +191,7 @@ td,th{{border:1px solid #ccc;padding:4px;vertical-align:top}}th{{background:#f3f
 {(' · kỳ trước/previous ' + e(_ict(ch['previous_generated_at']) or '')) if ch['previous_snapshot_id'] else ' · chưa có kỳ trước/no previous report'}</p>
 <p>Coverage: {es['coverage']['assets_with_successful_check']}/{es['coverage']['assets_in_scope']} asset có kiểm tra thành công · lỗi/loại trừ: {es['errors_or_exclusions']}</p>
 <h2>Phạm vi / Scope</h2><p>{e(snap['scope']['kind'])} · {len(snap['scope']['assets'])} asset · {('batch ' + e(str(snap['scope']['batch_id']))) if snap['scope']['batch_id'] else ('window ' + e(str(snap['scope']['window_days'])) + ' ngày/days')}</p>
-<h2>Coverage</h2><table><tr><th>Asset</th><th>Module</th><th>sbom</th><th>tls_health</th></tr>{cov}</table>
+<h2>Coverage</h2><p>A successful public_web run covers one unauthenticated HEAD response and TLS handshake; it does not establish application health or a complete security assessment.</p><table><tr><th>Asset</th><th>Module</th><th>sbom</th><th>tls_health</th><th>public_web</th></tr>{cov}</table>
 <h2>Findings &amp; remediation</h2><table><tr><th>Severity</th><th>Status</th><th>Title</th><th>Asset</th><th>Location</th><th>Last verified</th><th>Remediation</th><th>Owner / assignee</th><th>Evidence sha</th></tr>{rows}</table>
 <h2>Phụ lục lỗi / loại trừ · Appendix: errors &amp; exclusions</h2><table><tr><th>Asset</th><th>Engine</th><th>Status</th><th>Reason</th></tr>{app}</table>
 <footer>{e(snap['redaction'])}<br>Template {e(snap['template_version'])} · snapshot sha256 {snap_sha} · executions {len(snap['executions'])} · correlation {e(', '.join(snap['correlation_ids'])[:300])}</footer>

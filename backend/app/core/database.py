@@ -75,6 +75,9 @@ async def init_db() -> None:
 
         # Auto-migration for SQLite
         if settings.DATABASE_URL.startswith("sqlite"):
+            capacity_columns = [r[1] for r in (await conn.execute(text("PRAGMA table_info(capacity_settings)"))).fetchall()]
+            if capacity_columns and "emergency_stop_active" not in capacity_columns:
+                await conn.execute(text("ALTER TABLE capacity_settings ADD COLUMN emergency_stop_active BOOLEAN NOT NULL DEFAULT 0"))
             try:
                 res = await conn.execute(text("PRAGMA table_info(scans)"))
                 cols = [row[1] for row in res.fetchall()]

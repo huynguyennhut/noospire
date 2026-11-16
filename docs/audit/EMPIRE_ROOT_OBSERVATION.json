@@ -1,0 +1,82 @@
+{
+  "schema": "noosforge.root-observation/1",
+  "environment": "PRODUCTION",
+  "target": "https://empire.edu.vn/",
+  "recorded_at": "2026-11-15T13:05:29.521389+00:00",
+  "profile": "root-metadata-head/1",
+  "driver": "noospire-tls-health-native",
+  "driver_version": "1.1.0",
+  "scope_source": "Owner-designated primary target; no other inventory entries included",
+  "limits": {
+    "max_http_requests": 1,
+    "concurrency": 1,
+    "total_timeout_seconds": 12,
+    "response_body_retained": false,
+    "follow_redirects": false,
+    "credentials_sent": false
+  },
+  "observation": {
+    "outcome": "OBSERVED",
+    "reason": null,
+    "http_requests": 1,
+    "measurement": {
+      "url": "https://empire.edu.vn/",
+      "observed_at": "2026-11-15T13:05:29.004413+00:00",
+      "resolved": [
+        "160.191.101.215"
+      ],
+      "connected_ip": "160.191.101.215",
+      "service_status": "up",
+      "http_status": 200,
+      "latency_ms": 454,
+      "tls_verified": true,
+      "tls_verify_error": null,
+      "tls_version": "TLSv1.3",
+      "cert_subject": "CN=empire.edu.vn",
+      "cert_issuer": "CN=YE1,O=Let's Encrypt,C=US",
+      "cert_not_after": "2027-01-25T21:47:54+00:00",
+      "cert_days_remaining": 71.36,
+      "missing": [],
+      "error": null,
+      "bytes_sent": 105,
+      "bytes_received": 728
+    }
+  },
+  "checks": [
+    {
+      "id": "ROOT-REACHABILITY",
+      "outcome": "PASS",
+      "evidence": {
+        "http_status": 200
+      },
+      "limitation": "A root-page response does not establish application health or route coverage."
+    },
+    {
+      "id": "ROOT-TLS-VERIFY",
+      "outcome": "PASS",
+      "evidence": {
+        "tls_verified": true,
+        "tls_version": "TLSv1.3"
+      }
+    },
+    {
+      "id": "ROOT-CERT-EXPIRY",
+      "outcome": "PASS",
+      "evidence": {
+        "cert_not_after": "2027-01-25T21:47:54+00:00",
+        "days_remaining": 71.36
+      }
+    }
+  ],
+  "route_coverage_gap": null,
+  "automatic_stop": null,
+  "application_health_endpoint_verified": false,
+  "full_assessment_complete": false,
+  "limitations": [
+    "No authenticated identities/test records provisioned: BOLA/BFLA/RBAC/tenant/session checks excluded.",
+    "No other hosts, paths, ports, login redirects or health endpoints tested.",
+    "No target CPU/memory/queue telemetry or pre-scan latency baseline available.",
+    "No external scanner run; this observation is not a vulnerability assessment of the application."
+  ],
+  "evidence_sha256": "312e2cf78dc5610b096c1e5ae9a67e09e78592a4ece8d7c4f3a41f3ffc0de5df"
+}

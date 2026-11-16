@@ -8,12 +8,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
-from backend.app.api.deps import require_admin, require_operator, require_viewer
+from backend.app.api.deps import require_admin, require_operator, require_owner, require_viewer
 from backend.app.models.baseline import BaselineException
 from backend.app.models.user import User
 from backend.app.schemas.common import ExposureClassification
 
-router = APIRouter(prefix="/baselines", tags=["Approved Baseline Exceptions"])
+# Baselines apply to the whole estate and have no asset-grant relation.
+router = APIRouter(prefix="/baselines", tags=["Approved Baseline Exceptions"], dependencies=[Depends(require_owner)])
 
 
 class BaselineCreateRequest(BaseModel):

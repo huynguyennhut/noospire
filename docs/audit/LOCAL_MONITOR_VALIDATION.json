@@ -1,0 +1,150 @@
+{
+  "recorded_at_utc": "2026-11-16T15:52:52.921157+00:00",
+  "scope": "Local NOOSFORGE implementation; one authorized exact-root unauthenticated Empire observation",
+  "pilot": {
+    "status": "PASS",
+    "passed": 242,
+    "failed": 0,
+    "deselected": 1,
+    "warnings": 244,
+    "command": [
+      "/home/nhut-nguyen/noospire/.venv/bin/python",
+      "-m",
+      "pytest",
+      "-p",
+      "pytest_asyncio.plugin",
+      "-q",
+      "tests_pilot",
+      "--deselect=tests_pilot/test_m7_round_a.py::test_legacy_database_upgrades_in_place_and_backup_restores",
+      "--junitxml=/tmp/noosforge-pilot-5urhk0rk/pytest.xml"
+    ],
+    "log": "storage/qa-handoff/pilot-final.log",
+    "raw_artifacts": "storage/qa-handoff/pilot-final-evidence",
+    "excluded": "Legacy DB-copy migration test; new migration test uses synthetic schema instead"
+  },
+  "frontend": {
+    "status": "PASS",
+    "unit_tests": 6,
+    "checks": [
+      {
+        "command": [
+          "npm",
+          "run",
+          "test:lifecycle"
+        ],
+        "status": "PASS",
+        "exit_code": 0
+      },
+      {
+        "command": [
+          "npm",
+          "run",
+          "typecheck"
+        ],
+        "status": "PASS",
+        "exit_code": 0
+      },
+      {
+        "command": [
+          "npm",
+          "run",
+          "lint"
+        ],
+        "status": "PASS",
+        "exit_code": 0
+      },
+      {
+        "command": [
+          "npm",
+          "run",
+          "build"
+        ],
+        "status": "PASS",
+        "exit_code": 0
+      }
+    ],
+    "raw_artifacts": "storage/qa-handoff/frontend-evidence"
+  },
+  "contract": {
+    "status": "PASS",
+    "matched_calls": 123,
+    "missing": 0,
+    "method_mismatch": 0,
+    "operations": 164
+  },
+  "skills": {
+    "count": 7,
+    "structure_validation_errors": 0,
+    "practical_validation": {
+      "noosforge-repository-audit": "Read-only source inventory and actual runtime/config/provenance discovery",
+      "noosforge-frontend": "6 helper tests, typecheck, lint, static export; limited hydrated browser inspection",
+      "noosforge-backend": "Full 242-test pilot includes API, worker, lifecycle, schema compatibility and schedule flows",
+      "noosforge-security-scanners": "39 offline public_web cases plus existing egress/inventory/auth tests in full pilot; separate real bounded root observation",
+      "noosforge-qa": "Isolation runner executed full pilot, frontend and contract with actual exit codes",
+      "noosforge-devops": "Disposable loopback supervisor start/stop/restart/worker-crash tests and existing gateway/restart suite",
+      "noosforge-release-review": "Concrete diff review caught zero-retry and concurrency bugs; fixes tested; skill validator and diff whitespace checks passed"
+    }
+  },
+  "real_observation": {
+    "execution_id": "f035715c-9cc8-4dd0-80fb-837217c5e566",
+    "batch_id": "7a426179-bfb8-4f4a-ab88-fca6a484b19f",
+    "status": "succeeded",
+    "engine": "public_web",
+    "driver": "noospire-public-web-native",
+    "driver_version": "1.0.0",
+    "observed_at": "2026-11-16T15:48:37.015616+00:00",
+    "http_status": 200,
+    "tls_version": "TLSv1.3",
+    "tls_verified": true,
+    "requests_sent": 1,
+    "checks_evaluated": 6,
+    "checks_failed": 0,
+    "output_sha256": "15d46e465a00ab90820e2a610354ae23c83753fd413722d8a5a5ee24529f1fdf",
+    "coverage_gaps": [
+      "AUTHENTICATED_COVERAGE_NOT_CONFIGURED",
+      "APPLICATION_HEALTH_ENDPOINT_NOT_CONFIGURED",
+      "CRAWLING_AND_INJECTION_NOT_EVALUATED",
+      "SOURCE_CONTAINER_CLOUD_MOBILE_NOT_EVALUATED"
+    ],
+    "application_health_assessed": false,
+    "full_assessment_complete": false
+  },
+  "schedule": {
+    "interval_minutes": 120,
+    "asset_count": 1,
+    "engine": "public_web",
+    "next_slot_at_setup_ict": "2026-11-16T23:00:00+07:00",
+    "estate_concurrency": 1
+  },
+  "runtime": {
+    "console": "http://localhost:8080/",
+    "roles": [
+      "api",
+      "gateway",
+      "worker",
+      "scheduler"
+    ],
+    "loopback_only": true,
+    "legacy_jobs_excluded": true,
+    "auto_start_after_reboot": false
+  },
+  "limitations": [
+    "Browser URL policy blocked additional live UI verification; final Warm Light/mobile/global-stop UI interaction not verified",
+    "Native external scanner/Docker image/PostgreSQL/deployment checks not performed",
+    "No approved target-auth identities, health endpoints or full estate inventory; broad assessment remains unprovisioned"
+  ],
+  "initial_failed_run": {
+    "passed": 239,
+    "failed": 3,
+    "affected_group_rerun_passed": 56,
+    "fixes": [
+      "Restart TIME_WAIT bind behavior",
+      "Registry membership order expectation",
+      "Synthetic end-to-end test honors mandatory host spacing"
+    ]
+  },
+  "secret_handling": {
+    "database_storage_backups_env_keys_excluded_from_git": true,
+    "high_confidence_secret_matches_in_changed_text_files": 0
+  }
+}

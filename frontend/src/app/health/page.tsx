@@ -22,9 +22,11 @@ import {
 import { api, EngineHealthResponse, EngineTestResult, EngineUpdateCheckResult } from '@/lib/api';
 import { useI18n } from '@/lib/i18n';
 import { useToast } from '@/components/ui/toast';
+import { Badge } from '@/components/ui/badge';
 
 export default function SystemHealthPage() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
+  const L = (vi: string, en: string) => locale === 'vi' ? vi : en;
   const { toast } = useToast();
   const [healthData, setHealthData] = useState<any>(null);
   const [engineHealth, setEngineHealth] = useState<EngineHealthResponse | null>(null);
@@ -68,7 +70,8 @@ export default function SystemHealthPage() {
       setShowTestModal(true);
       toast({
         title: 'Engine Self-Test Complete',
-        description: `All ${res.results.length} security engines verified in ${res.duration_ms}ms. Overall status: ${res.overall_status}.`,
+        description: `${res.overall_status} · ${res.duration_ms}ms. ${res.scope}`,
+        variant: res.overall_status === 'PASS' ? 'default' : 'destructive',
         duration: 4000,
       });
     } catch (err: unknown) {
@@ -90,7 +93,7 @@ export default function SystemHealthPage() {
       setShowUpdateModal(true);
       toast({
         title: 'Engine Updates Checked',
-        description: res.updates_available ? 'New engine/template updates available!' : 'All engine binaries and vulnerability templates are up to date.',
+        description: res.note || L('Chưa xác minh phiên bản mới nhất.', 'Latest upstream versions have not been verified.'),
         duration: 4000,
       });
     } catch (err: unknown) {
@@ -119,7 +122,7 @@ export default function SystemHealthPage() {
         <div>
           <div className="flex items-center gap-2">
             <Activity className="w-6 h-6 text-emerald-400" />
-            <h1 className="text-2xl font-black tracking-tight text-white">
+            <h1 className="text-2xl font-black tracking-tight text-[color:var(--text-primary)]">
               {t('health.title', 'SYSTEM HEALTH & ENGINE MANAGEMENT')}
             </h1>
           </div>
@@ -133,30 +136,30 @@ export default function SystemHealthPage() {
           <button
             onClick={handleCheckUpdates}
             disabled={checkingUpdates}
-            className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-xs font-semibold text-slate-300 hover:text-white transition shadow-sm cursor-pointer disabled:opacity-50"
-            title="Check scanner engines and vulnerability template signatures for updates"
+            className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-xs font-semibold text-slate-300 hover:text-[color:var(--text-primary)] transition shadow-sm cursor-pointer disabled:opacity-50"
+            title="Show current driver versions; upstream versions are not queried"
           >
-            <DownloadCloud className={`w-3.5 h-3.5 ${checkingUpdates ? 'animate-bounce text-cyan-400' : 'text-cyan-400'}`} />
-            <span>{checkingUpdates ? 'Checking...' : 'Check Updates'}</span>
+            <DownloadCloud className={`w-3.5 h-3.5 ${checkingUpdates ? 'animate-bounce text-[color:var(--text-secondary)]' : 'text-[color:var(--text-secondary)]'}`} />
+            <span>{checkingUpdates ? L('Đang tải…', 'Loading…') : L('Phiên bản driver', 'Driver Versions')}</span>
           </button>
 
           {/* Test All Engines Button */}
           <button
             onClick={handleTestAllEngines}
             disabled={testingEngines}
-            className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-cyan-500/20 to-emerald-500/20 hover:from-cyan-500/30 hover:to-emerald-500/30 border border-cyan-500/30 text-xs font-bold text-cyan-300 hover:text-white transition shadow-sm cursor-pointer disabled:opacity-50"
-            title="Run synthetic probe against all scanner engines to verify operational integrity"
+            className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-cyan-500/20 to-emerald-500/20 hover:from-cyan-500/30 hover:to-emerald-500/30 border border-cyan-500/30 text-xs font-bold text-[color:var(--text-secondary)] hover:text-[color:var(--text-primary)] transition shadow-sm cursor-pointer disabled:opacity-50"
+            title="Run local SBOM matching and egress policy self-tests without customer probes"
           >
-            <Zap className={`w-3.5 h-3.5 ${testingEngines ? 'animate-spin text-cyan-400' : 'text-cyan-400'}`} />
+            <Zap className={`w-3.5 h-3.5 ${testingEngines ? 'animate-spin text-[color:var(--text-secondary)]' : 'text-[color:var(--text-secondary)]'}`} />
             <span>{testingEngines ? 'Testing Engines...' : 'Test All Engines'}</span>
           </button>
 
           {/* Refresh Telemetry */}
           <button
             onClick={fetchHealth}
-            className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-xs font-semibold text-slate-300 hover:text-white transition shadow-sm cursor-pointer"
+            className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-xs font-semibold text-slate-300 hover:text-[color:var(--text-primary)] transition shadow-sm cursor-pointer"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-cyan-400' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-[color:var(--text-secondary)]' : ''}`} />
             <span>{t('common.refresh', 'Refresh')}</span>
           </button>
         </div>
@@ -184,9 +187,9 @@ export default function SystemHealthPage() {
         <div className="p-4 rounded-2xl liquid-glass-card border border-white/10 shadow-md">
           <div className="flex items-center justify-between text-xs text-slate-400">
             <span>SQLAlchemy Persistence</span>
-            <Database className="w-4 h-4 text-cyan-400" />
+            <Database className="w-4 h-4 text-[color:var(--text-secondary)]" />
           </div>
-          <div className={`text-xl font-black mt-2 font-mono ${dbState === 'ok' ? 'text-cyan-400' : 'text-rose-400'}`}>{dbState.toUpperCase()}</div>
+          <div className={`text-xl font-black mt-2 font-mono ${dbState === 'ok' ? 'text-[color:var(--text-secondary)]' : 'text-rose-400'}`}>{dbState.toUpperCase()}</div>
           <div className="text-[11px] text-slate-400 mt-1">Reported by /healthz/ready</div>
         </div>
 
@@ -196,7 +199,7 @@ export default function SystemHealthPage() {
             <span>Security Engines Status</span>
             <ShieldCheck className="w-4 h-4 text-emerald-400" />
           </div>
-          <div className="text-xl font-black text-white mt-2 font-mono flex items-center gap-2">
+          <div className="text-xl font-black text-[color:var(--text-primary)] mt-2 font-mono flex items-center gap-2">
             <span>{engineHealth ? `${okEngines}/${defensiveEngines} OPERATIONAL` : 'UNKNOWN'}</span>
           </div>
           <div className="text-[11px] text-slate-400 mt-1">{engineHealth ? 'Per-engine status from /engines/health' : 'Engine health not loaded'}</div>
@@ -206,10 +209,10 @@ export default function SystemHealthPage() {
         <div className="p-4 rounded-2xl liquid-glass-card border border-white/10 shadow-md">
           <div className="flex items-center justify-between text-xs text-slate-400">
             <span>Operating Timezone</span>
-            <Clock className="w-4 h-4 text-cyan-400" />
+            <Clock className="w-4 h-4 text-[color:var(--text-secondary)]" />
           </div>
-          <div className="text-xl font-black text-cyan-400 mt-2 font-mono">Asia/Ho_Chi_Minh</div>
-          <div className="text-[11px] text-slate-400 mt-1">ICT (UTC+07:00) &bull; Scheduler Synchronized</div>
+          <div className="text-xl font-black text-[color:var(--text-secondary)] mt-2 font-mono">Asia/Ho_Chi_Minh</div>
+          <div className="text-[11px] text-slate-400 mt-1">ICT (UTC+07:00) &bull; {L('Múi giờ hiển thị', 'Display timezone')}</div>
         </div>
       </div>
 
@@ -217,13 +220,11 @@ export default function SystemHealthPage() {
       <div className="rounded-2xl liquid-glass-card overflow-hidden shadow-xl border border-white/10">
         <div className="p-4 bg-cyber-950/90 border-b border-white/10 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-white uppercase tracking-wider">Subsystem Diagnostics Matrix</span>
-            <span className="px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-400 border border-cyan-800 text-[10px] font-mono font-bold">
-              {displayEngines.length} Subsystems
-            </span>
+            <span className="text-xs font-bold text-[color:var(--text-primary)] uppercase tracking-wider">Subsystem Diagnostics Matrix</span>
+            <Badge>{displayEngines.length} Subsystems</Badge>
           </div>
           <div className="text-[11px] text-slate-400 font-mono">
-            Source: <span className="text-white font-bold">/api/v1/engines/health</span>
+            Source: <span className="text-[color:var(--text-primary)] font-bold">/api/v1/engines/health</span>
           </div>
         </div>
 
@@ -242,19 +243,13 @@ export default function SystemHealthPage() {
               {displayEngines.map((row) => {
                 const tone = row.status === 'OPERATIONAL' ? 'emerald' : row.status === 'DEGRADED' ? 'amber' : row.status === 'NOT_INTEGRATED' ? 'slate' : 'rose';
                 const dot = { emerald: 'bg-emerald-400', amber: 'bg-amber-400', slate: 'bg-slate-500', rose: 'bg-rose-500' }[tone];
-                const badge = {
-                  emerald: 'bg-emerald-950/80 text-emerald-400 border-emerald-800',
-                  amber: 'bg-amber-950/80 text-amber-300 border-amber-800',
-                  slate: 'bg-slate-900 text-slate-400 border-slate-700',
-                  rose: 'bg-rose-950/80 text-rose-300 border-rose-800',
-                }[tone];
                 return (
                   <tr key={row.id || row.name} className="hover:bg-white/[0.02] transition">
-                    <td className="py-3 px-4 font-bold text-white flex items-center gap-2">
+                    <td className="py-3 px-4 font-bold text-[color:var(--text-primary)] flex items-center gap-2">
                       <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dot}`} aria-hidden />
                       <span>{row.name}</span>
                     </td>
-                    <td className="py-3 px-3 text-cyan-400 font-mono text-[11px]">{row.driver || '—'} {row.version || ''}</td>
+                    <td className="py-3 px-3 text-[color:var(--text-secondary)] font-mono text-[11px]">{row.driver || '—'} {row.version || ''}</td>
                     <td className="py-3 px-3 text-slate-400 text-[11px] max-w-xs" title={row.reason || row.runtime_context || ''}>
                       {row.reason || row.runtime_context || '—'}
                     </td>
@@ -262,7 +257,7 @@ export default function SystemHealthPage() {
                       {row.last_success_at ? new Date(row.last_success_at).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false }) + ' ICT' : '—'}
                     </td>
                     <td className="py-3 px-4 text-right">
-                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border font-mono ${badge}`}>{row.status}</span>
+                      <Badge severity={row.status === 'OPERATIONAL' ? 'low' : row.status === 'DEGRADED' ? 'medium' : row.status === 'UNAVAILABLE' ? 'critical' : 'neutral'}>{row.status}</Badge>
                     </td>
                   </tr>
                 );
@@ -278,39 +273,38 @@ export default function SystemHealthPage() {
           <div className="w-full max-w-2xl rounded-2xl liquid-glass-modal p-6 shadow-2xl border border-white/15 space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-white/10">
               <div className="flex items-center gap-2">
-                <Zap className="w-5 h-5 text-cyan-400" />
-                <h2 className="text-base font-bold text-white">Security Engines Self-Test Verification</h2>
+                <Zap className="w-5 h-5 text-[color:var(--text-secondary)]" />
+                <h2 className="text-base font-bold text-[color:var(--text-primary)]">Security Engines Self-Test Verification</h2>
               </div>
               <button
                 onClick={() => setShowTestModal(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.06]"
+                className="p-1 rounded-lg text-slate-400 hover:text-[color:var(--text-primary)] hover:bg-white/[0.06]"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-300 flex items-center justify-between">
+            <div className={`p-3.5 rounded-xl border text-xs flex items-center justify-between ${testResult.overall_status === 'PASS' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' : 'bg-rose-500/10 border-rose-500/30 text-rose-300'}`}>
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                <span>Overall Result: <strong>{testResult.overall_status}</strong> &bull; Verified in {testResult.duration_ms}ms</span>
+                <span>Overall Result: <strong>{testResult.overall_status}</strong> &bull; {testResult.duration_ms}ms</span>
               </div>
               <span className="text-[10px] font-mono text-slate-400">{new Date(testResult.timestamp).toLocaleTimeString()}</span>
             </div>
 
+            <p className="text-xs text-slate-400">{testResult.scope}</p>
             <div className="divide-y divide-white/5 max-h-80 overflow-y-auto pr-1 text-xs space-y-1">
               {testResult.results.map((r, idx) => (
                 <div key={idx} className="py-2.5 flex items-start justify-between gap-3">
                   <div>
-                    <div className="font-bold text-white flex items-center gap-2">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                    <div className="font-bold text-[color:var(--text-primary)] flex items-center gap-2">
+                      <span className={`w-1.5 h-1.5 rounded-full ${r.status === 'PASS' ? 'bg-emerald-400' : 'bg-rose-400'}`} />
                       <span>{r.engine}</span>
                     </div>
                     <p className="text-[11px] text-slate-400 mt-0.5">{r.message}</p>
                   </div>
                   <div className="text-right shrink-0">
-                    <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-950 text-emerald-400 border border-emerald-800">
-                      {r.status}
-                    </span>
+                    <Badge severity={r.status === 'PASS' ? 'low' : 'critical'}>{r.status}</Badge>
                     <div className="text-[10px] text-slate-500 font-mono mt-0.5">{r.latency_ms}ms</div>
                   </div>
                 </div>
@@ -335,23 +329,21 @@ export default function SystemHealthPage() {
           <div className="w-full max-w-xl rounded-2xl liquid-glass-modal p-6 shadow-2xl border border-white/15 space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-white/10">
               <div className="flex items-center gap-2">
-                <DownloadCloud className="w-5 h-5 text-cyan-400" />
-                <h2 className="text-base font-bold text-white">Engine & Template Updates Inspection</h2>
+                <DownloadCloud className="w-5 h-5 text-[color:var(--text-secondary)]" />
+                <h2 className="text-base font-bold text-[color:var(--text-primary)]">Engine & Template Updates Inspection</h2>
               </div>
               <button
                 onClick={() => setShowUpdateModal(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.06]"
+                className="p-1 rounded-lg text-slate-400 hover:text-[color:var(--text-primary)] hover:bg-white/[0.06]"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-3.5 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-xs text-cyan-300 flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-cyan-400 shrink-0" />
+            <div className="p-3.5 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-xs text-[color:var(--text-secondary)] flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-[color:var(--text-secondary)] shrink-0" />
               <span>
-                {updateResult.updates_available
-                  ? 'Updates detected for selected engine packages.'
-                  : 'All security engines, scanner binaries, and vulnerability template databases are completely up to date.'}
+                {updateResult.note || L('Chưa xác minh phiên bản mới nhất.', 'Latest upstream versions have not been verified.')}
               </span>
             </div>
 
@@ -359,15 +351,15 @@ export default function SystemHealthPage() {
               {updateResult.engines.map((e, idx) => (
                 <div key={idx} className="py-2.5 flex items-start justify-between gap-3">
                   <div>
-                    <div className="font-bold text-white">{e.engine}</div>
-                    <p className="text-[11px] text-slate-400 mt-0.5">{e.notes || 'Signatures current.'}</p>
-                    <div className="text-[10px] text-cyan-400 font-mono mt-0.5">
-                      Installed: v{e.current_version} &bull; Latest: v{e.latest_version}
+                    <div className="font-bold text-[color:var(--text-primary)]">{e.engine}</div>
+                    <p className="text-[11px] text-slate-400 mt-0.5">{e.notes}</p>
+                    <div className="text-[10px] text-[color:var(--text-secondary)] font-mono mt-0.5">
+                      Installed: {e.current_version} &bull; Latest: {e.latest_version ?? L('Chưa kiểm tra', 'Not checked')}
                     </div>
                   </div>
-                  <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-950 text-emerald-400 border border-emerald-800 shrink-0">
-                    UP TO DATE
-                  </span>
+                  <Badge severity={e.has_update === null ? 'neutral' : e.has_update ? 'medium' : 'low'}>
+                    {e.has_update === null ? L('CHƯA KIỂM TRA', 'NOT CHECKED') : e.has_update ? L('CÓ BẢN MỚI', 'UPDATE AVAILABLE') : L('ĐÃ KIỂM TRA', 'CHECKED')}
+                  </Badge>
                 </div>
               ))}
             </div>

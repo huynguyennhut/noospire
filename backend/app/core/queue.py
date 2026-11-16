@@ -11,12 +11,13 @@ import random
 from typing import List, Optional
 import uuid
 
-from sqlalchemy import func, select, true, update
+from sqlalchemy import and_, func, or_, select, true, update
 from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.finding import NormalizedFinding
 from backend.app.models.scan import Scan
+from backend.app.core.config import settings
 from backend.app.schemas.common import ScanQualityStatus, ScanStatus
 
 logger = logging.getLogger("sentinel.queue")
@@ -38,6 +39,35 @@ class IDBDurableQueue:
         Increments fencing_token and sets lease_expires_at.
         """
         now = datetime.now(timezone.utc)
+        from backend.app.models.defensive import ExecutionRecord
+        from backend.app.models.operations import CapacitySettings
+        capacity = await session.get(CapacitySettings, 1)
+        if capacity and capacity.emergency_stop_active:
+            return None
+        not_paused = ~select(CapacitySettings.id).where(
+            CapacitySettings.id == 1, CapacitySettings.emergency_stop_active.is_(True)
+        ).exists()
+        # Plan previews are advisory snapshots: concurrent requests can both plan
+        # the same host. Reserve public-web concurrency and minimum spacing in
+        # the SQLite claim itself, where writers are serialized.
+        candidate_host = (select(ExecutionRecord.target_host)
+                          .where(ExecutionRecord.scan_id == Scan.id,
+                                 ExecutionRecord.engine_id == "public_web")
+                          .correlate(Scan).scalar_subquery())
+        public_ids = select(ExecutionRecord.scan_id).where(ExecutionRecord.engine_id == "public_web")
+        other_scan, other_execution = aliased(Scan), aliased(ExecutionRecord)
+        host_busy = (select(other_scan.id).join(other_execution, other_execution.scan_id == other_scan.id)
+                     .where(other_scan.id != Scan.id,
+                            other_execution.engine_id.in_(("public_web", "tls_health")),
+                            other_execution.target_host == candidate_host,
+                            or_(other_scan.started_at >= now - timedelta(seconds=20),
+                                and_(other_scan.status.in_((ScanStatus.RUNNING.value, ScanStatus.INITIALIZING.value,
+                                                           ScanStatus.COMPLETING.value)),
+                                     other_scan.lease_expires_at > now)))
+                     .correlate(Scan).exists())
+        public_host_available = or_(Scan.id.not_in(public_ids),
+                                    and_(candidate_host.is_not(None), ~host_busy))
+        eligible = Scan.id.in_(select(ExecutionRecord.scan_id)) if settings.DEFENSIVE_ONLY else true()
         dialect = session.bind.dialect.name if session.bind else "sqlite"
         is_sqlite = dialect == "sqlite"
         # Estate-wide capacity: count live leases across every worker process.
@@ -46,7 +76,8 @@ class IDBDurableQueue:
             select(func.count()).select_from(_live)
             .where(_live.status.in_((ScanStatus.RUNNING.value, ScanStatus.INITIALIZING.value,
                                      ScanStatus.COMPLETING.value)),
-                   _live.lease_expires_at != None, _live.lease_expires_at > now)
+                   _live.lease_expires_at != None, _live.lease_expires_at > now,
+                   _live.id.in_(select(ExecutionRecord.scan_id)) if settings.DEFENSIVE_ONLY else true())
             .scalar_subquery()
         )
         if max_running is not None and not is_sqlite:
@@ -60,6 +91,9 @@ class IDBDurableQueue:
                 .where(
                     (Scan.status == ScanStatus.QUEUED.value)
                     & ((Scan.available_at == None) | (Scan.available_at <= now))
+                    & eligible
+                    & not_paused
+                    & public_host_available
                 )
                 .order_by(Scan.created_at.asc())
                 .with_for_update(skip_locked=True)
@@ -87,6 +121,9 @@ class IDBDurableQueue:
                 .where(
                     (Scan.status == ScanStatus.QUEUED.value)
                     & ((Scan.available_at == None) | (Scan.available_at <= now))
+                    & eligible
+                    & not_paused
+                    & public_host_available
                 )
                 .order_by(Scan.created_at.asc())
                 .limit(10)
@@ -103,6 +140,9 @@ class IDBDurableQueue:
                         (Scan.id == cand_id)
                         & (Scan.status == ScanStatus.QUEUED.value)
                         & (Scan.fencing_token == old_tok)
+                        & eligible
+                        & not_paused
+                        & public_host_available
                         # SQLite serialises writers, so this cap check and the claim are one atomic step.
                         & ((running_now < max_running) if max_running is not None else true())
                     )
@@ -228,7 +268,7 @@ class IDBDurableQueue:
 
         now = datetime.now(timezone.utc)
         current_attempts = scan.attempts or 1
-        max_retries = scan.max_retries or 3
+        max_retries = scan.max_retries if scan.max_retries is not None else 3
 
         if is_transient and current_attempts < max_retries:
             backoff = min(max_backoff_seconds, base_backoff_seconds * (2 ** (current_attempts - 1)))
@@ -266,6 +306,7 @@ class IDBDurableQueue:
         Increments fencing_token to fence off dead workers and requeues/fails them.
         """
         now = datetime.now(timezone.utc)
+        from backend.app.models.defensive import ExecutionRecord
         stmt = (
             select(Scan)
             .where(
@@ -273,6 +314,7 @@ class IDBDurableQueue:
                                   ScanStatus.COMPLETING.value)))
                 & (Scan.lease_expires_at != None)
                 & (Scan.lease_expires_at < now)
+                & (Scan.id.in_(select(ExecutionRecord.scan_id)) if settings.DEFENSIVE_ONLY else true())
             )
         )
         res = await session.execute(stmt)
@@ -282,7 +324,7 @@ class IDBDurableQueue:
         for scan in expired_scans:
             scan.fencing_token = (scan.fencing_token or 0) + 1
             current_attempts = scan.attempts or 1
-            max_retries = scan.max_retries or 3
+            max_retries = scan.max_retries if scan.max_retries is not None else 3
 
             if current_attempts < max_retries:
                 scan.status = ScanStatus.QUEUED.value

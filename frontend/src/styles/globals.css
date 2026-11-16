@@ -345,3 +345,22 @@ body {
 [data-theme='warm'] .bg-white\/10 {
   background-color: rgba(0, 0, 0, 0.06) !important;
 }
+
+/* Assessment operations use semantic tokens in both Obsidian and Warm themes. */
+.assessment-panel {
+  padding: 1.25rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 1rem;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+.assessment-muted { color: var(--text-secondary); font-size: .8125rem; }
+.assessment-input { padding: .625rem .75rem; border: 1px solid var(--border-strong); border-radius: .625rem; background: var(--bg-primary); color: var(--text-primary); }
+.assessment-link { display: inline-flex; align-items: center; gap: .5rem; padding: .5rem .75rem; border: 1px solid var(--border-strong); border-radius: .625rem; font-size: .8125rem; color: var(--text-primary); }
+.assessment-link:hover { background: var(--bg-surface-hover); }
+.assessment-alert { padding: 1rem; border: 1px solid var(--severity-high); border-radius: .75rem; color: var(--text-primary); background: var(--bg-surface); overflow-wrap: anywhere; }
+.assessment-table { width: 100%; text-align: left; font-size: .8125rem; }
+.assessment-table th { color: var(--text-secondary); font-weight: 500; }
+.assessment-table td, .assessment-table th { padding: .75rem; border-bottom: 1px solid var(--border-subtle); vertical-align: top; }
+.assessment-table td { color: var(--text-primary); }
+.assessment-input:focus-visible, .assessment-link:focus-visible { outline: 2px solid var(--text-secondary); outline-offset: 3px; }

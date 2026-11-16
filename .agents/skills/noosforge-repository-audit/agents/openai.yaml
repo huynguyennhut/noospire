@@ -1,0 +1,4 @@
+interface:
+  display_name: "Repository Audit & Architecture"
+  short_description: "Map actual NOOSFORGE architecture and gaps"
+  default_prompt: "Use $noosforge-repository-audit. Audit the current repository and trace one scan workflow without executing a customer scan."

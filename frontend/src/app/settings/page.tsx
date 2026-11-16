@@ -27,14 +27,16 @@ import {
   Sun,
   Moon,
 } from 'lucide-react';
-import { api } from '@/lib/api';
+import { api, EngineHealthResponse } from '@/lib/api';
 import { BaselineException } from '@/lib/types';
 import { useI18n } from '@/lib/i18n';
 import { useTheme } from '@/providers/ThemeProvider';
 import { useToast } from '@/components/ui/toast';
+import { Badge } from '@/components/ui/badge';
 
 export default function SettingsPage() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
+  const L = (vi: string, en: string) => locale === 'vi' ? vi : en;
   const { theme, setTheme, toggleTheme, isDark } = useTheme();
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<'appearance' | 'baselines' | 'synthetic' | 'policy' | 'ssrf' | 'maintenance'>('appearance');
@@ -59,6 +61,21 @@ export default function SettingsPage() {
   const [showResetConfirmModal, setShowResetConfirmModal] = useState(false);
   const [testingEngines, setTestingEngines] = useState(false);
   const [checkingUpdates, setCheckingUpdates] = useState(false);
+  const [engineHealth, setEngineHealth] = useState<EngineHealthResponse | null>(null);
+  const [engineHealthError, setEngineHealthError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (activeTab !== 'maintenance') return;
+    let active = true;
+    setEngineHealth(null);
+    setEngineHealthError(null);
+    api.getEngineHealth().then(result => {
+      if (active) setEngineHealth(result);
+    }).catch((error: unknown) => {
+      if (active) setEngineHealthError(error instanceof Error ? error.message : String(error));
+    });
+    return () => { active = false; };
+  }, [activeTab]);
 
   const fetchBaselines = async () => {
     try {
@@ -190,8 +207,9 @@ export default function SettingsPage() {
       setTestingEngines(true);
       const res = await api.testEngines();
       toast({
-        title: 'Engines Verified',
-        description: `Verified ${res.results.length} security engines in ${res.duration_ms}ms. Status: ${res.overall_status}.`,
+        title: res.overall_status === 'PASS' ? L('Tự kiểm tra hoàn tất', 'Self-test complete') : L('Tự kiểm tra thất bại', 'Self-test failed'),
+        description: `${res.overall_status} · ${res.duration_ms}ms. ${res.scope}`,
+        variant: res.overall_status === 'PASS' ? 'default' : 'destructive',
         duration: 4000,
       });
     } catch (err: unknown) {
@@ -211,7 +229,7 @@ export default function SettingsPage() {
       const res = await api.checkEngineUpdates();
       toast({
         title: 'Engine Update Check',
-        description: res.updates_available ? 'New updates available for scanner suite.' : 'All scanner engines and template databases are up to date.',
+        description: res.note || (res.updates_available ? L('Có bản cập nhật.', 'Updates available.') : L('Chưa xác minh phiên bản mới nhất.', 'Latest upstream versions have not been verified.')),
         duration: 4000,
       });
     } catch (err: unknown) {
@@ -229,8 +247,8 @@ export default function SettingsPage() {
     <div className="space-y-6 max-w-5xl">
       {/* Header */}
       <div className="pb-4 border-b border-white/10">
-        <h1 className="text-2xl font-black tracking-tight text-white flex items-center gap-2">
-          <Settings className="w-6 h-6 text-cyan-400" />
+        <h1 className="text-2xl font-black tracking-tight text-[color:var(--text-primary)] flex items-center gap-2">
+          <Settings className="w-6 h-6 text-[color:var(--text-secondary)]" />
           <span>{t('settings.title', 'SECURITY SETTINGS & BASELINE POLICIES')}</span>
         </h1>
         <p className="text-xs text-slate-400 mt-1">
@@ -244,8 +262,8 @@ export default function SettingsPage() {
           onClick={() => setActiveTab('appearance')}
           className={`px-4 py-2 font-bold border-b-2 transition flex items-center gap-2 ${
             activeTab === 'appearance'
-              ? 'border-cyan-500 text-cyan-400'
-              : 'border-transparent text-slate-400 hover:text-white'
+              ? 'border-cyan-500 text-[color:var(--text-secondary)]'
+              : 'border-transparent text-slate-400 hover:text-[color:var(--text-primary)]'
           }`}
         >
           <Palette className="w-3.5 h-3.5" />
@@ -256,8 +274,8 @@ export default function SettingsPage() {
           onClick={() => setActiveTab('baselines')}
           className={`px-4 py-2 font-bold border-b-2 transition flex items-center gap-2 ${
             activeTab === 'baselines'
-              ? 'border-cyan-500 text-cyan-400'
-              : 'border-transparent text-slate-400 hover:text-white'
+              ? 'border-cyan-500 text-[color:var(--text-secondary)]'
+              : 'border-transparent text-slate-400 hover:text-[color:var(--text-primary)]'
           }`}
         >
           <BookOpen className="w-3.5 h-3.5" />
@@ -268,8 +286,8 @@ export default function SettingsPage() {
           onClick={() => setActiveTab('policy')}
           className={`px-4 py-2 font-bold border-b-2 transition flex items-center gap-2 ${
             activeTab === 'policy'
-              ? 'border-cyan-500 text-cyan-400'
-              : 'border-transparent text-slate-400 hover:text-white'
+              ? 'border-cyan-500 text-[color:var(--text-secondary)]'
+              : 'border-transparent text-slate-400 hover:text-[color:var(--text-primary)]'
           }`}
         >
           <Sliders className="w-3.5 h-3.5" />
@@ -280,8 +298,8 @@ export default function SettingsPage() {
           onClick={() => setActiveTab('synthetic')}
           className={`px-4 py-2 font-bold border-b-2 transition flex items-center gap-2 ${
             activeTab === 'synthetic'
-              ? 'border-cyan-500 text-cyan-400'
-              : 'border-transparent text-slate-400 hover:text-white'
+              ? 'border-cyan-500 text-[color:var(--text-secondary)]'
+              : 'border-transparent text-slate-400 hover:text-[color:var(--text-primary)]'
           }`}
         >
           <Users className="w-3.5 h-3.5" />
@@ -292,8 +310,8 @@ export default function SettingsPage() {
           onClick={() => setActiveTab('ssrf')}
           className={`px-4 py-2 font-bold border-b-2 transition flex items-center gap-2 ${
             activeTab === 'ssrf'
-              ? 'border-cyan-500 text-cyan-400'
-              : 'border-transparent text-slate-400 hover:text-white'
+              ? 'border-cyan-500 text-[color:var(--text-secondary)]'
+              : 'border-transparent text-slate-400 hover:text-[color:var(--text-primary)]'
           }`}
         >
           <Network className="w-3.5 h-3.5" />
@@ -305,7 +323,7 @@ export default function SettingsPage() {
           className={`px-4 py-2 font-bold border-b-2 transition flex items-center gap-2 ${
             activeTab === 'maintenance'
               ? 'border-rose-500 text-rose-400'
-              : 'border-transparent text-slate-400 hover:text-white'
+              : 'border-transparent text-slate-400 hover:text-[color:var(--text-primary)]'
           }`}
         >
           <RotateCcw className="w-3.5 h-3.5" />
@@ -320,14 +338,12 @@ export default function SettingsPage() {
           <div className="p-5 rounded-2xl liquid-glass-card border border-white/10 shadow-xl space-y-2">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <Palette className="w-5 h-5 text-cyan-400" />
-                <h3 className="font-bold text-white text-base">
+                <Palette className="w-5 h-5 text-[color:var(--text-secondary)]" />
+                <h3 className="font-bold text-[color:var(--text-primary)] text-base">
                   {t('theme.appearance', 'Giao diện & Chủ đề / Theme & Appearance')}
                 </h3>
               </div>
-              <span className="px-2.5 py-1 rounded-full bg-cyan-950 text-cyan-400 border border-cyan-800 text-[10px] font-mono font-bold tracking-wider uppercase">
-                {t('theme.wcagCompliance', 'WCAG 2.1 AA Compliant')}
-              </span>
+              <Badge>{L('Hai chủ đề', 'Two themes')}</Badge>
             </div>
             <p className="text-slate-400 text-xs leading-relaxed max-w-3xl">
               {t('theme.appearanceDesc', 'Tùy chỉnh hệ thống giao diện Liquid Glass giữa chế độ Tối Obsidian và Sáng Ấm (Warm Invert Light).')}
@@ -354,13 +370,13 @@ export default function SettingsPage() {
               <div>
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
-                    <Moon className="w-4 h-4 text-cyan-400" />
-                    <span className="font-bold text-white text-sm">
+                    <Moon className="w-4 h-4 text-[color:var(--text-secondary)]" />
+                    <span className="font-bold text-[color:var(--text-primary)] text-sm">
                       {t('theme.dark', 'Dark Obsidian (Default)')}
                     </span>
                   </div>
                   {theme === 'obsidian-dark' && (
-                    <span className="px-2 py-0.5 rounded-md bg-cyan-950 text-cyan-400 border border-cyan-700 text-[10px] font-bold">
+                    <span className="px-2 py-0.5 rounded-md bg-cyan-950 text-[color:var(--text-secondary)] border border-cyan-700 text-[10px] font-bold">
                       {t('theme.activeBadge', 'ĐANG SỬ DỤNG')}
                     </span>
                   )}
@@ -382,19 +398,19 @@ export default function SettingsPage() {
                   </div>
                   <div className="flex gap-2">
                     <span className="px-2 py-0.5 rounded bg-white/5 border border-white/10 text-[9px] font-mono text-zinc-300">#09090B</span>
-                    <span className="px-2 py-0.5 rounded bg-white/5 border border-white/10 text-[9px] font-mono text-cyan-300">Spec Cyan</span>
+                    <span className="px-2 py-0.5 rounded bg-white/5 border border-white/10 text-[9px] font-mono text-[color:var(--text-secondary)]">Spec Cyan</span>
                   </div>
                 </div>
               </div>
 
               <div className="mt-5 pt-3 border-t border-white/10 flex items-center justify-between">
-                <span className="text-[11px] text-slate-400 font-mono">Contrast 14.8:1</span>
+                <span className="text-[11px] text-slate-400 font-mono">Obsidian palette</span>
                 <button
                   type="button"
                   className={`px-3 py-1.5 rounded-xl font-bold text-xs transition ${
                     theme === 'obsidian-dark'
                       ? 'bg-cyan-500 text-black shadow-md'
-                      : 'bg-white/10 text-white hover:bg-white/20'
+                      : 'bg-white/10 text-[color:var(--text-primary)] hover:bg-white/20'
                   }`}
                 >
                   {theme === 'obsidian-dark' ? '✓ ' + t('theme.activeBadge', 'ĐANG SỬ DỤNG') : t('theme.selectTheme', 'Chọn chủ đề này')}
@@ -421,7 +437,7 @@ export default function SettingsPage() {
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
                     <Sun className="w-4 h-4 text-amber-500" />
-                    <span className="font-bold text-white text-sm">
+                    <span className="font-bold text-[color:var(--text-primary)] text-sm">
                       {t('theme.warm', 'Warm Invert Light')}
                     </span>
                   </div>
@@ -454,13 +470,13 @@ export default function SettingsPage() {
               </div>
 
               <div className="mt-5 pt-3 border-t border-white/10 flex items-center justify-between">
-                <span className="text-[11px] text-slate-400 font-mono">Contrast 13.2:1</span>
+                <span className="text-[11px] text-slate-400 font-mono">Warm palette</span>
                 <button
                   type="button"
                   className={`px-3 py-1.5 rounded-xl font-bold text-xs transition ${
                     theme === 'warm-light'
-                      ? 'bg-amber-600 text-white shadow-md'
-                      : 'bg-white/10 text-white hover:bg-white/20'
+                      ? 'bg-amber-600 text-[color:var(--text-primary)] shadow-md'
+                      : 'bg-white/10 text-[color:var(--text-primary)] hover:bg-white/20'
                   }`}
                 >
                   {theme === 'warm-light' ? '✓ ' + t('theme.activeBadge', 'ĐANG SỬ DỤNG') : t('theme.selectTheme', 'Chọn chủ đề này')}
@@ -475,12 +491,12 @@ export default function SettingsPage() {
       {activeTab === 'baselines' && (
         <div className="space-y-6 text-xs">
           <div className="p-4 rounded-2xl liquid-glass-card border border-cyan-800/60 leading-relaxed text-slate-300 shadow-md">
-            <h3 className="font-bold text-white text-sm flex items-center gap-2">
-              <Shield className="w-4 h-4 text-cyan-400" />
+            <h3 className="font-bold text-[color:var(--text-primary)] text-sm flex items-center gap-2">
+              <Shield className="w-4 h-4 text-[color:var(--text-secondary)]" />
               <span>Approved Public Exposure Baseline Policy (Section 3.1)</span>
             </h3>
             <p className="mt-1 text-slate-400 text-xs">
-              The <code className="text-cyan-400">/media</code> path is intentionally configured to allow anonymous public access for designated educational materials.
+              The <code className="text-[color:var(--text-secondary)]">/media</code> path is intentionally configured to allow anonymous public access for designated educational materials.
               Expected public accessibility is classified as <strong className="text-emerald-400">PUBLIC_BY_DESIGN</strong> and does NOT generate vulnerability alerts.
               However, the scanner continues to check for unintended sensitive content (student records, credentials, directory indexing).
             </p>
@@ -488,7 +504,7 @@ export default function SettingsPage() {
 
           {/* Active Baselines List */}
           <div className="rounded-2xl liquid-glass-card border border-white/10 overflow-hidden shadow-xl">
-            <div className="p-3.5 bg-cyber-950/90 border-b border-white/10 font-bold text-white uppercase tracking-wider text-[11px]">
+            <div className="p-3.5 bg-cyber-950/90 border-b border-white/10 font-bold text-[color:var(--text-primary)] uppercase tracking-wider text-[11px]">
               Active Approved Baseline Exceptions
             </div>
             <div className="divide-y divide-white/5">
@@ -496,7 +512,7 @@ export default function SettingsPage() {
                 <div key={b.id} className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="font-mono text-cyan-400 font-bold text-xs">{b.scope}</span>
+                      <span className="font-mono text-[color:var(--text-secondary)] font-bold text-xs">{b.scope}</span>
                       <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-950/80 text-emerald-400 border border-emerald-800">
                         {b.classification}
                       </span>
@@ -514,7 +530,7 @@ export default function SettingsPage() {
 
           {/* Register New Baseline Form */}
           <div className="p-5 rounded-2xl liquid-glass-card border border-white/10 shadow-xl">
-            <h3 className="font-bold text-white text-sm mb-3">Register Approved Baseline Scope</h3>
+            <h3 className="font-bold text-[color:var(--text-primary)] text-sm mb-3">Register Approved Baseline Scope</h3>
             <form onSubmit={handleCreateBaseline} className="space-y-3">
               <div>
                 <label className="block text-slate-300 font-semibold mb-1">Target Scope Pattern</label>
@@ -523,7 +539,7 @@ export default function SettingsPage() {
                   placeholder="e.g. https://mh.empire.edu.vn/media/*"
                   value={newScope}
                   onChange={(e) => setNewScope(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-cyber-950 border border-white/10 text-white font-mono text-xs focus:outline-none focus:border-cyan-500"
+                  className="w-full px-3 py-2 rounded-xl bg-cyber-950 border border-white/10 text-[color:var(--text-primary)] font-mono text-xs focus:outline-none focus:border-cyan-500"
                 />
               </div>
 
@@ -534,7 +550,7 @@ export default function SettingsPage() {
                   placeholder="Explain why public anonymous access is an explicit educational platform requirement..."
                   value={newReason}
                   onChange={(e) => setNewReason(e.target.value)}
-                  className="w-full p-3 rounded-xl bg-cyber-950 border border-white/10 text-white text-xs focus:outline-none focus:border-cyan-500"
+                  className="w-full p-3 rounded-xl bg-cyber-950 border border-white/10 text-[color:var(--text-primary)] text-xs focus:outline-none focus:border-cyan-500"
                 />
               </div>
 
@@ -555,7 +571,7 @@ export default function SettingsPage() {
       {/* TAB 2: PERSISTENT TARGET POLICY */}
       {activeTab === 'policy' && (
         <div className="p-5 rounded-2xl liquid-glass-card border border-white/10 space-y-4 text-xs shadow-xl">
-          <h3 className="font-bold text-white text-sm">Persistent Target Management Rules (Section 11)</h3>
+          <h3 className="font-bold text-[color:var(--text-primary)] text-sm">Persistent Target Management Rules (Section 11)</h3>
           <p className="text-slate-400 leading-relaxed">
             Empire targets are configured once and stored in the persistent management policy. Routine assessments, daily scheduled scans, and on-demand assessments do not require repeated manual confirmations or document re-verifications.
           </p>
@@ -563,7 +579,7 @@ export default function SettingsPage() {
           <div className="space-y-3 pt-2">
             <div className="p-3 rounded-xl bg-white/[0.02] border border-white/10 flex items-center justify-between">
               <div>
-                <div className="font-bold text-white">Immediate Assessment Authorization</div>
+                <div className="font-bold text-[color:var(--text-primary)]">Immediate Assessment Authorization</div>
                 <div className="text-slate-400 text-[11px] mt-0.5">Permit instant scans without ownership upload re-prompts</div>
               </div>
               <span className="text-emerald-400 font-bold font-mono">ENABLED</span>
@@ -571,7 +587,7 @@ export default function SettingsPage() {
 
             <div className="p-3 rounded-xl bg-white/[0.02] border border-white/10 flex items-center justify-between">
               <div>
-                <div className="font-bold text-white">Continuous Daily Assessment Pipeline</div>
+                <div className="font-bold text-[color:var(--text-primary)]">Continuous Daily Assessment Pipeline</div>
                 <div className="text-slate-400 text-[11px] mt-0.5">Automated scan run daily at 02:00 AM Asia/Ho_Chi_Minh</div>
               </div>
               <span className="text-emerald-400 font-bold font-mono">ENABLED</span>
@@ -579,10 +595,10 @@ export default function SettingsPage() {
 
             <div className="p-3 rounded-xl bg-white/[0.02] border border-white/10 flex items-center justify-between">
               <div>
-                <div className="font-bold text-white">Default Request Rate Limit</div>
+                <div className="font-bold text-[color:var(--text-primary)]">Default Request Rate Limit</div>
                 <div className="text-slate-400 text-[11px] mt-0.5">Maximum concurrent probes per second to protect target server stability</div>
               </div>
-              <span className="text-cyan-400 font-bold font-mono">150 req/sec</span>
+              <span className="text-[color:var(--text-secondary)] font-bold font-mono">150 req/sec</span>
             </div>
           </div>
         </div>
@@ -592,7 +608,7 @@ export default function SettingsPage() {
       {activeTab === 'synthetic' && (
         <div className="rounded-2xl liquid-glass-card border border-white/10 overflow-hidden text-xs shadow-xl">
           <div className="p-4 bg-cyber-950/90 border-b border-white/10 flex items-center justify-between">
-            <span className="font-bold text-white uppercase tracking-wider text-[11px]">Dedicated Synthetic Identities for Non-Destructive Testing</span>
+            <span className="font-bold text-[color:var(--text-primary)] uppercase tracking-wider text-[11px]">Dedicated Synthetic Identities for Non-Destructive Testing</span>
           </div>
 
           <table className="w-full text-left text-xs">
@@ -613,7 +629,7 @@ export default function SettingsPage() {
                 { id: 'audit_probe_synthetic', role: 'AUDITOR', email: 'audit_synthetic_probe@empire.local', purpose: 'Controlled negative-auth & rate limit verification', status: 'ACTIVE' },
               ].map((s) => (
                 <tr key={s.id} className="hover:bg-white/[0.02] transition">
-                  <td className="py-3 px-4 font-bold text-cyan-400 font-mono">{s.id}</td>
+                  <td className="py-3 px-4 font-bold text-[color:var(--text-secondary)] font-mono">{s.id}</td>
                   <td className="py-3 px-3 text-slate-300 font-semibold">{s.role}</td>
                   <td className="py-3 px-3 text-slate-400 font-mono">{s.email}</td>
                   <td className="py-3 px-3 text-slate-300">{s.purpose}</td>
@@ -632,7 +648,7 @@ export default function SettingsPage() {
       {/* TAB 4: SSRF BOUNDARIES */}
       {activeTab === 'ssrf' && (
         <div className="p-5 rounded-2xl liquid-glass-card border border-white/10 space-y-4 text-xs shadow-xl">
-          <h3 className="font-bold text-white text-sm">Two-Tier SSRF & Egress Protection</h3>
+          <h3 className="font-bold text-[color:var(--text-primary)] text-sm">Two-Tier SSRF & Egress Protection</h3>
           <p className="text-slate-400">
             Blocks accidental scanning of internal loopback, RFC 1918 private subnets, and cloud metadata endpoints (169.254.169.254).
           </p>
@@ -643,13 +659,13 @@ export default function SettingsPage() {
               rows={6}
               value={blockedCidrs}
               onChange={(e) => setBlockedCidrs(e.target.value)}
-              className="w-full p-3 rounded-xl bg-cyber-950 border border-white/10 text-white font-mono text-xs focus:outline-none focus:border-cyan-500"
+              className="w-full p-3 rounded-xl bg-cyber-950 border border-white/10 text-[color:var(--text-primary)] font-mono text-xs focus:outline-none focus:border-cyan-500"
             />
           </div>
 
           <div className="p-3 rounded-xl bg-white/[0.02] border border-white/10 flex items-center justify-between">
             <div>
-              <div className="font-bold text-white">Lab & Local Target Override Gate</div>
+              <div className="font-bold text-[color:var(--text-primary)]">Lab & Local Target Override Gate</div>
               <div className="text-slate-400 text-[11px]">Permit explicitly verified laboratory endpoints on localhost</div>
             </div>
             <input
@@ -666,12 +682,12 @@ export default function SettingsPage() {
       {activeTab === 'maintenance' && (
         <div className="space-y-6 text-xs">
           {/* Hero Maintenance Card: Quay Về Ban Đầu */}
-          <div className="p-5 rounded-2xl bg-gradient-to-r from-rose-950/40 via-black to-slate-950 border border-rose-500/30 shadow-2xl relative overflow-hidden space-y-4">
+          <div className="p-5 rounded-2xl liquid-glass-card border border-rose-500/30 shadow-2xl relative overflow-hidden space-y-4">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
                 <div className="flex items-center gap-2">
                   <AlertOctagon className="w-5 h-5 text-rose-400 shrink-0" />
-                  <h3 className="font-black text-white text-base font-mono uppercase tracking-tight">
+                  <h3 className="font-black text-[color:var(--text-primary)] text-base font-mono uppercase tracking-tight">
                     Quay Về Trạng Thái Ban Đầu (Reset System to Baseline)
                   </h3>
                 </div>
@@ -684,39 +700,22 @@ export default function SettingsPage() {
                 type="button"
                 onClick={() => setShowResetConfirmModal(true)}
                 disabled={resetting}
-                className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs transition shadow-lg shadow-rose-950/80 flex items-center gap-2 cursor-pointer shrink-0 disabled:opacity-50"
+                className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-[color:var(--text-primary)] font-black text-xs transition shadow-lg shadow-rose-950/80 flex items-center gap-2 cursor-pointer shrink-0 disabled:opacity-50"
               >
                 <RotateCcw className={`w-4 h-4 ${resetting ? 'animate-spin' : ''}`} />
                 <span>{resetting ? 'Đang Khôi Phục...' : 'Quay Về Ban Đầu'}</span>
               </button>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-2 text-[11px] font-mono">
-              <div className="p-2.5 rounded-lg bg-black/50 border border-white/5">
-                <span className="text-slate-400 block text-[10px]">TARGET PERIMETER</span>
-                <span className="font-bold text-white">Synthetic demo data (dev only)</span>
-              </div>
-              <div className="p-2.5 rounded-lg bg-black/50 border border-white/5">
-                <span className="text-slate-400 block text-[10px]">FINDING REPOSITORY</span>
-                <span className="font-bold text-amber-400">98 Verified Items</span>
-              </div>
-              <div className="p-2.5 rounded-lg bg-black/50 border border-white/5">
-                <span className="text-slate-400 block text-[10px]">SCAN TELEMETRY</span>
-                <span className="font-bold text-cyan-400">50 Historical Baselines</span>
-              </div>
-              <div className="p-2.5 rounded-lg bg-black/50 border border-white/5">
-                <span className="text-slate-400 block text-[10px]">RECURRING PIPELINES</span>
-                <span className="font-bold text-emerald-400">3 Active Schedules</span>
-              </div>
-            </div>
+
           </div>
 
           {/* System Logs & Date Tracking Section */}
           <div className="p-5 rounded-2xl liquid-glass-card border border-white/10 shadow-xl space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-white/10">
               <div>
-                <h3 className="font-bold text-white text-sm flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-cyan-400" />
+                <h3 className="font-bold text-[color:var(--text-primary)] text-sm flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-[color:var(--text-secondary)]" />
                   <span>System Logs, Audit Trail & Date Tracking</span>
                 </h3>
                 <p className="text-slate-400 text-[11px] mt-0.5">
@@ -734,8 +733,8 @@ export default function SettingsPage() {
                     onClick={() => setLogTimeFilter(days)}
                     className={`px-2 py-0.5 rounded-lg text-[10px] font-mono font-bold transition ${
                       logTimeFilter === days
-                        ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm'
-                        : 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
+                        ? 'bg-cyan-500/20 text-[color:var(--text-secondary)] border border-cyan-500/40 shadow-sm'
+                        : 'text-slate-400 hover:text-[color:var(--text-primary)] hover:bg-white/[0.04]'
                     }`}
                   >
                     {days}
@@ -746,7 +745,7 @@ export default function SettingsPage() {
 
             <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
               <div className="text-[11px] text-slate-400">
-                Filter Scope: <span className="text-white font-mono font-bold">{logTimeFilter === 'ALL' ? 'Full Platform Lifetime' : `Last ${logTimeFilter}`}</span> &bull; Status: <span className="text-emerald-400 font-mono font-bold">100% AUDIT READY</span>
+                Filter Scope: <span className="text-[color:var(--text-primary)] font-mono font-bold">{logTimeFilter === 'ALL' ? 'Full Platform Lifetime' : `Last ${logTimeFilter}`}</span> &bull; Status: <span className="text-emerald-400 font-mono font-bold">{L('Bộ lọc nhật ký', 'Log filter selection')}</span>
               </div>
 
               <div className="flex items-center gap-2">
@@ -763,17 +762,17 @@ export default function SettingsPage() {
                 {/* Export JSON */}
                 <button
                   onClick={() => handleExportSystemLogs('json')}
-                  className="px-3 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-slate-300 hover:text-white font-semibold text-xs flex items-center gap-1.5 transition cursor-pointer"
+                  className="px-3 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-slate-300 hover:text-[color:var(--text-primary)] font-semibold text-xs flex items-center gap-1.5 transition cursor-pointer"
                   title="Export structured audit logs in JSON format"
                 >
-                  <Download className="w-3.5 h-3.5 text-cyan-400" />
+                  <Download className="w-3.5 h-3.5 text-[color:var(--text-secondary)]" />
                   <span>Export JSON</span>
                 </button>
 
                 {/* Export CSV */}
                 <button
                   onClick={() => handleExportSystemLogs('csv')}
-                  className="px-3 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-slate-300 hover:text-white font-semibold text-xs flex items-center gap-1.5 transition cursor-pointer"
+                  className="px-3 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-slate-300 hover:text-[color:var(--text-primary)] font-semibold text-xs flex items-center gap-1.5 transition cursor-pointer"
                   title="Export audit log matrix in CSV format"
                 >
                   <Download className="w-3.5 h-3.5 text-emerald-400" />
@@ -787,12 +786,12 @@ export default function SettingsPage() {
           <div className="p-5 rounded-2xl liquid-glass-card border border-white/10 shadow-xl space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-white/10">
               <div>
-                <h3 className="font-bold text-white text-sm flex items-center gap-2">
+                <h3 className="font-bold text-[color:var(--text-primary)] text-sm flex items-center gap-2">
                   <Cpu className="w-4 h-4 text-emerald-400" />
                   <span>Engine Telemetry & Integrity Diagnostics</span>
                 </h3>
                 <p className="text-slate-400 text-[11px] mt-0.5">
-                  Live verification of scanner binaries (Nuclei CLI, ZAP, Empire Engine, Trivy, Nmap, SSRF Gatekeeper).
+                  {L('Trạng thái từ heartbeat worker và nguồn dữ liệu hiện có. Tự kiểm tra không quét hệ thống khách hàng.', 'Status from worker heartbeats and available inputs. Self-tests do not scan customer systems.')}
                 </p>
               </div>
 
@@ -800,41 +799,34 @@ export default function SettingsPage() {
                 <button
                   onClick={handleCheckEngineUpdatesQuick}
                   disabled={checkingUpdates}
-                  className="px-3 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-slate-300 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
+                  className="px-3 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-slate-300 hover:text-[color:var(--text-primary)] text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
                 >
-                  <DownloadCloud className={`w-3.5 h-3.5 ${checkingUpdates ? 'animate-bounce text-cyan-400' : 'text-cyan-400'}`} />
-                  <span>{checkingUpdates ? 'Checking...' : 'Check Engine Updates'}</span>
+                  <DownloadCloud className={`w-3.5 h-3.5 ${checkingUpdates ? 'animate-bounce text-[color:var(--text-secondary)]' : 'text-[color:var(--text-secondary)]'}`} />
+                  <span>{checkingUpdates ? L('Đang tải…', 'Loading…') : L('Phiên bản driver', 'Driver Versions')}</span>
                 </button>
 
                 <button
                   onClick={handleTestAllEnginesQuick}
                   disabled={testingEngines}
-                  className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-cyan-500/20 to-emerald-500/20 hover:from-cyan-500/30 hover:to-emerald-500/30 border border-cyan-500/40 text-cyan-300 hover:text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
+                  className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-cyan-500/20 to-emerald-500/20 hover:from-cyan-500/30 hover:to-emerald-500/30 border border-cyan-500/40 text-[color:var(--text-secondary)] hover:text-[color:var(--text-primary)] text-xs font-bold flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
                 >
-                  <Zap className={`w-3.5 h-3.5 ${testingEngines ? 'animate-spin text-cyan-400' : 'text-cyan-400'}`} />
+                  <Zap className={`w-3.5 h-3.5 ${testingEngines ? 'animate-spin text-[color:var(--text-secondary)]' : 'text-[color:var(--text-secondary)]'}`} />
                   <span>{testingEngines ? 'Testing...' : 'Test All Engines'}</span>
                 </button>
               </div>
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
-              {[
-                { name: 'Nuclei Scanner CLI', version: 'v3.11.1', status: 'OPERATIONAL', path: 'C:\\Users\\nguye\\go\\bin\\nuclei.exe' },
-                { name: 'Empire Assessment Engine', version: 'v2.4.0', status: 'OPERATIONAL', path: 'EmpireAssessmentEngine (FastAPI)' },
-                { name: 'OWASP ZAP Core Adapter', version: 'v2.14.0', status: 'OPERATIONAL', path: 'ZAPLabRunner (DAST)' },
-                { name: 'Aqua Trivy Scanner', version: 'v0.49.1', status: 'OPERATIONAL', path: 'TrivyLabRunner (SBOM)' },
-                { name: 'Nmap Port Recon', version: 'v7.94', status: 'OPERATIONAL', path: 'NmapSubprocessAdapter' },
-                { name: 'Two-Tier SSRF Gatekeeper', version: 'v1.8.0', status: 'OPERATIONAL', path: 'SSRFProtector (Egress Guard)' },
-              ].map((eng, idx) => (
-                <div key={idx} className="p-3 rounded-xl bg-white/[0.02] border border-white/5 space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-white">{eng.name}</span>
-                    <span className="px-1.5 py-0.2 rounded text-[9px] font-mono font-bold bg-emerald-950 text-emerald-400 border border-emerald-800">
-                      {eng.status}
-                    </span>
+              {engineHealthError && <p role="alert" className="col-span-full text-red-400">{engineHealthError}</p>}
+              {!engineHealth && !engineHealthError && <p role="status" className="col-span-full text-slate-400">{L('Đang tải trạng thái engine…', 'Loading engine status…')}</p>}
+              {engineHealth?.engines.map(eng => (
+                <div key={eng.id} className="p-3 rounded-xl bg-white/[0.02] border border-white/5 space-y-1">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-bold text-[color:var(--text-primary)]">{eng.name}</span>
+                    <Badge severity={eng.status === 'OPERATIONAL' ? 'low' : eng.status === 'DEGRADED' ? 'medium' : 'neutral'}>{eng.status}</Badge>
                   </div>
-                  <div className="text-[10px] text-cyan-400 font-mono">{eng.version}</div>
-                  <div className="text-[10px] text-slate-500 truncate" title={eng.path}>{eng.path}</div>
+                  <div className="text-[10px] text-slate-400 font-mono">{eng.version ?? L('Chưa tích hợp', 'Not integrated')}</div>
+                  <div className="text-[11px] text-slate-400">{eng.reason || L('Worker sẵn sàng.', 'Worker ready.')}</div>
                 </div>
               ))}
             </div>
@@ -849,11 +841,11 @@ export default function SettingsPage() {
             <div className="flex items-center justify-between pb-3 border-b border-white/10">
               <div className="flex items-center gap-2">
                 <AlertOctagon className="w-5 h-5 text-rose-400" />
-                <h3 className="text-base font-bold text-white">Xác Nhận Quay Về Ban Đầu</h3>
+                <h3 className="text-base font-bold text-[color:var(--text-primary)]">Xác Nhận Quay Về Ban Đầu</h3>
               </div>
               <button
                 onClick={() => setShowResetConfirmModal(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white"
+                className="p-1 rounded-lg text-slate-400 hover:text-[color:var(--text-primary)]"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -882,7 +874,7 @@ export default function SettingsPage() {
                 type="button"
                 onClick={handleResetBaseline}
                 disabled={resetting}
-                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-xs transition shadow-lg shadow-rose-950/80 disabled:opacity-50"
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-[color:var(--text-primary)] font-extrabold text-xs transition shadow-lg shadow-rose-950/80 disabled:opacity-50"
               >
                 {resetting ? 'Đang Khôi Phục...' : 'Xác Nhận Khôi Phục'}
               </button>

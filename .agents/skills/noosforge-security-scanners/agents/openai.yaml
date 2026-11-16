@@ -1,0 +1,4 @@
+interface:
+  display_name: "Security Engineering & Scanners"
+  short_description: "Review authorized scope and scanner safety"
+  default_prompt: "Use $noosforge-security-scanners to audit authorized target scope, identity binding and egress safety using local fixtures."

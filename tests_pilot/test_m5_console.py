@@ -78,10 +78,10 @@ async def test_observations_diff_recheck_fixed_and_reopened(client, owner):
     d2 = (await client.get(f"{API}/runs/{rc['batch_id']}/diff")).json()["counts"]
     assert d2["fixed"] == 3 and d2["changed_scope"] == 1 and d2["new"] == 0
     f = await _findings(client, asset)
-    assert f["PILOT-TEST-0001"]["status"] == "FIXED" and f["PILOT-TEST-0004"]["status"] == "NEW"
+    assert f["PILOT-TEST-0001"]["status"] == "RESOLVED" and f["PILOT-TEST-0004"]["status"] == "NEW"
     hist = (await client.get(f"{API}/findings/{fid}/history")).json()
     assert [o["outcome"] for o in hist["observations"]] == ["new", "fixed"]
-    assert hist["changes"][-1]["new"] == "FIXED" and hist["changes"][-1]["execution_id"] == rc["execution_id"]
+    assert hist["changes"][-1]["new"] == "RESOLVED" and hist["changes"][-1]["execution_id"] == rc["execution_id"]
 
     # Regression: vulnerable SBOM again -> reopened, with notifications to owner and granted dev.
     await upload(client, h, asset)
@@ -143,7 +143,7 @@ async def test_triage_is_in_change_log_and_failed_run_is_unavailable(client, own
     assert r.status_code == 200
     hist = (await client.get(f"{API}/findings/{fid}/history")).json()
     tri = [c for c in hist["changes"] if c["actor"] == "pilot-owner"]
-    assert {(c["field"], c["new"]) for c in tri} >= {("status", "IN_REMEDIATION"), ("assignee", "dev-team")}
+    assert {(c["field"], c["new"]) for c in tri} >= {("status", "IN_PROGRESS"), ("assignee", "dev-team")}
     assert hist["assignee"] == "dev-team"
 
     await upload(client, h, asset, raw=b"{broken")
@@ -152,7 +152,7 @@ async def test_triage_is_in_change_log_and_failed_run_is_unavailable(client, own
     assert await _drain() == ["failed"]
     d = (await client.get(f"{API}/runs/{r.json()['batch_id']}/diff")).json()["counts"]
     assert d["unavailable"] == 4 and d["fixed"] == 0  # nothing changes state on a failed check
-    assert (await _findings(client, asset))["PILOT-TEST-0003"]["status"] == "IN_REMEDIATION"
+    assert (await _findings(client, asset))["PILOT-TEST-0003"]["status"] == "IN_PROGRESS"
     async with AsyncSessionLocal() as db:
         n = (await db.execute(select(Notification).where(Notification.kind == "job_failed"))).scalars().all()
     assert {x.user_id for x in n} == {OWNER_ID}
@@ -294,7 +294,7 @@ async def test_report_snapshot_is_reproducible_and_scoped(client, owner):
     r = await client.post(f"{API}/report-snapshots", headers=h, json={"title": "Báo cáo pilot-test", "batch_id": run["batch_id"]})
     assert r.status_code == 201, r.text
     rep = r.json()
-    assert rep["template_version"] == "noospire-pilot-report/1.0" and rep["finding_count"] == 4
+    assert rep["template_version"] == "noospire-pilot-report/1.1" and rep["finding_count"] == 4
     assert rep["execution_ids"] == [run["executions"][0]["execution_id"]] and rep["correlation_ids"]
 
     got = {}
@@ -306,7 +306,7 @@ async def test_report_snapshot_is_reproducible_and_scoped(client, owner):
         got[fmt] = d.content
     assert got["pdf"].startswith(b"%PDF")
     html = got["html"].decode()
-    assert rep["snapshot_sha256"] in html and "noospire-pilot-report/1.0" in html and "Asia/Ho_Chi_Minh" in html
+    assert rep["snapshot_sha256"] in html and "noospire-pilot-report/1.1" in html and "Asia/Ho_Chi_Minh" in html
     doc = __import__("json").loads(got["json"])
     assert set(doc) >= {"executive_summary", "scope", "coverage", "changes_vs_previous", "findings",
                         "appendix_errors_exclusions", "redaction"}

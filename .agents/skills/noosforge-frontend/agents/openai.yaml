@@ -1,0 +1,4 @@
+interface:
+  display_name: "Premium Frontend & UI Engineering"
+  short_description: "Build NOOSFORGE screens in the existing design"
+  default_prompt: "Use $noosforge-frontend. Improve the requested screen using shared components and verify both themes."

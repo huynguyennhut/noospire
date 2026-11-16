@@ -1,8 +1,7 @@
 from datetime import date, datetime, timezone
 import uuid
 from typing import Any, Optional
-from fastapi import Request, APIRouter, Depends, HTTPException, Query, status
-import httpx
+from fastapi import Request, APIRouter, Depends, Header, HTTPException, Query, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,7 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.api.deps import AccessScope, load_scope, require_operator, require_viewer
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
-from backend.app.core.ssrf import SSRFProtector, SSRFValidationError
 from backend.app.models.finding import NormalizedFinding
 from backend.app.models.alert import SecurityAlert
 from backend.app.models.user import User
@@ -19,6 +17,7 @@ from backend.app.schemas.common import (
     ExposureClassification,
     FindingSeverity,
     FindingStatus,
+    OPEN_FINDING_STATES,
     PaginatedResponse,
 )
 from backend.app.schemas.finding import FindingResponse, FindingTriageRequest
@@ -67,7 +66,7 @@ async def list_findings(
         stmt = stmt.where(NormalizedFinding.scanner_engine == scanner_engine.lower())
     if cve_id:
         stmt = stmt.where(NormalizedFinding.cve_id == cve_id)
-    open_states = ("NEW", "OPEN", "CONFIRMED", "IN_REMEDIATION", "REOPENED")
+    open_states = OPEN_FINDING_STATES
     if status_group == "open":
         stmt = stmt.where(NormalizedFinding.status.in_(open_states))
     elif status_group == "closed":
@@ -175,6 +174,9 @@ async def triage_finding(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Finding not found")
     (await load_scope(current_user, db)).require(finding.asset_id, "TRIAGE")
 
+    if triage_req.status == FindingStatus.RESOLVED and finding.status != "RESOLVED":
+        raise HTTPException(status_code=409, detail="Resolution requires an equivalent successful engine recheck. Claim FIXED_PENDING_RETEST, then recheck.")
+
     old_status = finding.status
     old_assignee = finding.assignee
     old_notes = finding.remediation_notes
@@ -215,13 +217,13 @@ async def triage_finding(
         record_change(db, finding.id, field, old, new, actor_id=str(current_user.id),
                       actor_name=current_user.username, reason=sanitized_comment)
 
-    # Record alert if vulnerability marked FIXED / RESOLVED or REOPENED
+    # A claimed fix is distinct from a completed verification.
     if triage_req.status in (FindingStatus.FIXED_PENDING_RETEST, FindingStatus.RESOLVED):
         alert = SecurityAlert(
             id=uuid.uuid4(),
             severity=FindingSeverity.LOW.value,
-            title=f"Finding Resolved: {finding.title}",
-            message=f"Finding '{finding.title}' has been verified and marked as {triage_req.status.value} by {current_user.username}.",
+            title=f"Finding {'Awaiting Retest' if triage_req.status == FindingStatus.FIXED_PENDING_RETEST else 'Resolved'}: {finding.title}",
+            message=f"Finding '{finding.title}' marked as {triage_req.status.value} by {current_user.username}.",
             category="REMEDIATION",
             metadata_json={"finding_id": str(finding.id), "actor": current_user.username},
         )
@@ -248,65 +250,9 @@ async def retest_finding(
     request: Request,
     current_user: User = Depends(require_operator),
     db: AsyncSession = Depends(get_db),
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
 ) -> Any:
-    """Executes an immediate live retest against the finding's target location
-    to determine if the vulnerability has been remediated.
-    """
-    result = await db.execute(select(NormalizedFinding).where(NormalizedFinding.id == finding_id))
-    finding = result.scalars().first()
-    if not finding:
-        raise HTTPException(status_code=404, detail="Finding not found")
+    """Compatibility alias for a durable recheck; never infer a fix from an HTTP status."""
+    from backend.app.api.console import recheck_finding_impl
 
-    (await load_scope(current_user, db)).require(finding.asset_id, "SCAN")
-
-    target_url = finding.target_location
-    retest_result = "STILL_VULNERABLE"
-    notes = "Retest executed. Vulnerability pattern re-verified."
-
-    # Validate egress with SSRF Protector (F11)
-    allow_private = bool(not settings.is_production and settings.SSRF_ALLOW_PRIVATE_TARGETS)
-    try:
-        SSRFProtector.validate_target(target_url, allow_private=allow_private)
-    except SSRFValidationError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Retest blocked by SSRF policy: {e}",
-        )
-
-    try:
-        async with httpx.AsyncClient(verify=True, timeout=5.0) as client:
-            resp = await client.get(target_url)
-            # If target returns 404, 401, or 403 on an unauthenticated leak endpoint, it has been secured!
-            if resp.status_code in (401, 403, 404) and "LEAK" in (finding.scanner_rule_id or ""):
-                retest_result = "VERIFIED_FIXED"
-                finding.status = FindingStatus.FIXED.value
-                notes = f"Target now returns HTTP {resp.status_code} (access denied/not found). Vulnerability confirmed remediated."
-            elif resp.status_code == 200:
-                retest_result = "STILL_VULNERABLE"
-                notes = f"Target still returns HTTP 200 with exposed content. Vulnerability remains active."
-    except Exception as e:
-        retest_result = "RETEST_ERROR"
-        notes = f"Could not reach target during retest: {e}"
-
-    finding.retest_status = retest_result
-    evidence = dict(finding.evidence or {})
-    evidence["last_retest"] = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "result": retest_result,
-        "notes": notes,
-        "actor": current_user.username,
-    }
-    finding.evidence = evidence
-    flag_modified(finding, "evidence")
-
-    await db.commit()
-    await db.refresh(finding)
-
-    return {
-        "finding_id": str(finding.id),
-        "status": finding.status,
-        "retest_status": retest_result,
-        "notes": notes,
-        "message": notes,
-    }
-
+    return await recheck_finding_impl(db, current_user, finding_id, request, idempotency_key)

@@ -149,6 +149,15 @@ class FindingStatus(str, Enum):
         ]
 
 
+# Persisted legacy spellings remain readable, but a claimed fix still awaits
+# verification. Only a completed verification is counted as resolved.
+OPEN_FINDING_STATES = (
+    "NEW", "NEEDS_TRIAGE", "CONFIRMED", "ASSIGNED", "IN_PROGRESS",
+    "FIXED_PENDING_RETEST", "REOPENED", "OPEN", "POTENTIAL", "IN_REMEDIATION", "FIXED",
+)
+RESOLVED_FINDING_STATES = ("RESOLVED",)
+
+
 class ExposureClassification(str, Enum):
     PUBLIC_BY_DESIGN = "PUBLIC_BY_DESIGN"
     PUBLIC_SENSITIVE_CONTENT = "PUBLIC_SENSITIVE_CONTENT"

@@ -5,10 +5,10 @@ export const Table = React.forwardRef<
   HTMLTableElement,
   React.HTMLAttributes<HTMLTableElement>
 >(({ className, ...props }, ref) => (
-  <div className="relative w-full overflow-x-auto rounded-xl border border-white/[0.08] bg-nf-900/40 backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.35)]">
+  <div className="relative w-full overflow-x-auto rounded-xl border border-white/[0.08] bg-[var(--bg-surface)] backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.35)]">
     <table
       ref={ref}
-      className={cn('w-full caption-bottom text-left text-xs text-nf-200', className)}
+      className={cn('w-full caption-bottom text-left text-xs text-[var(--text-primary)]', className)}
       {...props}
     />
   </div>
@@ -22,7 +22,7 @@ export const TableHeader = React.forwardRef<
   <thead
     ref={ref}
     className={cn(
-      'bg-nf-950/90 text-nf-400 uppercase tracking-wider text-[10px] border-b border-white/[0.08] font-bold select-none',
+      'bg-[var(--bg-surface-hover)] text-[var(--text-secondary)] uppercase tracking-wider text-[10px] border-b border-white/[0.08] font-bold select-none',
       className
     )}
     {...props}
@@ -44,7 +44,7 @@ export const TableFooter = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <tfoot
     ref={ref}
-    className={cn('border-t border-white/[0.08] bg-nf-950/50 font-medium text-nf-400', className)}
+    className={cn('border-t border-white/[0.08] bg-[var(--bg-surface-hover)] font-medium text-[var(--text-secondary)]', className)}
     {...props}
   />
 ));
@@ -71,7 +71,7 @@ export const TableHead = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <th
     ref={ref}
-    className={cn('py-3 px-3.5 font-bold text-nf-400 align-middle whitespace-nowrap', className)}
+    className={cn('py-3 px-3.5 font-bold text-[var(--text-secondary)] align-middle whitespace-nowrap', className)}
     {...props}
   />
 ));
@@ -83,7 +83,7 @@ export const TableCell = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <td
     ref={ref}
-    className={cn('py-3 px-3.5 text-nf-200 align-middle', className)}
+    className={cn('py-3 px-3.5 text-[var(--text-primary)] align-middle', className)}
     {...props}
   />
 ));
@@ -95,7 +95,7 @@ export const TableCaption = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <caption
     ref={ref}
-    className={cn('mt-4 text-xs text-nf-500 italic', className)}
+    className={cn('mt-4 text-xs text-[var(--text-muted)] italic', className)}
     {...props}
   />
 ));
@@ -113,7 +113,7 @@ export const TableEmpty: React.FC<TableEmptyProps> = ({
   icon,
 }) => (
   <TableRow>
-    <TableCell colSpan={colSpan} className="py-12 text-center text-nf-500">
+    <TableCell colSpan={colSpan} className="py-12 text-center text-[var(--text-muted)]">
       <div className="flex flex-col items-center justify-center gap-2">
         {icon && <div className="text-nf-600">{icon}</div>}
         <span className="text-xs">{message}</span>

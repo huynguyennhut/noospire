@@ -15,6 +15,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.deps import (
@@ -132,31 +133,23 @@ def _clear_session_cookies(response: Response) -> None:
 
 def _profile(user: User) -> dict:
     owner = is_sole_owner(user)
-    is_ultra = bool(
-        owner
-        or user.is_superuser
-        or (user.role or "").upper() in ("SUPER_ADMIN", "OWNER")
-        or (user.email and user.email.lower() == settings.SOLE_OWNER_EMAIL.lower())
-    )
     return {
         "id": str(user.id),
         "username": user.username,
         "email": user.email,
         "role": (user.role or "VIEWER").upper(),
-        "is_superuser": owner or bool(user.is_superuser),
-        "is_ultra_admin": is_ultra,
+        "is_superuser": owner,
+        "is_ultra_admin": owner,
         "is_owner": owner,
     }
 
 
 def _issue(user: User) -> str:
     owner = is_sole_owner(user)
-    is_super = bool(owner or user.is_superuser or (user.role or "").upper() in ("SUPER_ADMIN", "OWNER"))
-    sub = user.email if (user.email and is_super) else str(user.id)
     return create_access_token(
-        subject=sub,
+        subject=str(user.id),
         role=(user.role or "VIEWER").upper(),
-        is_superuser=is_super,
+        is_superuser=owner,
         claims={"username": user.username, "email": user.email},
     )
 
@@ -171,7 +164,7 @@ async def bootstrap_owner(db: AsyncSession, username: str, email: str, password:
         )).limit(1)
     )
     if existing.first() is not None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
                             detail="System bootstrap has already been completed and is permanently locked.")
     owner_email = email.strip().lower()
     if owner_email != settings.SOLE_OWNER_EMAIL.lower():
@@ -198,7 +191,13 @@ async def bootstrap_owner(db: AsyncSession, username: str, email: str, password:
         details=f"Sole owner bound to immutable id={owner.id}. Bootstrap locked.", ip_address="local",
     ))
     # Primary-key uniqueness on the fixed owner ID makes concurrent bootstraps atomic.
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        # The immutable owner primary key arbitrates concurrent first requests.
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                            detail="System bootstrap has already been completed or the account already exists.")
     return owner
 
 
@@ -213,24 +212,14 @@ async def bootstrap_initial_admin(
     db: AsyncSession = Depends(get_db),
     x_bootstrap_token: Optional[str] = Header(default=None),
 ) -> Any:
-    """Disabled (404) unless the operator configured SENTINEL_BOOTSTRAP_TOKEN out-of-band in production.
+    """Disabled (404) unless the operator configured SENTINEL_BOOTSTRAP_TOKEN out-of-band.
     Preferred path: `python -m backend.app.cli bootstrap-owner` on the private host."""
     expected = settings.BOOTSTRAP_TOKEN
-    if settings.is_production:
-        if not expected:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
-        if not x_bootstrap_token or not hmac.compare_digest(x_bootstrap_token, expected):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid bootstrap token")
-    elif expected and x_bootstrap_token:
-        if not hmac.compare_digest(x_bootstrap_token, expected):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid bootstrap token")
-    try:
-        owner = await bootstrap_owner(db, payload.username, payload.email, payload.password)
-    except HTTPException:
-        raise
-    except Exception:
-        await db.rollback()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="System bootstrap has already been completed and is permanently locked.")
+    if not expected:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
+    if not x_bootstrap_token or not hmac.compare_digest(x_bootstrap_token, expected):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid bootstrap token")
+    owner = await bootstrap_owner(db, payload.username, payload.email, payload.password)
     return BootstrapResponse(message="Sole owner created; bootstrap locked.", username=owner.username,
                              email=owner.email, id=str(owner.id))
 
@@ -260,8 +249,7 @@ async def login(request: Request, response: Response, db: AsyncSession = Depends
     result = await db.execute(select(User).where(or_(User.username == identifier, User.email == identifier.lower())))
     user = result.scalars().first()
 
-    is_dev_test_bypass = bool(not settings.is_production and password in ("REDACTED-ROTATE-ME", "ValidOwnerPassword123!"))
-    if not user or not (verify_password(password, user.hashed_password) or is_dev_test_bypass):
+    if not user or not verify_password(password, user.hashed_password):
         _audit(db, user, "LOGIN_FAILED", "Invalid credentials", request, username="unknown" if not user else None)
         await db.commit()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,

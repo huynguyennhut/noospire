@@ -37,7 +37,7 @@ from backend.app.models.defensive import (
     EXEC_SUCCEEDED,
     ExecutionRecord,
 )
-from backend.app.models.operations import MonitorSchedule, ScheduleSlot
+from backend.app.models.operations import CapacitySettings, MonitorSchedule, ScheduleSlot
 from backend.app.models.scan import Scan, ScanBatch
 
 log = logging.getLogger("noospire.scheduler")
@@ -159,6 +159,11 @@ class MonitorScheduler:
         async with AsyncSessionLocal() as db:
             s = await db.get(MonitorSchedule, sid)
             if s is None or not s.is_active:
+                return
+            capacity = await db.get(CapacitySettings, 1)
+            if capacity and capacity.emergency_stop_active:
+                s.overdue_reason = "Global emergency stop is active; scheduled work is paused."
+                await db.commit()
                 return
             due = floor_slot(now, s.interval_minutes)
             first_allowed = next_slot_after(_utc(s.start_after), s.interval_minutes) \

@@ -107,7 +107,7 @@ def _pct(values: List[float], q: float) -> Optional[float]:
 
 class RunCreate(BaseModel):
     selection: Dict[str, Any] = Field(default_factory=lambda: {"kind": "all"})
-    engines: List[Literal["sbom", "tls_health"]] = Field(default_factory=lambda: list(ENGINES))
+    engines: List[Literal["sbom", "tls_health", "public_web"]] = Field(default_factory=lambda: list(ENGINES))
     profile: Literal["light", "slow"] = "light"
 
 
@@ -208,7 +208,7 @@ async def get_run(batch_id: uuid.UUID, current_user: User = Depends(get_current_
 class ScheduleIn(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
     selection: Dict[str, Any] = Field(default_factory=lambda: {"kind": "all"})
-    engines: List[Literal["sbom", "tls_health"]] = Field(default_factory=lambda: list(ENGINES))
+    engines: List[Literal["sbom", "tls_health", "public_web"]] = Field(default_factory=lambda: list(ENGINES))
     profile: Literal["light", "slow"] = "light"
     interval_minutes: int = Field(60, ge=15, le=1440)
     max_workers: int = Field(2, ge=1, le=32)
@@ -218,7 +218,7 @@ class ScheduleIn(BaseModel):
 class SchedulePatch(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=200)
     selection: Optional[Dict[str, Any]] = None
-    engines: Optional[List[Literal["sbom", "tls_health"]]] = None
+    engines: Optional[List[Literal["sbom", "tls_health", "public_web"]]] = None
     profile: Optional[Literal["light", "slow"]] = None
     interval_minutes: Optional[int] = Field(None, ge=15, le=1440)
     max_workers: Optional[int] = Field(None, ge=1, le=32)
@@ -339,13 +339,33 @@ class CapacityIn(BaseModel):
 
 def _cap_out(cs: CapacitySettings) -> dict:
     return {"max_running_executions": cs.max_running_executions, "per_host_hourly_quota": cs.per_host_hourly_quota,
-            "per_host_egress_bytes_hourly": cs.per_host_egress_bytes_hourly, "updated_by": cs.updated_by,
+            "per_host_egress_bytes_hourly": cs.per_host_egress_bytes_hourly,
+            "emergency_stop_active": cs.emergency_stop_active, "updated_by": cs.updated_by,
             "updated_at": _iso(cs.updated_at)}
 
 
 @router.get("/operations/capacity")
 async def get_capacity(current_user: User = Depends(get_current_active_user), db: AsyncSession = Depends(get_db)) -> Any:
     cs = await capacity_settings(db)
+    await db.commit()
+    return _cap_out(cs)
+
+
+class EmergencyStopIn(BaseModel):
+    active: bool
+
+
+@router.put("/operations/emergency-stop")
+async def set_emergency_stop(payload: EmergencyStopIn, request: Request,
+                             current_user: User = Depends(require_owner),
+                             db: AsyncSession = Depends(get_db)) -> Any:
+    """Persistent stop read by worker claims and in-flight public-web observations."""
+    cs = await capacity_settings(db)
+    cs.emergency_stop_active = payload.active
+    cs.updated_by = str(current_user.id)
+    cs.updated_at = datetime.now(timezone.utc)
+    _audit(db, current_user, "GLOBAL_EMERGENCY_STOP" if payload.active else "GLOBAL_EMERGENCY_RESUME",
+           json.dumps({"active": payload.active}), request)
     await db.commit()
     return _cap_out(cs)
 

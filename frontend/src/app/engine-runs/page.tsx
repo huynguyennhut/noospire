@@ -3,7 +3,9 @@
 import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { FileCode, Lock, RefreshCw, Upload, XCircle, Download, ExternalLink, ShieldAlert } from 'lucide-react';
-import { api, AdvisorySnapshotInfo, ApiError, ExecutionDetail, RunStatus } from '@/lib/api';
+import { api, AdvisorySnapshotInfo, ApiError, EngineName, ExecutionDetail, RunStatus } from '@/lib/api';
+import { Asset } from '@/lib/types';
+import { assessmentEligible, assessmentLabel } from '@/lib/assessment';
 import { useI18n } from '@/lib/i18n';
 import { RunTree, TodayResults } from '@/components/console/RunInsights';
 
@@ -16,14 +18,14 @@ function ict(iso: string | null | undefined): string {
 }
 
 const STATUS_STYLE: Record<string, string> = {
-  queued: 'bg-slate-800 text-slate-200 border-slate-600',
+  queued: 'bg-[var(--bg-surface-hover)] text-[var(--text-primary)] border-[var(--border-strong)]',
   running: 'bg-cyan-950 text-cyan-300 border-cyan-700',
   succeeded: 'bg-emerald-950 text-emerald-300 border-emerald-700',
   skipped: 'bg-amber-950 text-amber-300 border-amber-700',
   unavailable: 'bg-amber-950 text-amber-300 border-amber-700',
   failed: 'bg-rose-950 text-rose-300 border-rose-700',
   timed_out: 'bg-rose-950 text-rose-300 border-rose-700',
-  cancelled: 'bg-slate-800 text-slate-400 border-slate-600',
+  cancelled: 'bg-[var(--bg-surface-hover)] text-[var(--text-secondary)] border-[var(--border-strong)]',
 };
 
 function errText(e: any, vi: boolean): string {
@@ -47,13 +49,18 @@ function EngineRunsInner() {
   const selectedRun = params.get('run');
   const assetParam = params.get('asset') || '';
 
-  const [assets, setAssets] = useState<Array<{ id: string; name: string }>>([]);
+  const [assets, setAssets] = useState<Asset[]>([]);
   const [assetId, setAssetId] = useState(assetParam);
-  const [engine, setEngine] = useState<'sbom' | 'tls_health'>('sbom');
+  const [engine, setEngine] = useState<EngineName>('public_web');
   const [file, setFile] = useState<File | null>(null);
   const [snapshots, setSnapshots] = useState<AdvisorySnapshotInfo[] | null>(null);
   const [runs, setRuns] = useState<ExecutionDetail[]>([]);
   const [detail, setDetail] = useState<ExecutionDetail | null>(null);
+  const [logs, setLogs] = useState<Array<{ timestamp: string; level: string; message: string; source: string }>>([]);
+  const [logPage, setLogPage] = useState(1);
+  const [logPages, setLogPages] = useState(1);
+  const [logTotal, setLogTotal] = useState(0);
+  const [logError, setLogError] = useState<string | null>(null);
   const [runFindings, setRunFindings] = useState<any[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -67,8 +74,7 @@ function EngineRunsInner() {
   }, [params, router]);
 
   useEffect(() => {
-    api.listAssets({ size: 200 } as any)
-      .then((r: any) => setAssets((r.items || []).map((a: any) => ({ id: a.id, name: a.name }))))
+    api.listAllAssets().then(setAssets)
       .catch((e) => setError(errText(e, vi)));
     api.listAdvisorySnapshots().then(setSnapshots).catch(() => setSnapshots(null));
   }, [vi]);
@@ -84,9 +90,14 @@ function EngineRunsInner() {
 
   useEffect(() => { loadRuns(); }, [loadRuns]);
 
+  useEffect(() => { setLogPage(1); }, [selectedExecution]);
+
   // Detail polling: bounded (3 s) and only while the execution is not terminal.
   useEffect(() => {
-    if (!selectedExecution) { setDetail(null); return; }
+    setRunFindings(null);
+    setLogs([]); setLogError(null);
+    setDetail(null);
+    if (!selectedExecution) return;
     let stop = false;
     let timer: any;
     const tick = async () => {
@@ -95,6 +106,9 @@ function EngineRunsInner() {
         if (stop) return;
         setDetail(d);
         setError(null);
+        try { const entries = await api.getScanLogPage(d.scan_id, logPage); if (!stop) { setLogs(entries.items); setLogPages(entries.pages); setLogTotal(entries.total); setLogError(null); } }
+        catch (e) { if (!stop) setLogError(errText(e, vi)); }
+        if (stop) return;
         if (!TERMINAL.has(d.status)) timer = setTimeout(tick, 3000);
         else {
           loadRuns();
@@ -109,7 +123,7 @@ function EngineRunsInner() {
     };
     tick();
     return () => { stop = true; clearTimeout(timer); };
-  }, [selectedExecution, vi, loadRuns]);
+  }, [selectedExecution, vi, loadRuns, logPage]);
 
   // ?run=<batch_id>: one run accepted by POST /runs or launched by the schedule (polls until finished).
   const [run, setRun] = useState<RunStatus | null>(null);
@@ -134,7 +148,7 @@ function EngineRunsInner() {
   const activeSnapshot = snapshots?.find((s) => s.is_active) || null;
 
   const submit = async () => {
-    if (!assetId || busy) return;
+    if (!assetId || busy || !assets.some((a) => a.id === assetId && assessmentEligible(a))) return;
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -179,12 +193,12 @@ function EngineRunsInner() {
           <h1 className="text-2xl font-black tracking-tight text-white flex items-center gap-2">
             <FileCode className="w-6 h-6 text-cyan-400" /> {vi ? 'Lượt chạy engine phòng thủ' : 'Defensive engine runs'}
           </h1>
-          <p className="text-xs text-slate-400 mt-1">
-            {vi ? 'SBOM đối chiếu advisory có phiên bản · đo TLS/health chỉ đọc. Giờ hiển thị theo ICT, lưu theo UTC.'
-                : 'SBOM vs versioned advisories · read-only TLS/health. Times shown in ICT, stored in UTC.'}
+          <p className="text-xs text-[var(--text-secondary)] mt-1">
+            {vi ? 'Quan sát web công khai · SBOM với advisory có phiên bản · TLS/health được duyệt. Giờ hiển thị theo ICT, lưu theo UTC.'
+                : 'Public web observations · versioned SBOM advisories · approved TLS/health. Times shown in ICT, stored in UTC.'}
           </p>
         </div>
-        <button onClick={loadRuns} className="px-3 py-1.5 rounded-lg border border-white/10 text-xs text-slate-200 hover:bg-white/5 flex items-center gap-1">
+        <button onClick={loadRuns} className="px-3 py-1.5 rounded-lg border border-white/10 text-xs text-[var(--text-primary)] hover:bg-white/5 flex items-center gap-1">
           <RefreshCw className="w-3.5 h-3.5" /> {vi ? 'Làm mới' : 'Refresh'}
         </button>
       </div>
@@ -193,20 +207,20 @@ function EngineRunsInner() {
       {notice && <div role="status" className="p-3 rounded-lg border border-emerald-700 bg-emerald-950/50 text-emerald-200 text-xs break-all">{notice}</div>}
 
       {run && (
-        <section className="p-4 rounded-xl border border-cyan-800 bg-black/30 text-xs text-slate-200 space-y-2">
+        <section className="p-4 rounded-xl border border-cyan-800 bg-black/30 text-xs text-[var(--text-primary)] space-y-2">
           <div className="flex flex-wrap gap-3 items-center">
             <b className="text-sm text-white">{run.name}</b>
             <span>batch <code>{run.batch_id}</code></span>
             <span>{vi ? 'nhận lúc' : 'accepted'} {ict(run.accepted_at)}</span>
             <span>{run.trigger}</span>
-            {run.correlation_id && <span className="text-slate-400">corr {run.correlation_id}</span>}
+            {run.correlation_id && <span className="text-[var(--text-secondary)]">corr {run.correlation_id}</span>}
             <span className={run.finished ? 'text-emerald-300' : 'text-cyan-300'}>
               {run.finished ? (vi ? 'đã kết thúc' : 'finished') : (vi ? 'đang xử lý' : 'in progress')}
             </span>
           </div>
           <p>{Object.entries(run.by_status).map(([k, v]) => `${k}: ${v}`).join(' · ') || (vi ? 'Không có execution nào trong phạm vi của bạn.' : 'No executions in your scope.')}</p>
           {run.plan_summary && Object.keys(run.plan_summary.reasons || {}).length > 0 && (
-            <p className="text-slate-400">{vi ? 'Lý do bỏ qua/dời' : 'Skip/defer reasons'}: {Object.entries(run.plan_summary.reasons).map(([k, v]) => `${k} × ${v}`).join(' · ')}</p>
+            <p className="text-[var(--text-secondary)]">{vi ? 'Lý do bỏ qua/dời' : 'Skip/defer reasons'}: {Object.entries(run.plan_summary.reasons).map(([k, v]) => `${k} × ${v}`).join(' · ')}</p>
           )}
           <ul className="space-y-0.5">
             {run.executions.map((x) => (
@@ -214,7 +228,7 @@ function EngineRunsInner() {
                 <button className="underline text-cyan-300" onClick={() => setQuery({ execution: x.execution_id })}>{x.engine_id}</button>{' '}
                 <span className="font-mono">{x.status}</span> · {x.lane}
                 {x.plan_note ? <span className="text-amber-300"> · {x.plan_note}</span> : null}
-                {x.status_reason ? <span className="text-slate-400"> · {x.status_reason}</span> : null}
+                {x.status_reason ? <span className="text-[var(--text-secondary)]"> · {x.status_reason}</span> : null}
               </li>
             ))}
           </ul>
@@ -226,39 +240,39 @@ function EngineRunsInner() {
 
       <section className="p-4 rounded-2xl border border-white/10 liquid-glass-card grid gap-4 md:grid-cols-2">
         <div className="space-y-3">
-          <label className="block text-xs text-slate-300">
+          <label className="block text-xs text-[var(--text-primary)]">
             {vi ? 'Asset' : 'Asset'}
-            <select value={assetId} onChange={(e) => { setAssetId(e.target.value); setQuery({ asset: e.target.value || null }); }}
-              className="mt-1 w-full bg-black/40 border border-white/10 rounded-lg px-2 py-2 text-sm text-white">
+            <select disabled={busy} value={assetId} onChange={(e) => { idemKey.current = null; setAssetId(e.target.value); setQuery({ asset: e.target.value || null }); }}
+              className="mt-1 w-full bg-[var(--bg-primary)] border border-white/10 rounded-lg px-2 py-2 text-sm text-white">
               <option value="">{vi ? '— chọn asset trong phạm vi của bạn —' : '— choose an asset in your scope —'}</option>
-              {assets.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+              {assets.map((a) => <option key={a.id} value={a.id} disabled={!assessmentEligible(a)}>{a.name} · {assessmentLabel(a, vi)}</option>)}
             </select>
           </label>
-          <fieldset className="flex gap-4 text-xs text-slate-300">
-            <label className="flex items-center gap-1"><input type="radio" checked={engine === 'sbom'} onChange={() => setEngine('sbom')} /> SBOM</label>
-            <label className="flex items-center gap-1"><input type="radio" checked={engine === 'tls_health'} onChange={() => setEngine('tls_health')} /> TLS / health</label>
+          <fieldset disabled={busy} className="flex flex-wrap gap-4 text-xs text-[var(--text-primary)]"><label className="flex items-center gap-1"><input type="radio" checked={engine === 'public_web'} onChange={() => { idemKey.current = null; setEngine('public_web'); }} /> {vi ? 'Web công khai' : 'Public web'}</label>
+            <label className="flex items-center gap-1"><input type="radio" checked={engine === 'sbom'} onChange={() => { idemKey.current = null; setEngine('sbom'); }} /> SBOM</label>
+            <label className="flex items-center gap-1"><input type="radio" checked={engine === 'tls_health'} onChange={() => { idemKey.current = null; setEngine('tls_health'); }} /> TLS / health</label>
           </fieldset>
           {engine === 'sbom' ? (
-            <label className="block text-xs text-slate-300">
+            <label className="block text-xs text-[var(--text-primary)]">
               {vi ? 'Tệp SBOM (CycloneDX hoặc SPDX JSON)' : 'SBOM file (CycloneDX or SPDX JSON)'}
-              <input type="file" accept=".json,application/json" onChange={(e) => setFile(e.target.files?.[0] || null)}
-                className="mt-1 block w-full text-xs text-slate-300" />
+              <input type="file" accept=".json,application/json" disabled={busy} onChange={(e) => { idemKey.current = null; setFile(e.target.files?.[0] || null); }}
+                className="mt-1 block w-full text-xs text-[var(--text-primary)]" />
             </label>
           ) : (
-            <p className="text-xs text-slate-400">
-              {vi ? 'Chỉ đo endpoint health mà owner đã duyệt trên asset này (một GET, không theo redirect, không gửi credential).'
+            <p className="text-xs text-[var(--text-secondary)]">
+              {engine === 'public_web' ? (vi ? 'Một HEAD trên URL được duyệt: TLS, HTTP, header bảo mật và thuộc tính cookie. Không theo redirect, không gửi credential; không thay thế đánh giá toàn diện.' : 'One HEAD on the approved URL: TLS, HTTP, security headers and cookie attributes. No redirects or credentials; this does not replace comprehensive assessment.') : vi ? 'Chỉ đo endpoint health mà owner đã duyệt trên asset này (một GET, không theo redirect, không gửi credential).'
                   : 'Measures only the owner-approved health endpoint of this asset (one GET, no redirects, no credentials).'}
             </p>
           )}
-          <button onClick={submit} disabled={!assetId || busy || (engine === 'sbom' && !file)}
+          <button onClick={submit} disabled={!assets.some((a) => a.id === assetId && assessmentEligible(a)) || busy || (engine === 'sbom' && !file)}
             className="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white text-sm font-bold flex items-center gap-2">
             <Upload className="w-4 h-4" /> {busy ? (vi ? 'Đang gửi…' : 'Submitting…') : (vi ? 'Chạy phân tích' : 'Run analysis')}
           </button>
-          <p className="text-[11px] text-slate-500">{vi ? 'Dự kiến: 1 lượt engine trên 1 asset.' : 'Planned: 1 engine execution on 1 asset.'}</p>
+          <p className="text-[11px] text-[var(--text-secondary)]">{vi ? 'Dự kiến: 1 lượt engine trên 1 asset.' : 'Planned: 1 engine execution on 1 asset.'}</p>
         </div>
 
-        <div className="space-y-2 text-xs text-slate-300">
-          <div className="font-bold text-slate-200">{vi ? 'Advisory đang dùng' : 'Active advisory snapshot'}</div>
+        <div className="space-y-2 text-xs text-[var(--text-primary)]">
+          <div className="font-bold text-[var(--text-primary)]">{vi ? 'Advisory đang dùng' : 'Active advisory snapshot'}</div>
           {snapshots === null ? (
             <div className="text-amber-300">{vi ? 'Không tải được danh sách snapshot.' : 'Could not load snapshots.'}</div>
           ) : activeSnapshot ? (
@@ -282,7 +296,7 @@ function EngineRunsInner() {
         <section className="p-4 rounded-2xl border border-white/10 liquid-glass-card space-y-3" aria-live="polite">
           <div className="flex flex-wrap items-center gap-2">
             <span className={`px-2 py-0.5 rounded border text-xs font-mono font-bold ${STATUS_STYLE[detail.status] || ''}`}>{detail.status}</span>
-            <span className="text-xs font-mono text-slate-300 break-all">execution {detail.execution_id}</span>
+            <span className="text-xs font-mono text-[var(--text-primary)] break-all">execution {detail.execution_id}</span>
             {!TERMINAL.has(detail.status) && (
               <button onClick={async () => { try { setDetail(await api.cancelExecution(detail.execution_id)); } catch (e) { setError(errText(e, vi)); } }}
                 className="ml-auto px-2 py-1 rounded border border-rose-700 text-rose-300 text-xs flex items-center gap-1">
@@ -296,20 +310,20 @@ function EngineRunsInner() {
           {detail.worker && !detail.worker.ready && (
             <div className="text-xs text-amber-300">{vi ? 'Worker: ' : 'Worker: '}{detail.worker.reason}</div>
           )}
-          <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-[11px] font-mono text-slate-300">
-            <div><dt className="inline text-slate-500">engine </dt><dd className="inline">{detail.engine_id} · {detail.driver || '—'} {detail.driver_version || ''} · {detail.execution_mode}</dd></div>
-            <div><dt className="inline text-slate-500">rules </dt><dd className="inline break-all">{detail.rules.source || '—'} {detail.rules.version || ''} · {detail.rules.digest ? detail.rules.digest.slice(0, 16) + '…' : '—'}</dd></div>
-            <div><dt className="inline text-slate-500">input </dt><dd className="inline break-all">{detail.input.filename || detail.input.url || '—'} · {detail.input.sha256 ? detail.input.sha256.slice(0, 16) + '…' : '—'}</dd></div>
-            <div><dt className="inline text-slate-500">findings </dt><dd className="inline">{detail.finding_count ?? '—'}</dd></div>
-            <div><dt className="inline text-slate-500">queued </dt><dd className="inline">{ict(detail.timestamps_utc.queued_at)}</dd></div>
-            <div><dt className="inline text-slate-500">finished </dt><dd className="inline">{ict(detail.timestamps_utc.finished_at)} · {detail.duration_ms ?? '—'} ms</dd></div>
+          <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-[11px] font-mono text-[var(--text-primary)]">
+            <div><dt className="inline text-[var(--text-secondary)]">engine </dt><dd className="inline">{detail.engine_id} · {detail.driver || '—'} {detail.driver_version || ''} · {detail.execution_mode}</dd></div>
+            <div><dt className="inline text-[var(--text-secondary)]">rules </dt><dd className="inline break-all">{detail.rules.source || '—'} {detail.rules.version || ''} · {detail.rules.digest ? detail.rules.digest.slice(0, 16) + '…' : '—'}</dd></div>
+            <div><dt className="inline text-[var(--text-secondary)]">input </dt><dd className="inline break-all">{detail.input.filename || detail.input.url || '—'} · {detail.input.sha256 ? detail.input.sha256.slice(0, 16) + '…' : '—'}</dd></div>
+            <div><dt className="inline text-[var(--text-secondary)]">findings </dt><dd className="inline">{detail.finding_count ?? '—'}</dd></div>
+            <div><dt className="inline text-[var(--text-secondary)]">queued </dt><dd className="inline">{ict(detail.timestamps_utc.queued_at)}</dd></div>
+            <div><dt className="inline text-[var(--text-secondary)]">finished </dt><dd className="inline">{ict(detail.timestamps_utc.finished_at)} · {detail.duration_ms ?? '—'} ms</dd></div>
           </dl>
           {Object.keys(detail.summary || {}).length > 0 && (
-            <pre className="text-[11px] bg-black/40 rounded-lg p-2 overflow-x-auto text-slate-300">{JSON.stringify(detail.summary, null, 2)}</pre>
+            <pre className="text-[11px] bg-[var(--bg-primary)] rounded-lg p-2 overflow-x-auto text-[var(--text-primary)]">{JSON.stringify(detail.summary, null, 2)}</pre>
           )}
           <div className="overflow-x-auto">
-            <table className="w-full text-[11px] font-mono text-slate-300">
-              <thead><tr className="text-slate-500 text-left"><th className="pr-3">#</th><th className="pr-3">status</th><th className="pr-3">phase</th><th className="pr-3">worker</th><th className="pr-3">token</th><th className="pr-3">started</th><th>error</th></tr></thead>
+            <table className="w-full text-[11px] font-mono text-[var(--text-primary)]">
+              <thead><tr className="text-[var(--text-secondary)] text-left"><th className="pr-3">#</th><th className="pr-3">status</th><th className="pr-3">phase</th><th className="pr-3">worker</th><th className="pr-3">token</th><th className="pr-3">started</th><th>error</th></tr></thead>
               <tbody>
                 {(detail.attempts || []).map((a) => (
                   <tr key={a.attempt_id} className="border-t border-white/5">
@@ -328,16 +342,17 @@ function EngineRunsInner() {
               </a>
             )}
           </div>
+          <div className="space-y-2"><h3 className="text-sm font-semibold">{vi ? 'Nhật ký thực thi' : 'Execution logs'}</h3>{logError && <p role="alert" className="assessment-alert">{logError}</p>}<div className="max-h-72 overflow-auto rounded-lg bg-[var(--bg-primary)] border border-[var(--border-subtle)] p-3 text-[11px] font-mono space-y-2">{logs.map((entry, i) => <p key={`${entry.timestamp}-${i}`} className="whitespace-pre-wrap break-words"><span className="text-[var(--text-secondary)]">{ict(entry.timestamp)} · {entry.level} · {entry.source}</span>{'\n'}{entry.message}</p>)}{!logs.length && !logError && <p>{vi ? 'Chưa có dòng log được ghi nhận.' : 'No log entries recorded yet.'}</p>}</div><div className="flex gap-3 items-center text-xs"><button className="assessment-link disabled:opacity-40" disabled={logPage <= 1} onClick={() => setLogPage((p) => p - 1)}>{vi ? 'Trước' : 'Previous'}</button><span>{logPage} / {logPages} · {logTotal} {vi ? 'dòng' : 'entries'}</span><button className="assessment-link disabled:opacity-40" disabled={logPage >= logPages} onClick={() => setLogPage((p) => p + 1)}>{vi ? 'Tiếp' : 'Next'}</button></div></div>
           {detail.status === 'succeeded' && runFindings && (
             <div className="overflow-x-auto">
-              <div className="text-xs font-bold text-slate-200 mb-1 flex items-center gap-1">
+              <div className="text-xs font-bold text-[var(--text-primary)] mb-1 flex items-center gap-1">
                 <ExternalLink className="w-3.5 h-3.5" /> {vi ? 'Finding của lượt này' : 'Findings of this run'} ({runFindings.length})
               </div>
               {runFindings.length === 0 ? (
-                <div className="text-xs text-emerald-300">{vi ? 'Đã đánh giá, không có finding (kết quả hợp lệ).' : 'Evaluated with zero findings (valid result).'}</div>
+                <div className="text-xs text-emerald-300">{vi ? 'Không có finding trong các kiểm tra đã chạy. Xem giới hạn phạm vi phía trên.' : 'No findings for the executed checks. Review the coverage limits above.'}</div>
               ) : (
-                <table className="w-full text-[11px] text-slate-300">
-                  <thead className="text-slate-500 text-left"><tr><th className="pr-3">rule</th><th className="pr-3">severity</th><th className="pr-3">status</th><th className="pr-3">component</th><th>remediation</th></tr></thead>
+                <table className="w-full text-[11px] text-[var(--text-primary)]">
+                  <thead className="text-[var(--text-secondary)] text-left"><tr><th className="pr-3">rule</th><th className="pr-3">severity</th><th className="pr-3">status</th><th className="pr-3">component</th><th>remediation</th></tr></thead>
                   <tbody>
                     {runFindings.map((f) => (
                       <tr key={f.id} className="border-t border-white/5">
@@ -355,10 +370,10 @@ function EngineRunsInner() {
       )}
 
       <section className="rounded-2xl border border-white/10 liquid-glass-card overflow-x-auto">
-        <table className="w-full text-xs text-slate-300">
-          <thead className="text-slate-500 text-left"><tr><th className="p-2">{vi ? 'Trạng thái' : 'Status'}</th><th className="p-2">Engine</th><th className="p-2">{vi ? 'Xếp hàng' : 'Queued'}</th><th className="p-2">Findings</th><th className="p-2">{vi ? 'Lý do' : 'Reason'}</th></tr></thead>
+        <table className="w-full text-xs text-[var(--text-primary)]">
+          <thead className="text-[var(--text-secondary)] text-left"><tr><th className="p-2">{vi ? 'Trạng thái' : 'Status'}</th><th className="p-2">Engine</th><th className="p-2">{vi ? 'Xếp hàng' : 'Queued'}</th><th className="p-2">Findings</th><th className="p-2">{vi ? 'Lý do' : 'Reason'}</th></tr></thead>
           <tbody>
-            {runs.length === 0 && <tr><td className="p-3 text-slate-500" colSpan={5}>{vi ? 'Chưa có lượt chạy trong phạm vi của bạn.' : 'No runs in your scope yet.'}</td></tr>}
+            {runs.length === 0 && <tr><td className="p-3 text-[var(--text-secondary)]" colSpan={5}>{vi ? 'Chưa có lượt chạy trong phạm vi của bạn.' : 'No runs in your scope yet.'}</td></tr>}
             {runs.map((r) => (
               <tr key={r.execution_id} className={`border-t border-white/5 cursor-pointer hover:bg-white/5 ${r.execution_id === selectedExecution ? 'bg-white/5' : ''}`}
                 onClick={() => setQuery({ execution: r.execution_id })} tabIndex={0}
@@ -367,7 +382,7 @@ function EngineRunsInner() {
                 <td className="p-2 font-mono">{r.engine_id}</td>
                 <td className="p-2">{ict(r.timestamps_utc.queued_at)}</td>
                 <td className="p-2">{r.finding_count ?? '—'}</td>
-                <td className="p-2 text-slate-400">{r.error_class || ''}</td>
+                <td className="p-2 text-[var(--text-secondary)]">{r.error_class || ''}</td>
               </tr>
             ))}
           </tbody>
@@ -379,7 +394,7 @@ function EngineRunsInner() {
 
 export default function EngineRunsPage() {
   return (
-    <Suspense fallback={<div className="p-8 text-center text-slate-400">Loading…</div>}>
+    <Suspense fallback={<div className="p-8 text-center text-[var(--text-secondary)]">Loading…</div>}>
       <EngineRunsInner />
     </Suspense>
   );

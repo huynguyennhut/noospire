@@ -22,6 +22,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.deps import get_current_active_user, load_scope, require_owner
+from backend.app.core.inventory_reconciliation import execution_block_reasons
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.engines.advisories import AdvisoryFormatError, AdvisoryIndex, parse_snapshot
@@ -45,7 +46,7 @@ from backend.app.models.user import User
 router = APIRouter(tags=["Defensive engines"])
 
 WORKER_STALE_SECONDS = 30
-ENGINES = {"sbom", "tls_health"}
+ENGINES = {"sbom", "tls_health", "public_web"}
 
 
 def _audit(db, user: User, action: str, details: str, request: Request) -> None:
@@ -230,7 +231,7 @@ async def list_advisory_snapshots(current_user: User = Depends(get_current_activ
 
 class ExecutionCreate(BaseModel):
     asset_id: uuid.UUID
-    engine: Literal["sbom", "tls_health"]
+    engine: Literal["sbom", "tls_health", "public_web"]
     artifact_id: Optional[uuid.UUID] = None
     timeout_seconds: int = Field(120, ge=5, le=1800)
 
@@ -249,6 +250,10 @@ async def launch_execution(
     asset = await db.get(Asset, payload.asset_id)
     if asset is None:
         raise HTTPException(status_code=404, detail="Asset not found")
+    inventory_blocks = await execution_block_reasons(db, [asset])
+    if inventory_blocks:
+        raise HTTPException(status_code=409, detail=f"{inventory_blocks[str(asset.id)]}: reconcile the target before customer execution.")
+
 
     req_hash = hashlib.sha256(json.dumps(payload.model_dump(mode="json"), sort_keys=True).encode()).hexdigest()
     scoped_key = f"{current_user.id}:{idempotency_key}" if idempotency_key else None
@@ -261,7 +266,14 @@ async def launch_execution(
             body = await _launch_response(db, prior, replayed=True)
             return JSONResponse(status_code=200, content=body)
 
+    from backend.app.models.operations import CapacitySettings
+    capacity = await db.get(CapacitySettings, 1)
+    if ((capacity and capacity.emergency_stop_active)
+            or (Path(settings.STORAGE_DIR) / "production-emergency-stop").exists()):
+        raise HTTPException(status_code=409, detail="GLOBAL_STOP_ACTIVE: global emergency stop is active.")
+
     descriptor: dict = {}
+    planned_item = None
     input_sha = None
     if payload.engine == "sbom":
         if payload.artifact_id is None:
@@ -271,6 +283,16 @@ async def launch_execution(
             raise HTTPException(status_code=404, detail="Artifact not found for this asset")
         input_sha = art.sha256
         descriptor = {"artifact_id": str(art.id), "filename": art.filename, "kind": art.kind}
+    elif payload.engine == "public_web":
+        # The single-execution API must honor the same host quotas and duplicate suppression
+        # as batch runs and schedules; it must not offer a bypass for repeated network probes.
+        from backend.app.core.planner import Selection, build_plan
+        plan = await build_plan(db, selection=Selection(kind="assets", asset_ids=[str(asset.id)]),
+                                engines=["public_web"], profile="slow", trigger="manual", scope=scope)
+        planned_item = plan.items[0]
+        if planned_item.decision == "skip":
+            raise HTTPException(status_code=409, detail=f"{planned_item.reason_code}: {planned_item.reason}")
+        descriptor = {"public_web_revision": planned_item.public_web_revision, "url": planned_item.public_web_url}
     else:
         hc = (asset.assessment_policy or {}).get("health_check") or {}
         descriptor = {"health_check_revision": hc.get("revision"), "url": hc.get("url")}
@@ -283,15 +305,19 @@ async def launch_execution(
     db.add(batch)
     await db.flush()
     scan = Scan(asset_id=asset.id, batch_id=batch.id, engine=payload.engine, profile="BASELINE", status="QUEUED",
-                target_locator=f"engine://{payload.engine}/{asset.id}", timeout_seconds=payload.timeout_seconds,
-                max_retries=3)
+                target_locator=f"engine://{payload.engine}/{asset.id}",
+                timeout_seconds=min(payload.timeout_seconds, 12) if payload.engine == "public_web" else payload.timeout_seconds,
+                max_retries=0 if payload.engine == "public_web" else 3,
+                available_at=datetime.fromisoformat(planned_item.available_at) if planned_item and planned_item.available_at else None)
     db.add(scan)
     await db.flush()
     rec = ExecutionRecord(scan_id=scan.id, batch_id=batch.id, asset_id=asset.id, engine_id=payload.engine,
                           execution_mode="native", artifact_id=payload.artifact_id, input_sha256=input_sha,
-                          input_descriptor=descriptor, scope_revision=descriptor.get("health_check_revision"),
+                          input_descriptor=descriptor, scope_revision=descriptor.get("public_web_revision") or descriptor.get("health_check_revision"),
                           trigger="manual", actor_id=str(current_user.id), idempotency_key=scoped_key,
                           request_hash=req_hash, status=EXEC_QUEUED, queued_at=now,
+                          plan_note=(f"{planned_item.reason_code}: {planned_item.reason}"[:512]
+                                     if planned_item and planned_item.reason_code else None),
                           correlation_id=getattr(request.state, "request_id", None),
                           target_host=(urlsplit(descriptor["url"]).hostname or "").lower() or None
                           if descriptor.get("url") else None)

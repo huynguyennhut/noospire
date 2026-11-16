@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from backend.app.api.deps import get_db, require_operator, require_viewer
+from backend.app.api.deps import get_db, load_scope, require_operator, require_viewer
 from backend.app.core.checklist_seeder import seed_checklist_catalog
 from backend.app.core.scope_gate import ScopeEnforcementError, ScopeValidator
 from backend.app.models.asset import Asset
@@ -34,6 +34,14 @@ from backend.app.schemas.checklist import (
 logger = logging.getLogger("sentinel.checklist_api")
 
 router = APIRouter(prefix="/checklist", tags=["Empire Pentest Checklist"])
+
+
+async def _scoped_run(db: AsyncSession, user: User, run_id: uuid.UUID, action: str = "READ") -> ChecklistAssessmentRun:
+    run = (await db.execute(select(ChecklistAssessmentRun).where(ChecklistAssessmentRun.id == run_id))).scalars().first()
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Checklist run not found")
+    (await load_scope(user, db)).require(run.asset_id, action)
+    return run
 
 
 @router.get("/definitions", response_model=List[ChecklistDefinitionRead])
@@ -69,6 +77,9 @@ async def list_checklist_runs(
 ) -> Any:
     """Lists point-in-time checklist assessment runs with coverage statistics."""
     stmt = select(ChecklistAssessmentRun).order_by(ChecklistAssessmentRun.created_at.desc())
+    scope = await load_scope(current_user, db)
+    if scope.asset_ids is not None:
+        stmt = stmt.where(ChecklistAssessmentRun.asset_id.in_(scope.asset_ids))
     if asset_id:
         stmt = stmt.where(ChecklistAssessmentRun.asset_id == asset_id)
 
@@ -90,6 +101,8 @@ async def create_checklist_run(
     Enforces immutable preflight scope validation, seeds all 39 checks in NOT_RUN state,
     and executes automated checks (Synthetic Test Harness and File Policy Engine).
     """
+    # Object permission must pass before resolving or probing a customer target.
+    (await load_scope(current_user, db)).require(run_in.asset_id, "SCAN")
     # 1. Immutable Scope Preflight Gate
     try:
         await ScopeValidator.validate_preflight(
@@ -198,13 +211,7 @@ async def get_checklist_run(
     db: AsyncSession = Depends(get_db),
 ) -> Any:
     """Retrieves a checklist run by ID."""
-    res = await db.execute(
-        select(ChecklistAssessmentRun).where(ChecklistAssessmentRun.id == run_id)
-    )
-    run = res.scalars().first()
-    if not run:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Checklist run not found")
-    return run
+    return await _scoped_run(db, current_user, run_id)
 
 
 @router.get("/runs/{run_id}/results", response_model=List[ChecklistResultRead])
@@ -214,11 +221,7 @@ async def get_checklist_run_results(
     db: AsyncSession = Depends(get_db),
 ) -> Any:
     """Retrieves all 39 check results with forensic evidence payloads for a run."""
-    run_res = await db.execute(
-        select(ChecklistAssessmentRun).where(ChecklistAssessmentRun.id == run_id)
-    )
-    if not run_res.scalars().first():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Checklist run not found")
+    await _scoped_run(db, current_user, run_id)
 
     res = await db.execute(
         select(ChecklistResult)
@@ -236,12 +239,7 @@ async def get_checklist_run_metrics(
     db: AsyncSession = Depends(get_db),
 ) -> Any:
     """Retrieves honest automated coverage and manual review completion percentages."""
-    res = await db.execute(
-        select(ChecklistAssessmentRun).where(ChecklistAssessmentRun.id == run_id)
-    )
-    run = res.scalars().first()
-    if not run:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Checklist run not found")
+    run = await _scoped_run(db, current_user, run_id)
 
     counts = run.state_counts or {}
     unrun_checks = counts.get(ChecklistResultState.NOT_RUN.value, 0)
@@ -269,6 +267,7 @@ async def review_checklist_check(
     """Records manual analyst review, strictly enforcing state transition invariants.
     Invariant: Never convert unrun, blocked, or error states to PASS.
     """
+    await _scoped_run(db, current_user, run_id, "TRIAGE")
     res = await db.execute(
         select(ChecklistResult)
         .options(selectinload(ChecklistResult.definition))

@@ -20,6 +20,7 @@ from backend.app.api.deps import (
     require_viewer,
     session_still_valid,
 )
+from backend.app.core.inventory_reconciliation import execution_block_reasons
 from backend.app.core.config import settings
 from backend.app.core.database import AsyncSessionLocal, get_db
 from backend.app.core.dispatcher import get_dispatcher, log_buffer
@@ -35,7 +36,6 @@ from backend.app.models.user import User, UserRole
 from backend.app.core.ultra_planner import ultra_planner
 from backend.app.schemas.common import (
     AssetType,
-    EmpireModule,
     PaginatedResponse,
     ScanProfile,
     ScanQualityStatus,
@@ -141,11 +141,11 @@ async def create_scan(
 
     # Developer Scoping Enforcement (R5)
     _scope = await load_scope(current_user, db)
-    if not _scope.estate_wide and not _scope.can(scan_in.asset_id, "SCAN"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Access denied: Missing SCAN permission for target asset {scan_in.asset_id}",
-        )
+    _scope.require(scan_in.asset_id, "SCAN")
+
+    inventory_blocks = await execution_block_reasons(db, [asset])
+    if inventory_blocks:
+        raise HTTPException(status_code=409, detail=f"{inventory_blocks[str(asset.id)]}: reconcile the target before customer execution.")
 
     # 2. Scope and Emergency Stop Check (F13 - kill switch takes precedence)
     scope_res = await db.execute(select(AssetAssessmentScope).where(AssetAssessmentScope.asset_id == asset.id))
@@ -283,6 +283,9 @@ async def create_batch_scan(
             detail="No target assets found for batch assessment.",
         )
 
+    if await execution_block_reasons(db, assets):
+        raise HTTPException(status_code=409, detail="INVENTORY_RECONCILIATION_REQUIRED: batch contains synthetic or unproven seeded targets.")
+
     # 2. Resolve Profiles
     if batch_in.profiles:
         profile_list = batch_in.profiles
@@ -418,20 +421,51 @@ async def launch_ultra_scan(
     current_user: User = Depends(require_operator),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
-    """Dispatches or recovers an authorized Ultra Scan batch assessment across the Empire estate.
-    Adheres strictly to the hourly assessment cadence, durable batch tracking,
-    complete inventory accounting, and idempotent recovery.
-    """
-    # 1. Resolve Idempotency Key
+    """Plan stored targets or recover an asset-scoped batch; never provision fixtures."""
+    # Resolve and authorize real stored assets before idempotent recovery or writes.
+    # Acceptance fixtures remain available through the read-only preview endpoint.
+    scope_str = ultra_in.scope.upper() if isinstance(ultra_in.scope, str) else ""
+    if scope_str in ("FIXTURE_379", "EMPIRE_ESTATE_379"):
+        raise HTTPException(status_code=409, detail="SYNTHETIC_INVENTORY: fixture previews cannot launch customer assessments.")
+    access = await load_scope(current_user, db)
+    if scope_str == "ALL":
+        if not is_sole_owner(current_user):
+            raise HTTPException(status_code=403, detail="Estate-wide Ultra Scan is restricted to the system owner.")
+        db_assets = (await db.execute(select(Asset))).scalars().all()
+        if not db_assets:
+            raise HTTPException(status_code=409, detail="NO_RECONCILED_INVENTORY: register approved targets before dispatch.")
+    elif isinstance(ultra_in.scope, list):
+        if not ultra_in.scope:
+            raise HTTPException(status_code=400, detail="Scope target list cannot be empty.")
+        try:
+            target_uuids = {uuid.UUID(str(t)) for t in ultra_in.scope}
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Scope targets must be UUIDs.")
+        for target_id in target_uuids:
+            access.require(target_id, "SCAN")
+        db_assets = (await db.execute(select(Asset).where(Asset.id.in_(target_uuids)))).scalars().all()
+        if {a.id for a in db_assets} != target_uuids:
+            raise HTTPException(status_code=404, detail="Asset not found")
+    else:
+        raise HTTPException(status_code=400, detail="Invalid Ultra Scan scope.")
+
+    if await execution_block_reasons(db, db_assets):
+        raise HTTPException(status_code=409, detail="INVENTORY_RECONCILIATION_REQUIRED: exclude synthetic or unproven seeded targets before dispatch.")
+
     idempotency_key = ultra_in.idempotency_key or idempotency_key_header
     if idempotency_key:
         idempotency_key = idempotency_key.strip()
-        # Query if this batch was already created
-        existing_batch_res = await db.execute(
+        existing_batch = (await db.execute(
             select(ScanBatch).where(ScanBatch.idempotency_key == idempotency_key)
-        )
-        existing_batch = existing_batch_res.scalars().first()
+        )).scalars().first()
         if existing_batch:
+            existing_ids = set((await db.execute(
+                select(Scan.asset_id).where(Scan.batch_id == existing_batch.id)
+            )).scalars().all())
+            for target_id in existing_ids:
+                access.require(target_id, "SCAN")
+            if existing_ids != {a.id for a in db_assets}:
+                raise HTTPException(status_code=409, detail="Idempotency key belongs to a different target selection.")
             meta = existing_batch.metadata_json or {}
             return UltraScanResponse(
                 batch_id=existing_batch.id,
@@ -446,65 +480,18 @@ async def launch_ultra_scan(
                 snapshot_time=existing_batch.created_at,
                 policy_revision=meta.get("policy_revision", "2026.11-R2"),
                 idempotency_recovered=True,
-                message=f"Idempotent recovery: Returning active Ultra Scan batch {existing_batch.id}",
+                message=f"Idempotent recovery: Returning Ultra Scan batch {existing_batch.id}",
             )
 
-    # 2. Authorization Verification (R5: Estate-wide scan restricted solely to system owner)
-    is_estate_wide = (
-        ultra_in.scope == "ALL"
-        or (isinstance(ultra_in.scope, str) and ultra_in.scope.upper() in ("ALL", "EMPIRE_ESTATE_379", "FIXTURE_379"))
-    )
-    if is_estate_wide:
-        if not is_sole_owner(current_user):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Launching estate-wide Ultra Scan across the entire inventory is restricted solely to the system owner.",
-            )
-
-    # 3. Plan Inventory
-    scope_str = ultra_in.scope if isinstance(ultra_in.scope, str) else ""
-    if scope_str.upper() in ("FIXTURE_379", "EMPIRE_ESTATE_379"):
-        inventory_items = ultra_planner.generate_acceptance_fixture_379()
-    elif scope_str.upper() == "ALL":
-        asset_res = await db.execute(select(Asset))
-        db_assets = asset_res.scalars().all()
-        if db_assets:
-            inventory_items = [
-                {
-                    "id": str(a.id),
-                    "target_locator": a.target_locator,
-                    "asset_type": a.asset_type,
-                    "is_out_of_scope": False,
-                    "is_alias": False,
-                    "environment": a.environment,
-                    "tenant": "empire_edu",
-                    "identity": "synthetic_scanner",
-                }
-                for a in db_assets
-            ]
-        else:
-            inventory_items = ultra_planner.generate_acceptance_fixture_379()
-    elif isinstance(ultra_in.scope, list):
-        if not ultra_in.scope:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scope target list cannot be empty.")
-        target_uuids = [uuid.UUID(str(t)) for t in ultra_in.scope]
-        asset_res = await db.execute(select(Asset).where(Asset.id.in_(target_uuids)))
-        db_assets = asset_res.scalars().all()
-        inventory_items = [
-            {
-                "id": str(a.id),
-                "target_locator": a.target_locator,
-                "asset_type": a.asset_type,
-                "is_out_of_scope": False,
-                "is_alias": False,
-                "environment": a.environment,
-                "tenant": "empire_edu",
-                "identity": "synthetic_scanner",
-            }
-            for a in db_assets
-        ]
-    else:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid scope '{ultra_in.scope}'.")
+    inventory_items = [
+        {
+            "id": str(a.id), "target_locator": a.target_locator,
+            "asset_type": a.asset_type, "is_out_of_scope": False, "is_alias": False,
+            "environment": a.environment, "tenant": "empire_edu",
+            "identity": "unauthenticated",
+        }
+        for a in db_assets
+    ]
 
     profile_val = ultra_in.profile.value if hasattr(ultra_in.profile, "value") else str(ultra_in.profile)
     plan_batch_id = uuid.uuid4()
@@ -541,30 +528,11 @@ async def launch_ultra_scan(
     db.add(batch)
     await db.flush()
 
-    # 5. Populate Execution Targets (Ensure Assets and Child Scans)
+    # Plans may only reference assets resolved above; never invent or verify assets.
     exec_target_ids = {uuid.UUID(child.target_id) for child in plan.all_executions}
-    existing_assets_res = await db.execute(select(Asset.id).where(Asset.id.in_(exec_target_ids)))
-    existing_asset_ids = set(existing_assets_res.scalars().all())
-
-    locator_map = {child.target_id: child.target_locator for child in plan.all_executions}
-    missing_ids = exec_target_ids - existing_asset_ids
-    for mid in missing_ids:
-        mid_str = str(mid)
-        loc = locator_map.get(mid_str, f"https://target-{mid_str[:8]}.empire.edu.vn")
-        synthetic_asset = Asset(
-            id=mid,
-            name=f"Asset {loc}",
-            asset_type=AssetType.WEB_APP.value,
-            target_locator=loc,
-            empire_module=EmpireModule.WEB_APPLICATION.value,
-            environment="PRODUCTION",
-            technology="Empire Cloud Service",
-            verification_status=VerificationStatus.VERIFIED.value,
-        )
-        db.add(synthetic_asset)
-
-    if missing_ids:
-        await db.flush()
+    if not exec_target_ids.issubset({a.id for a in db_assets}):
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Planner referenced an unregistered target.")
 
     created_scans: List[Scan] = []
     scans_to_dispatch: List[uuid.UUID] = []

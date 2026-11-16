@@ -36,6 +36,11 @@ export type ScanStatus =
 
 export type FindingLifecycleStatus =
   | 'NEW'
+  | 'NEEDS_TRIAGE'
+  | 'ASSIGNED'
+  | 'IN_PROGRESS'
+  | 'FIXED_PENDING_RETEST'
+  | 'RESOLVED'
   | 'POTENTIAL'
   | 'CONFIRMED'
   | 'OPEN'
@@ -59,6 +64,11 @@ export interface Asset {
   auth_profile?: Record<string, any>;
   excluded_endpoints?: string[];
   verification_status: VerificationStatus;
+  /** Server-authoritative inventory admission, independent of historical VERIFIED flags. */
+  assessment_eligible?: boolean;
+  assessment_block_reason?: string | null;
+  inventory_classification?: string;
+  inventory_provenance?: string | null;
   /** Derived server-side from ownership proofs (Milestone 6). UNPROVEN = flagged verified without proof. */
   verification_state?: 'VERIFIED' | 'UNPROVEN' | 'PENDING' | 'FAILED' | 'REVOKED';
   verification_proof?: { proof_id: string; method: string; verified_at: string | null; created_by: string } | null;

@@ -27,6 +27,7 @@ import {
 import { api } from '@/lib/api';
 import { OverviewMetrics, Asset } from '@/lib/types';
 import { useI18n } from '@/lib/i18n';
+import MonitoringReadinessPanel from '@/components/console/MonitoringReadinessPanel';
 import DashboardSummaryPanel from '@/components/console/DashboardSummaryPanel';
 import { useToast } from '@/components/ui/toast';
 import {
@@ -65,7 +66,7 @@ type TimeRangeDays = 7 | 14 | 30;
 const EMPTY_SEVERITY: SeverityDistributionResponse = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0, INFO: 0 };
 
 export default function DashboardPage() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const router = useRouter();
   const { toast } = useToast();
 
@@ -79,7 +80,7 @@ export default function DashboardPage() {
   // Target Assets & Ultra Scan Selection
   const [assets, setAssets] = useState<Asset[]>([]);
   const [selectedAssetId, setSelectedAssetId] = useState<string>('ALL');
-  const [ultraLaunching, setUltraLaunching] = useState<boolean>(false);
+
 
   // Core Telemetry Datasets
   const [metrics, setMetrics] = useState<OverviewMetrics | null>(null);
@@ -127,7 +128,7 @@ export default function DashboardPage() {
           ACCEPTED_RISK: 0,
           FALSE_POSITIVE: 0,
         })),
-        api.listAssets().catch(() => ({ items: [], total: 0 })),
+        api.listAllAssets(true).catch(() => []),
       ]);
 
       if (m && typeof m === 'object' && 'overall_risk_score' in m) setMetrics(m);
@@ -139,7 +140,7 @@ export default function DashboardPage() {
       if (Array.isArray(perf)) setScannerPerf(perf as ScannerPerformanceItem[]);
       if (intel && typeof intel === 'object') setIntelActivity(intel as IntelligenceActivityResponse);
       if (rem && typeof rem === 'object') setRemediationProg(rem as RemediationProgressResponse);
-      if (assetsRes && Array.isArray((assetsRes as any).items)) setAssets((assetsRes as any).items);
+      if (Array.isArray(assetsRes)) setAssets(assetsRes);
 
       setLastSyncTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
     } catch (err: unknown) {
@@ -150,33 +151,8 @@ export default function DashboardPage() {
     }
   }, []);
 
-  const handleRunUltraScan = async () => {
-    try {
-      setUltraLaunching(true);
-      const idempotencyKey = `ultra-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-      const scopeParam = selectedAssetId === 'ALL' ? 'ALL' : [selectedAssetId];
-      const res = await api.launchUltraScan({
-        scope: scopeParam,
-        idempotency_key: idempotencyKey,
-        initiator: 'dashboard_owner_action',
-      });
-      toast({
-        title: 'Ultra Scan Dispatched',
-        description: `Batch ${res.batch_id} initiated across ${res.independent_execution_targets} targets (${res.engine_executions_count} engine executions).`,
-        variant: 'success',
-        duration: 5000,
-      });
-      router.push(res.tracker_link);
-    } catch (err: unknown) {
-      toast({
-        title: 'Ultra Scan Launch Failed',
-        description: err instanceof Error ? err.message : String(err),
-        variant: 'destructive',
-        duration: 6000,
-      });
-    } finally {
-      setUltraLaunching(false);
-    }
+  const handlePreviewAssessment = () => {
+    router.push(selectedAssetId === 'ALL' ? '/scans/' : `/scans/?asset=${encodeURIComponent(selectedAssetId)}`);
   };
 
   useEffect(() => {
@@ -207,18 +183,20 @@ export default function DashboardPage() {
 
   // Posture styling helper
   // No data (backend lost, owner-only metrics, empty estate) is UNKNOWN, never OPTIMAL/green.
-  const posture = metrics?.risk_posture || 'UNKNOWN';
+  // A zero score or missing findings is not evidence that an asset is secure.
+  // This aggregate includes historical inventory and cannot certify production.
+  const posture = metrics && metrics.risk_posture !== 'OPTIMAL' && metrics.total_open_findings > 0 ? metrics.risk_posture : 'UNKNOWN';
   const postureConfig: Record<string, { badge: 'critical' | 'high' | 'medium' | 'low' | 'info'; glow: 'rose' | 'amber' | 'cyan' | 'emerald'; text: string }> = {
-    UNKNOWN: { badge: 'info', glow: 'cyan', text: t('posture.unknown', 'UNKNOWN') },
+    UNKNOWN: { badge: 'info', glow: 'cyan', text: locale === 'vi' ? 'Chưa đủ bằng chứng' : 'Insufficient evidence' },
     CRITICAL: { badge: 'critical', glow: 'rose', text: t('posture.critical', 'CRITICAL') },
     ELEVATED: { badge: 'high', glow: 'amber', text: t('posture.elevated', 'ELEVATED') },
     MODERATE: { badge: 'medium', glow: 'cyan', text: t('posture.moderate', 'MODERATE') },
-    OPTIMAL: { badge: 'low', glow: 'emerald', text: t('posture.secure', 'OPTIMAL') },
   };
   const activePosture = postureConfig[posture] || postureConfig.UNKNOWN;
 
   return (
     <div className="space-y-6 animate-fadeIn pb-12">
+      <MonitoringReadinessPanel />
       <DashboardSummaryPanel />
       {/* =========================================================================
           TOP COMMAND HEADER & CONTROL TOOLBAR
@@ -277,9 +255,9 @@ export default function DashboardPage() {
             value={selectedAssetId}
             onChange={(e) => setSelectedAssetId(e.target.value)}
             className="bg-black/60 border border-white/10 rounded-lg px-2.5 py-2 text-xs text-white focus:outline-none focus:border-cyan-500/50 backdrop-blur-md"
-            title="Select target asset or run estate-wide"
+            title={locale === 'vi' ? 'Chọn mục tiêu đủ điều kiện' : 'Select an eligible target'}
           >
-            <option value="ALL">{`All assets in scope (${assets.length})`}</option>
+            <option value="ALL">{`${locale === 'vi' ? 'Tất cả mục tiêu đủ điều kiện' : 'All eligible targets'} (${assets.length})`}</option>
             {assets.map((a) => (
               <option key={a.id} value={a.id}>
                 {a.name || a.target_locator}
@@ -291,12 +269,12 @@ export default function DashboardPage() {
           <Button
             variant="glass"
             size="md"
-            onClick={handleRunUltraScan}
-            disabled={ultraLaunching}
+            onClick={handlePreviewAssessment}
+            disabled={!assets.length}
             className="border-cyan-500/40 text-cyan-300 hover:bg-cyan-950/40 hover:text-cyan-200 shadow-[0_0_15px_rgba(6,182,212,0.15)]"
-            icon={<Zap className={`w-3.5 h-3.5 text-cyan-400 ${ultraLaunching ? 'animate-pulse' : ''}`} />}
+            icon={<Zap className="w-3.5 h-3.5 text-cyan-400" />}
           >
-            <span>{ultraLaunching ? 'Launching Ultra Scan...' : 'Run Ultra Scan'}</span>
+            <span>{locale === 'vi' ? 'Xem kế hoạch đánh giá' : 'Preview assessment'}</span>
           </Button>
 
           {/* Quick Action: Launch Assessment */}
@@ -354,20 +332,20 @@ export default function DashboardPage() {
             <div className="space-y-2">
               <div className="flex items-center gap-2.5">
                 <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
-                  {t('dashboard.posture', 'Security Posture:')}
+                  {locale === 'vi' ? 'Rủi ro ghi nhận trong dữ liệu lịch sử:' : 'Recorded historical risk:'}
                 </span>
                 <Badge severity={activePosture.badge} size="md" dot glow>
                   {activePosture.text}
                 </Badge>
               </div>
               <h2 className="text-lg font-bold text-white tracking-tight">
-                {posture === 'OPTIMAL' && 'No open findings in the latest measured data (see data state above)'}
+                {posture === 'UNKNOWN' && (locale === 'vi' ? 'Chưa thể kết luận tình trạng an ninh từ số lượng finding' : 'Finding counts do not establish security posture')}
                 {posture === 'MODERATE' && 'Low-Level Vulnerabilities Identified Across Perimeters'}
                 {posture === 'ELEVATED' && 'High-Priority Vulnerabilities Requiring Immediate Triage'}
-                {posture === 'CRITICAL' && 'Critical Security Exploits Detected — Urgent Action Required'}
+                {posture === 'CRITICAL' && 'Critical findings recorded — review evidence and scope'}
               </h2>
               <p className="text-xs text-slate-400 max-w-2xl leading-relaxed">
-                Sentinel Risk Score ($SRS$) combines CVSS v3.1 base severity, active CISA KEV exploitation catalogs, and real attack surface exposure across all verified Empire business modules.
+                {locale === 'vi' ? 'Chỉ số tổng hợp từ finding và KEV được lưu trong cơ sở dữ liệu, bao gồm lịch sử và dữ liệu kiểm thử. Điểm 0 không đồng nghĩa an toàn hoặc đã kiểm tra toàn diện.' : 'Aggregate of stored findings and KEV records, including historical and test data. A zero score does not mean secure or comprehensively assessed.'}
               </p>
             </div>
           </div>
@@ -381,12 +359,12 @@ export default function DashboardPage() {
             </div>
             {lastSyncTime && (
               <div className="hidden sm:flex flex-col gap-1 border-l border-white/10 pl-4">
-                <span className="text-[11px] text-slate-500 uppercase tracking-wider font-semibold">Last Telemetry</span>
+                <span className="text-[11px] text-slate-500 uppercase tracking-wider font-semibold">{locale === 'vi' ? 'Lần tải dữ liệu' : 'Data fetched'}</span>
                 <span className="text-sm font-mono font-bold text-slate-300 flex items-center gap-1">
                   <Clock className="w-3.5 h-3.5 text-white" />
                   {lastSyncTime}
                 </span>
-                <span className="text-[10px] text-emerald-400">Live Continuous Stream</span>
+                <span className="text-[10px] text-slate-400">{locale === 'vi' ? 'Thời điểm tải giao diện' : 'UI refresh time'}</span>
               </div>
             )}
           </div>
@@ -410,21 +388,19 @@ export default function DashboardPage() {
         <StatCard
           title={t('dashboard.assessedToday', 'Assessed Today')}
           value={metrics?.targets_assessed_today ?? 0}
-          subtitle={`Coverage: ${coverage?.coverage_percentage ?? 0}%`}
+          subtitle={`${locale === 'vi' ? 'Lịch sử kiểm kê' : 'Inventory history'}: ${coverage?.coverage_percentage ?? 0}%`}
           icon={<CheckCircle2 className="w-4 h-4" />}
           accent="emerald"
-          trend={{ value: 'Daily SLA', positive: true }}
         />
 
         {/* Card 3: Active Assessments */}
         <StatCard
           title={t('dashboard.activeAssessments', 'Active Assessments')}
           value={metrics?.active_assessments ?? 0}
-          subtitle="Worker Pool Active"
+          subtitle={locale === 'vi' ? 'Trạng thái job đã lưu; xem worker phía trên' : 'Stored job states; see workers above'}
           icon={<Radio className="w-4 h-4 animate-pulse text-white" />}
           accent="slate"
           glow="none"
-          trend={{ value: 'Live', positive: true }}
         />
 
         {/* Card 4: Failed Assessments */}
@@ -637,14 +613,14 @@ export default function DashboardPage() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                <CardTitle>Chart 4 — Target Assessment Coverage</CardTitle>
+                <CardTitle>{locale === 'vi' ? 'Biểu đồ 4 — Lịch sử lượt chạy trên kiểm kê' : 'Chart 4 — Inventory execution history'}</CardTitle>
               </div>
               <Badge severity="low" size="sm">
-                {coverage?.coverage_percentage ?? 0}% Assessed
+                {coverage ? `${coverage.coverage_percentage}%` : '—'} {locale === 'vi' ? 'có lịch sử' : 'with history'}
               </Badge>
             </div>
             <CardDescription>
-              Continuous 24-hour daily assessment pipeline execution and queue status.
+              {locale === 'vi' ? 'Tỷ lệ bản ghi có lượt kết thúc hôm nay, bao gồm dữ liệu mẫu và lượt lỗi. Không phải tỷ lệ bao phủ production hoặc kết quả kiểm tra toàn diện.' : 'Inventory rows with an execution ending today, including test data and failed attempts. This is not production coverage or comprehensive assessment.'}
             </CardDescription>
           </CardHeader>
 
@@ -652,11 +628,9 @@ export default function DashboardPage() {
             <InteractiveGaugeChart
               value={coverage?.coverage_percentage ?? 0}
               height={160}
-              postureText={`${coverage?.coverage_percentage ?? 0}% Assessed`}
+              postureText={`${coverage ? `${coverage.coverage_percentage}%` : '—'} {locale === 'vi' ? 'có lịch sử' : 'with history'}`}
               zones={[
-                { max: 40, label: 'LOW', color: '#F59E0B' },
-                { max: 75, label: 'MODERATE', color: '#06B6D4' },
-                { max: 100, label: 'OPTIMAL', color: '#10B981' },
+                { max: 100, label: locale === 'vi' ? 'LỊCH SỬ' : 'HISTORY', color: '#94A3B8' },
               ]}
             />
 
@@ -670,7 +644,7 @@ export default function DashboardPage() {
                 <div className="text-lg font-black text-emerald-400 mt-0.5 font-mono">{coverage?.assessed_today ?? 0}</div>
               </div>
               <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/10">
-                <div className="text-slate-400 text-[10px] uppercase font-semibold">Pending Queue</div>
+                <div className="text-slate-400 text-[10px] uppercase font-semibold">{locale === 'vi' ? 'Chưa ghi nhận hôm nay' : 'No record today'}</div>
                 <div className="text-lg font-black text-amber-400 mt-0.5 font-mono">{coverage?.pending_assessment ?? 0}</div>
               </div>
             </div>
@@ -748,7 +722,7 @@ export default function DashboardPage() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Flame className="w-4 h-4 text-orange-400" />
-                <CardTitle>Chart 7 — Threat Intelligence Sync & Feed Ingestion</CardTitle>
+                <CardTitle>{locale === 'vi' ? 'Biểu đồ 7 — Dữ liệu threat intelligence đã lưu' : 'Chart 7 — Stored threat intelligence'}</CardTitle>
               </div>
               <Link href="/threat-intel" className="text-xs text-nf-300 hover:text-white inline-flex items-center gap-1 font-semibold">
                 <span>Intel Center</span>
@@ -756,7 +730,7 @@ export default function DashboardPage() {
               </Link>
             </div>
             <CardDescription>
-              Real-time synchronization with NVD, CISA KEV catalog, and FIRST EPSS scores.
+              {locale === 'vi' ? 'Các số đếm từ dữ liệu đã lưu. Không xác nhận kết nối feed, lịch đồng bộ hoặc độ mới của nguồn.' : 'Counts from stored records. These do not confirm feed connectivity, synchronization schedules or freshness.'}
             </CardDescription>
           </CardHeader>
 
@@ -765,7 +739,7 @@ export default function DashboardPage() {
               <div className="p-3.5 rounded-xl bg-white/[0.02] border border-white/10">
                 <div className="text-slate-400 text-[11px] font-semibold uppercase">NVD / CVEs Indexed</div>
                 <div className="text-2xl font-black text-white mt-1 font-mono">{intelActivity?.total_cves_indexed ?? 0}</div>
-                <div className="text-[10px] text-nf-400 mt-0.5">Automated Daily Sync</div>
+                <div className="text-[10px] text-nf-400 mt-0.5">{locale === 'vi' ? 'Chưa xác minh lịch đồng bộ' : 'Sync schedule not verified'}</div>
               </div>
 
               <div className="p-3.5 rounded-xl bg-white/[0.02] border border-rose-500/20 bg-rose-500/[0.02]">
@@ -782,16 +756,16 @@ export default function DashboardPage() {
 
               <div className="p-3.5 rounded-xl bg-white/[0.02] border border-white/10">
                 <div className="text-slate-400 text-[11px] font-semibold uppercase">Detection Rules Active</div>
-                <div className="text-2xl font-black text-white mt-1 font-mono">{intelActivity?.detection_rules_active ?? 12}</div>
+                <div className="text-2xl font-black text-white mt-1 font-mono">{intelActivity?.detection_rules_active ?? '—'}</div>
                 <div className="text-[10px] text-slate-400 mt-0.5">Sigma & Custom Rules</div>
               </div>
             </div>
 
             <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between text-xs text-slate-400">
-              <span>Last Ingestion Sync: <strong className="text-slate-200">{intelActivity?.last_sync || 'Synchronized'}</strong></span>
-              <span className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1">
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                Feeds Connected
+              <span>{locale === 'vi' ? 'Thời điểm tải số liệu:' : 'Figures fetched:'} <strong className="text-slate-200">{lastSyncTime || '—'}</strong></span>
+              <span className="text-[11px] text-slate-400 font-semibold flex items-center gap-1">
+                <Clock className="w-3.5 h-3.5" />
+                {locale === 'vi' ? 'Chưa xác minh trạng thái feed' : 'Feed status unverified'}
               </span>
             </div>
           </CardContent>

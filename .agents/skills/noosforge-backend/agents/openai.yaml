@@ -1,0 +1,4 @@
+interface:
+  display_name: "Backend & API Engineering"
+  short_description: "Implement NOOSFORGE APIs and durable job flows"
+  default_prompt: "Use $noosforge-backend. Implement the requested API change and verify persistence and permissions."

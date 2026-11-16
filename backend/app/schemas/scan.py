@@ -148,7 +148,7 @@ class TrackCurrentResponse(BaseModel):
 
 class UltraScanCreate(BaseModel):
     idempotency_key: Optional[str] = Field(default=None, description="Client-supplied idempotency key")
-    scope: Optional[Union[str, List[str]]] = Field(default="ALL", description="'ALL', 'FIXTURE_379', 'EMPIRE_ESTATE_379', or list of target UUIDs")
+    scope: Optional[Union[str, List[str]]] = Field(default="ALL", description="'ALL' registered assets or list of existing target UUIDs; fixtures are preview-only")
     profile: Optional[Union[ScanProfile, str]] = Field(default=ScanProfile.STANDARD, description="Scan profile")
     engines: Optional[List[str]] = Field(default=None, description="List of engine names (nuclei, zap, empire, trivy) or 'all'")
     initiator: Optional[str] = Field(default="sole_owner", description="Initiator of assessment")

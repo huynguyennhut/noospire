@@ -1,4 +1,4 @@
-"""Worker-side execution of defensive engines (sbom, tls_health).
+"""Worker-side execution of defensive engines (sbom, tls_health, public_web).
 
 Lifecycle (all phases inside the RUNNING lease of the queue row `scans`):
   claim (queue.py, fencing token N) -> attempt row (phase=preflight) -> running -> reporting
@@ -21,10 +21,11 @@ from typing import List, Optional, Tuple
 
 from sqlalchemy import func, select, update
 
+from backend.app.core.inventory_reconciliation import execution_block_reasons
 from backend.app.core.config import settings
 from backend.app.core.database import AsyncSessionLocal
 from backend.app.engines import sbom as sbom_engine
-from backend.app.engines import tls_health
+from backend.app.engines import tls_health, public_web
 from backend.app.engines.advisories import AdvisoryFormatError, AdvisoryIndex, parse_snapshot
 from backend.app.models.asset import Asset
 from backend.app.models.defensive import (
@@ -43,6 +44,7 @@ from backend.app.models.defensive import (
 from backend.app.models.finding import NormalizedFinding
 from backend.app.models.scan import Scan
 from backend.app.scanners.base import compute_finding_fingerprint
+from backend.app.schemas.common import OPEN_FINDING_STATES, RESOLVED_FINDING_STATES
 
 log = logging.getLogger("noospire.engines")
 
@@ -165,6 +167,10 @@ def _evaluated_purls(raw: bytes) -> List[str]:
 
 
 async def _run_tls(rec: ExecutionRecord, attempt: ExecutionAttempt, asset: Asset, timeout: float) -> Outcome:
+    async with AsyncSessionLocal() as scope_db:
+        inventory_blocks = await execution_block_reasons(scope_db, [asset])
+    if inventory_blocks:
+        return Outcome(EXEC_SKIPPED, "Seed/test provenance is not a verified customer target.", inventory_blocks[str(asset.id)])
     hc = (asset.assessment_policy or {}).get("health_check") or {}
     rule_meta = {"source": "builtin", "version": tls_health.RULESET["version"],
                  "digest": sbom_engine.sha256_bytes(repr(sorted(tls_health.RULESET["rules"].items())).encode())}
@@ -206,7 +212,71 @@ async def _run_tls(rec: ExecutionRecord, attempt: ExecutionAttempt, asset: Asset
                    observed_at=datetime.fromisoformat(res.observed_at))
 
 
-ENGINES = {sbom_engine.ENGINE_ID: (_run_sbom, sbom_engine.DRIVER_NAME, sbom_engine.DRIVER_VERSION),
+async def _run_public_web(rec: ExecutionRecord, attempt: ExecutionAttempt, asset: Asset, timeout: float) -> Outcome:
+    import json
+    rule_meta = {"source": "builtin", "version": public_web.RULESET["version"], "digest": public_web.rules_digest()}
+    revision = (rec.input_descriptor or {}).get("public_web_revision")
+    if not revision:
+        return Outcome(EXEC_SKIPPED, "No pinned approval revision on the execution.", "SCOPE_CHANGED", rule_meta=rule_meta)
+
+    async def check_scope():
+        async with AsyncSessionLocal() as scope_db:
+            current = await scope_db.get(Asset, asset.id)
+            if current is None:
+                raise public_web.PolicyDenied("ASSET_MISSING", "Asset no longer exists.")
+            return await public_web.validate_approval(scope_db, current, revision)
+
+    try:
+        approval = await check_scope()
+    except public_web.PolicyDenied as exc:
+        return Outcome(EXEC_SKIPPED, exc.detail, exc.code, rule_meta=rule_meta)
+    if approval["url"] != rec.input_descriptor.get("url"):
+        return Outcome(EXEC_SKIPPED, "Pinned URL no longer matches approval.", "SCOPE_CHANGED", rule_meta=rule_meta)
+    task = asyncio.create_task(public_web.measure(approval["url"], timeout=min(timeout, public_web.MAX_SECONDS),
+                                                   before_request=check_scope))
+    try:
+        # Poll persisted scope/stop state across processes; closing a pending task closes its socket.
+        while not task.done():
+            await asyncio.wait({task}, timeout=0.25)
+            await check_scope()
+        res = await task
+    except public_web.PolicyDenied as exc:
+        return Outcome(EXEC_CANCELLED, exc.detail, exc.code, rule_meta=rule_meta)
+    except tls_health.EgressDenied:
+        return Outcome(EXEC_SKIPPED, "Resolved addresses are outside public egress policy.", "EGRESS_DENIED", rule_meta=rule_meta)
+    finally:
+        if not task.done():
+            task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+    checks = res["checks"]
+    findings = []
+    for check in checks:
+        if check["status"] != "FAIL":
+            continue
+        findings.append({"rule": check["id"], "location": approval["url"], "component": "public_web",
+                         "severity": check["severity"], "title": public_web.RULESET["rules"][check["id"]],
+                         "description": check["detail"] + " Observation applies only to this exact public HEAD response.",
+                         "cve": None, "cvss": None, "cvss_vector": None, "affected_version": None,
+                         "fixed_version": None, "remediation": "Review this endpoint's TLS/response policy and recheck after a verified correction.",
+                         "references": [], "evidence": {"check": check, "observed_at": res["observed_at"],
+                                                        "http_status": res["http_status"], "method": "HEAD"}})
+    summary = {**res, "egress_bytes": res["bytes_sent"] + res["bytes_received"],
+               "checks_evaluated": len(checks), "checks_failed": len(findings)}
+    document = {"schema": "noospire.engine-result/1", "engine_id": public_web.ENGINE_ID,
+                "driver": public_web.DRIVER_NAME, "driver_version": public_web.DRIVER_VERSION,
+                "execution_id": str(rec.id), "attempt_id": str(attempt.id), "execution_mode": "native",
+                "rules": rule_meta, "measurement": summary}
+    # A completed measurement can contain TLS findings despite no HTTP response. If absolutely
+    # nothing was evaluated, preserve existing findings and report an unavailable observation.
+    status = EXEC_SUCCEEDED if checks else EXEC_UNAVAILABLE
+    return Outcome(status, res["error"], "OBSERVATION_INCOMPLETE" if not checks else None,
+                   output=json.dumps(document, sort_keys=True, indent=2).encode(), findings=findings,
+                   summary=summary, rule_meta=rule_meta, evaluated_locations={approval["url"]} if checks else set(),
+                   known_rule_ids={c["id"] for c in checks}, observed_at=datetime.fromisoformat(res["observed_at"]))
+
+
+ENGINES = {public_web.ENGINE_ID: (_run_public_web, public_web.DRIVER_NAME, public_web.DRIVER_VERSION),
+           sbom_engine.ENGINE_ID: (_run_sbom, sbom_engine.DRIVER_NAME, sbom_engine.DRIVER_VERSION),
            tls_health.ENGINE_ID: (_run_tls, tls_health.DRIVER_NAME, tls_health.DRIVER_VERSION)}
 
 SCAN_STATUS_FOR = {
@@ -232,6 +302,40 @@ async def _set_phase(attempt_id: uuid.UUID, phase: str) -> None:
         await db.execute(update(ExecutionAttempt).where(ExecutionAttempt.id == attempt_id)
                          .values(phase=phase, heartbeat_at=datetime.now(timezone.utc)))
         await db.commit()
+
+
+async def _execution_control(scan_id, fencing_token, cancel_token) -> Optional[Outcome]:
+    """Re-read cross-process stop/cancel/lease state before and during engine I/O."""
+    from backend.app.models.operations import CapacitySettings
+    if cancel_token is not None and cancel_token.is_cancelled:
+        return Outcome(EXEC_CANCELLED, "Execution cancellation requested.", "CANCELLED")
+    async with AsyncSessionLocal() as db:
+        cap = await db.get(CapacitySettings, 1)
+        if ((cap and cap.emergency_stop_active)
+                or (Path(settings.STORAGE_DIR) / "production-emergency-stop").exists()):
+            return Outcome(EXEC_CANCELLED, "Global emergency stop is active.", "GLOBAL_STOP_ACTIVE")
+        lease = (await db.execute(select(Scan.status, Scan.fencing_token).where(Scan.id == scan_id))).first()
+        if lease is None or lease.status != "RUNNING" or lease.fencing_token != fencing_token:
+            return Outcome(EXEC_CANCELLED, "Execution lease no longer held.", "LEASE_LOST")
+    return None
+
+
+async def _run_controlled(engine_fn, rec, attempt, asset, timeout, scan_id, fencing_token, cancel_token):
+    stop = await _execution_control(scan_id, fencing_token, cancel_token)
+    if stop is not None:
+        return stop
+    task = asyncio.create_task(engine_fn(rec, attempt, asset, timeout))
+    try:
+        while not task.done():
+            await asyncio.wait({task}, timeout=0.25)
+            stop = await _execution_control(scan_id, fencing_token, cancel_token)
+            if stop is not None:
+                return stop
+        return await task
+    finally:
+        if not task.done():
+            task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
 
 
 async def run_execution(scan_id: uuid.UUID, fencing_token: int, worker_id: str, cancel_token) -> str:
@@ -302,7 +406,8 @@ async def run_execution(scan_id: uuid.UUID, fencing_token: int, worker_id: str, 
         else:
             await _set_phase(attempt.id, "running")
             try:
-                outcome = await asyncio.wait_for(engine_fn(rec, attempt, asset, timeout), timeout)
+                outcome = await asyncio.wait_for(_run_controlled(
+                    engine_fn, rec, attempt, asset, timeout, scan_id, fencing_token, cancel_token), timeout)
             except asyncio.TimeoutError:
                 outcome = Outcome(EXEC_TIMED_OUT, f"Engine exceeded its {timeout:.0f}s budget.", "TIMEOUT", exit_code=124)
             except Exception as exc:  # unexpected adapter error: keep a redacted trace
@@ -426,7 +531,7 @@ def _aware(dt: datetime) -> datetime:
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
-OPEN_STATES = ("NEW", "OPEN", "CONFIRMED", "IN_REMEDIATION", "REOPENED")
+OPEN_STATES = OPEN_FINDING_STATES
 SYSTEM_ACTOR = "noospire-engine"
 
 
@@ -445,7 +550,7 @@ async def _upsert_findings(db, scan_id, rec, attempt, asset, outcome: Outcome, o
         evidence = dict(f["evidence"], execution_id=str(rec.id), attempt_id=str(attempt.id), output_sha256=out_sha,
                         input_sha256=rec.input_sha256, rule_digest=digest, observed_at=observed.isoformat(),
                         source={"engine": rec.engine_id, "driver": rec.driver, "driver_version": rec.driver_version},
-                        confidence="high" if rec.engine_id in ("sbom", "tls_health") else "medium",
+                        confidence="high" if rec.engine_id in ("sbom", "tls_health", "public_web") else "medium",
                         last_verified=now.isoformat())
         existing = (await db.execute(select(NormalizedFinding).where(
             NormalizedFinding.asset_id == rec.asset_id, NormalizedFinding.fingerprint == fp))).scalars().first()
@@ -458,7 +563,7 @@ async def _upsert_findings(db, scan_id, rec, attempt, asset, outcome: Outcome, o
             existing.affected_version = f["affected_version"]
             existing.fixed_version = f["fixed_version"]
             outcome_name = "unchanged"
-            if existing.status in ("FIXED", "RESOLVED"):
+            if existing.status in (*RESOLVED_FINDING_STATES, "FIXED_PENDING_RETEST", "FIXED"):
                 existing.status = "REOPENED"
                 outcome_name = "reopened"
                 reopened_rows.append(existing)
@@ -489,7 +594,7 @@ async def _upsert_findings(db, scan_id, rec, attempt, asset, outcome: Outcome, o
                           output_sha=out_sha, rule_digest=digest, observed_at=now)
         ids.append(nf.id)
 
-    # Mark FIXED only with equivalent new evidence: same engine and location evaluated in this
+    # Resolve only with equivalent new evidence: same engine and location evaluated in this
     # execution, the rule still exists in the rule set used, and it no longer matches.
     open_rows = (await db.execute(select(NormalizedFinding).where(
         NormalizedFinding.asset_id == rec.asset_id, NormalizedFinding.scanner_engine == rec.engine_id,
@@ -508,13 +613,13 @@ async def _upsert_findings(db, scan_id, rec, attempt, asset, outcome: Outcome, o
                               output_sha=out_sha, rule_digest=digest, observed_at=now)
             continue
         before = row.status
-        row.status = "FIXED"
+        row.status = "RESOLVED"
         row.remediation_notes = (row.remediation_notes or "") + \
             f"\n[{now.isoformat()}] Fixed: evaluated in execution {rec.id} (rules {digest}) without a match."
         row.evidence = dict(row.evidence or {}, verified_fixed_by_execution=str(rec.id), last_verified=now.isoformat())
-        lifecycle.record_change(db, row.id, "status", before, "FIXED", actor_id=None, actor_name=SYSTEM_ACTOR,
+        lifecycle.record_change(db, row.id, "status", before, "RESOLVED", actor_id=None, actor_name=SYSTEM_ACTOR,
                                 reason=f"Evaluated without a match (rules {digest}).", execution_id=rec.id)
-        lifecycle.observe(db, finding_id=row.id, rec=rec, outcome="fixed", before=before, after="FIXED",
+        lifecycle.observe(db, finding_id=row.id, rec=rec, outcome="fixed", before=before, after="RESOLVED",
                           output_sha=out_sha, rule_digest=digest, observed_at=now)
     await db.flush()
     await lifecycle.notify_findings(db, rec, new_rows, reopened_rows)

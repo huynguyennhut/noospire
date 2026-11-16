@@ -42,6 +42,8 @@ class Settings(BaseSettings):
     # Task Dispatcher Mode: "async_worker" or "celery"
     DISPATCHER_MODE: str = os.getenv("SENTINEL_DISPATCHER_MODE", "async_worker")
     MAX_CONCURRENT_SCANS: int = int(os.getenv("SENTINEL_MAX_CONCURRENT_SCANS", "4"))
+    # Limit workers/reapers to durable defensive executions; retain historical legacy rows.
+    DEFENSIVE_ONLY: bool = os.getenv("SENTINEL_DEFENSIVE_ONLY", "false").lower() in ("true", "1", "yes")
     # Worker pauses claiming while the host is above these (percent; 100 disables the check).
     THROTTLE_CPU_PCT: float = float(os.getenv("SENTINEL_THROTTLE_CPU_PCT", "90"))
     THROTTLE_MEM_PCT: float = float(os.getenv("SENTINEL_THROTTLE_MEM_PCT", "95"))

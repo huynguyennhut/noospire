@@ -1,0 +1,4 @@
+interface:
+  display_name: "QA & Autonomous Testing"
+  short_description: "Run isolated NOOSFORGE checks with real evidence"
+  default_prompt: "Use $noosforge-qa. Run relevant isolated checks and report exact failures, skips and artifacts."

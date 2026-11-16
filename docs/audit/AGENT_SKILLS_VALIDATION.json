@@ -1,0 +1,270 @@
+{
+  "date": "2026-11-15",
+  "starting_revision": "cc3a5e0",
+  "scope": "Project skills implementation; not platform release certification",
+  "checks": {
+    "pilot": {
+      "preset": "pilot",
+      "checks": [
+        {
+          "command": [
+            ".venv/bin/python",
+            "-m",
+            "pytest",
+            "-p",
+            "pytest_asyncio.plugin",
+            "-q",
+            "tests_pilot",
+            "--deselect=tests_pilot/test_m7_round_a.py::test_legacy_database_upgrades_in_place_and_backup_restores",
+            "--junitxml=/tmp/noosforge-pilot-a2ib2g9t/pytest.xml"
+          ],
+          "cwd": ".",
+          "exit_code": 1,
+          "status": "FAIL",
+          "seconds": 99.4,
+          "log": "/tmp/noosforge-pilot-a2ib2g9t/01.log"
+        }
+      ],
+      "artifacts": "/tmp/noosforge-pilot-a2ib2g9t"
+    },
+    "frontend": {
+      "preset": "frontend",
+      "checks": [
+        {
+          "command": [
+            "npm",
+            "run",
+            "typecheck"
+          ],
+          "cwd": "frontend",
+          "exit_code": 0,
+          "status": "PASS",
+          "seconds": 7.85,
+          "log": "/tmp/noosforge-frontend-b0k9ic26/01.log"
+        },
+        {
+          "command": [
+            "npm",
+            "run",
+            "lint"
+          ],
+          "cwd": "frontend",
+          "exit_code": 0,
+          "status": "PASS",
+          "seconds": 2.44,
+          "log": "/tmp/noosforge-frontend-b0k9ic26/02.log"
+        },
+        {
+          "command": [
+            "npm",
+            "run",
+            "build"
+          ],
+          "cwd": "frontend",
+          "exit_code": 0,
+          "status": "PASS",
+          "seconds": 39.9,
+          "log": "/tmp/noosforge-frontend-b0k9ic26/03.log"
+        }
+      ],
+      "artifacts": "/tmp/noosforge-frontend-b0k9ic26"
+    },
+    "contract": {
+      "preset": "contract",
+      "checks": [
+        {
+          "command": [
+            ".venv/bin/python",
+            "scripts/contract_audit.py"
+          ],
+          "cwd": ".",
+          "exit_code": 0,
+          "status": "PASS",
+          "seconds": 1.95,
+          "log": "/tmp/noosforge-contract-tducuibg/01.log"
+        }
+      ],
+      "artifacts": "/tmp/noosforge-contract-tducuibg"
+    },
+    "devops": {
+      "preset": "devops",
+      "checks": [
+        {
+          "command": [
+            ".venv/bin/python",
+            "-m",
+            "pytest",
+            "-p",
+            "pytest_asyncio.plugin",
+            "-q",
+            "tests_pilot/test_m1_gateway.py",
+            "tests_pilot/test_m3_restart.py",
+            "tests_pilot/test_m6_smoke.py",
+            "--deselect=tests_pilot/test_m7_round_a.py::test_legacy_database_upgrades_in_place_and_backup_restores",
+            "--junitxml=/tmp/noosforge-devops-y8u5tims/pytest.xml"
+          ],
+          "cwd": ".",
+          "exit_code": 0,
+          "status": "PASS",
+          "seconds": 43.81,
+          "log": "/tmp/noosforge-devops-y8u5tims/01.log"
+        },
+        {
+          "command": [
+            ".venv/bin/python",
+            "-m",
+            "backend.app.cli",
+            "init-db"
+          ],
+          "cwd": ".",
+          "exit_code": 0,
+          "status": "PASS",
+          "seconds": 2.1,
+          "log": "/tmp/noosforge-devops-y8u5tims/02.log"
+        },
+        {
+          "command": [
+            ".venv/bin/python",
+            "-m",
+            "backend.app.cli",
+            "backup",
+            "--out",
+            "/tmp/noosforge-devops-y8u5tims/backup.db"
+          ],
+          "cwd": ".",
+          "exit_code": 0,
+          "status": "PASS",
+          "seconds": 0.35,
+          "log": "/tmp/noosforge-devops-y8u5tims/03.log"
+        },
+        {
+          "command": [
+            ".venv/bin/python",
+            "-m",
+            "backend.app.cli",
+            "restore-check",
+            "--backup",
+            "/tmp/noosforge-devops-y8u5tims/backup.db"
+          ],
+          "cwd": ".",
+          "exit_code": 0,
+          "status": "PASS",
+          "seconds": 0.34,
+          "log": "/tmp/noosforge-devops-y8u5tims/04.log"
+        }
+      ],
+      "artifacts": "/tmp/noosforge-devops-y8u5tims"
+    }
+  },
+  "pilot": {
+    "passed": 106,
+    "failed": 11,
+    "deselected": 1,
+    "failures": [
+      {
+        "suite": "tests_pilot.test_m1_identity_scope",
+        "test": "test_http_bootstrap_disabled_without_operator_token"
+      },
+      {
+        "suite": "tests_pilot.test_m1_identity_scope",
+        "test": "test_http_bootstrap_token_gated_and_one_time"
+      },
+      {
+        "suite": "tests_pilot.test_m1_identity_scope",
+        "test": "test_developer_sees_only_granted_assets_findings_reports"
+      },
+      {
+        "suite": "tests_pilot.test_m1_identity_scope",
+        "test": "test_viewer_without_grants_sees_nothing"
+      },
+      {
+        "suite": "tests_pilot.test_m3_sbom_flow",
+        "test": "test_rescan_patched_marks_fixed_then_reopens"
+      },
+      {
+        "suite": "tests_pilot.test_m4_schedule_capacity",
+        "test": "test_schedule_admin_is_owner_only_and_validated"
+      },
+      {
+        "suite": "tests_pilot.test_m5_console",
+        "test": "test_observations_diff_recheck_fixed_and_reopened"
+      },
+      {
+        "suite": "tests_pilot.test_m5_console",
+        "test": "test_recheck_rules_and_legacy_retest_alias"
+      },
+      {
+        "suite": "tests_pilot.test_m5_console",
+        "test": "test_triage_is_in_change_log_and_failed_run_is_unavailable"
+      },
+      {
+        "suite": "tests_pilot.test_m6_contract",
+        "test": "test_engine_health_reports_measured_state_only"
+      },
+      {
+        "suite": "tests_pilot.test_m6_contract",
+        "test": "test_verified_flag_without_proof_is_unproven"
+      }
+    ]
+  },
+  "native_discovery": [
+    {
+      "cwd": ".",
+      "enabled": [
+        "noosforge-backend",
+        "noosforge-devops",
+        "noosforge-frontend",
+        "noosforge-qa",
+        "noosforge-release-review",
+        "noosforge-repository-audit",
+        "noosforge-security-scanners"
+      ],
+      "errors": []
+    },
+    {
+      "cwd": "frontend",
+      "enabled": [
+        "noosforge-backend",
+        "noosforge-devops",
+        "noosforge-frontend",
+        "noosforge-qa",
+        "noosforge-release-review",
+        "noosforge-repository-audit",
+        "noosforge-security-scanners"
+      ],
+      "errors": []
+    },
+    {
+      "cwd": "backend",
+      "enabled": [
+        "noosforge-backend",
+        "noosforge-devops",
+        "noosforge-frontend",
+        "noosforge-qa",
+        "noosforge-release-review",
+        "noosforge-repository-audit",
+        "noosforge-security-scanners"
+      ],
+      "errors": []
+    }
+  ],
+  "library_validation": {
+    "skills": 7,
+    "errors": 0,
+    "bundled_quick_validate_passed": 7,
+    "negative_fixtures": [
+      "malformed_yaml",
+      "duplicate_yaml_key",
+      "broken_reference",
+      "name_mismatch"
+    ]
+  },
+  "limitations": [
+    "No desktop selector UI or implicit model-selection test",
+    "No Docker build: Docker not installed",
+    "No native scanner execution: binaries absent from PATH",
+    "No browser visual QA (no UI code changed)",
+    "No PostgreSQL or external deployment/customer scan performed",
+    "11 pre-existing pilot failures reproduced before and after skill implementation"
+  ]
+}

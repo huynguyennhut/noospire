@@ -5,7 +5,7 @@ Safety properties
 - Every resolved address is checked; cloud metadata always blocked; private/loopback only
   when the owner approved `allow_private` for that endpoint.
 - Connects to the vetted IP (pins it, no DNS rebinding), SNI = hostname.
-- One GET, no redirects followed, no credentials sent, response body capped, hard timeouts.
+- One GET (or explicit HEAD), no redirects followed, no credentials sent, response body capped, hard timeouts.
 - Service unavailability is recorded as operational status, not as a security finding.
 """
 
@@ -26,7 +26,7 @@ from cryptography import x509
 from backend.app.core.ssrf import SSRFProtector
 
 DRIVER_NAME = "noospire-tls-health-native"
-DRIVER_VERSION = "1.0.0"
+DRIVER_VERSION = "1.1.0"
 ENGINE_ID = "tls_health"
 RULESET = {"id": "tls-health-baseline", "version": "2026.11.1",
            "rules": {"TLS-CERT-EXPIRED": "certificate notAfter < observed_at",
@@ -90,7 +90,9 @@ def _name(n: x509.Name) -> str:
 
 
 async def measure(url: str, *, allow_private: bool, ca_file: Optional[str] = None,
-                  timeout: float = 10.0) -> HealthResult:
+                  timeout: float = 10.0, method: str = "GET") -> HealthResult:
+    if method not in ("GET", "HEAD"):
+        raise ValueError("measurement method must be GET or HEAD")
     parts = urlsplit(url)
     observed = datetime.now(timezone.utc)
     res = HealthResult(url=url, observed_at=observed.isoformat())
@@ -141,7 +143,7 @@ async def measure(url: str, *, allow_private: bool, ca_file: Optional[str] = Non
         else:
             res.missing.append("certificate")
 
-        req = (f"GET {path} HTTP/1.1\r\nHost: {host}\r\nUser-Agent: noospire-health/1.0\r\n"
+        req = (f"{method} {path} HTTP/1.1\r\nHost: {host}\r\nUser-Agent: noospire-health/1.1\r\n"
                f"Accept: */*\r\nConnection: close\r\n\r\n").encode()
         writer.write(req)
         await writer.drain()
@@ -155,10 +157,11 @@ async def measure(url: str, *, allow_private: bool, ca_file: Optional[str] = Non
         except (IndexError, ValueError):
             res.missing.append("http_status")
         # Drain at most MAX_BODY; content is not stored (may contain personal data).
-        try:
-            res.bytes_received += len(await asyncio.wait_for(reader.read(MAX_BODY), timeout))
-        except asyncio.TimeoutError:
-            pass
+        if method != "HEAD":
+            try:
+                res.bytes_received += len(await asyncio.wait_for(reader.read(MAX_BODY), timeout))
+            except asyncio.TimeoutError:
+                pass
         if res.http_status is None:
             res.service_status = "unknown"
         elif 200 <= res.http_status < 300:

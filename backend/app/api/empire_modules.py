@@ -9,7 +9,7 @@ from backend.app.core.database import get_db
 from backend.app.models.asset import Asset
 from backend.app.models.finding import NormalizedFinding
 from backend.app.models.scan import Scan
-from backend.app.schemas.common import EmpireModule, FindingSeverity, FindingStatus
+from backend.app.schemas.common import OPEN_FINDING_STATES, RESOLVED_FINDING_STATES, EmpireModule, FindingSeverity, FindingStatus
 
 router = APIRouter(prefix="/empire-modules", tags=["Empire Modules"], dependencies=[Depends(require_owner)])  # pilot: estate aggregates are owner-only until per-grant aggregation lands
 
@@ -74,15 +74,15 @@ async def list_empire_modules(db: AsyncSession = Depends(get_db)) -> Any:
         findings = findings_res.scalars().all()
 
         total_findings = len(findings)
-        critical_count = sum(1 for f in findings if f.severity == FindingSeverity.CRITICAL.value and f.status != FindingStatus.FIXED.value)
-        high_count = sum(1 for f in findings if f.severity == FindingSeverity.HIGH.value and f.status != FindingStatus.FIXED.value)
-        medium_count = sum(1 for f in findings if f.severity == FindingSeverity.MEDIUM.value and f.status != FindingStatus.FIXED.value)
-        low_count = sum(1 for f in findings if f.severity in (FindingSeverity.LOW.value, FindingSeverity.INFO.value) and f.status != FindingStatus.FIXED.value)
+        critical_count = sum(1 for f in findings if f.severity == FindingSeverity.CRITICAL.value and f.status not in RESOLVED_FINDING_STATES)
+        high_count = sum(1 for f in findings if f.severity == FindingSeverity.HIGH.value and f.status not in RESOLVED_FINDING_STATES)
+        medium_count = sum(1 for f in findings if f.severity == FindingSeverity.MEDIUM.value and f.status not in RESOLVED_FINDING_STATES)
+        low_count = sum(1 for f in findings if f.severity in (FindingSeverity.LOW.value, FindingSeverity.INFO.value) and f.status not in RESOLVED_FINDING_STATES)
 
         open_remediation = sum(
-            1 for f in findings if f.status in (FindingStatus.OPEN.value, FindingStatus.IN_REMEDIATION.value, FindingStatus.REOPENED.value)
+            1 for f in findings if f.status in OPEN_FINDING_STATES
         )
-        fixed_count = sum(1 for f in findings if f.status == FindingStatus.FIXED.value)
+        fixed_count = sum(1 for f in findings if f.status in RESOLVED_FINDING_STATES)
 
         # 3. Compute Module Risk Score (0-100)
         # Weighted formula: Critical * 30 + High * 15 + Medium * 5 + Low * 1, capped at 100

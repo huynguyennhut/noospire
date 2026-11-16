@@ -1,0 +1,4 @@
+interface:
+  display_name: "Technical Review & Release Audit"
+  short_description: "Review NOOSFORGE changes and release evidence"
+  default_prompt: "Use $noosforge-release-review. Review the current diff and verification evidence and give a scoped release decision."

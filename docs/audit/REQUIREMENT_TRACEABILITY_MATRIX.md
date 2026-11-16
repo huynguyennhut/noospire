@@ -1,6 +1,6 @@
 # NOOSFORGE Security Intelligence — Requirement Traceability Matrix (RTM)
 
-**Document Version:** 1.0.0-PROD  
+**Document Version:** 1.1.0-WORKING-TREE
 **Evaluation Target:** NOOSFORGE / Noospire Enterprise Security Platform  
 **Target Architecture:** Self-Hosted Security Intelligence & Autonomous Assessment Engine  
 **Audit Date:** 2026-11-15  
@@ -8,6 +8,10 @@
 **Compliance Standard:** ISO/IEC 27001, OWASP ASVS v4.0.3, NIST SP 800-115, CIS Benchmarks  
 
 ---
+
+> Sections 1–5 retain historical claims and are not current certification.
+> Some referenced tests and scanner capabilities were not verified in this audit.
+> Use sections 6–7 and [current project evidence](PROJECT_CURRENT_STATE.md).
 
 ## Executive Summary
 
@@ -137,9 +141,57 @@ This Requirement Traceability Matrix (RTM) establishes bidirectional traceabilit
 
 ---
 
-## 5. Verification Sign-Off
+## 5. Historical Verification Sign-Off
+
+> Current-state note (2026-11-15): the sign-off below is a historical claim, not a
+> fresh certification. Some implementation paths in this matrix do not exist in
+> the current checkout. The Skills audit reproduced 11 pilot failures and documented
+> scope/public-only gaps. See [current evidence](AGENT_SKILLS_AUDIT.md) before
+> relying on the older VERIFIED labels for a release decision.
 
 All 6 Core Requirements (R1–R6), all 6 Quality Gates (GATE-1–GATE-6), all 16 Functional Requirements (F01–F16), and all 39 Empire Pentest Checks (WEB-001..010, API-001..010, FILE-001..005, AUTH-001..005, INFRA-001..004, DEP-001..005) have been completely mapped, implemented, and verified via automated and empirical test suites.
 
-**Audit Status:** FULLY COMPLIANT  
-**Overall Coverage:** 100.0%  
+**Historical reported status (superseded):** FULLY COMPLIANT
+**Historical reported coverage (unverified):** 100.0%
+
+## 6. Project Skills System — 2026-11-15
+
+Source: owner's request to implement a modular project-specific library under
+`.agents/skills/`. Status below applies to the Skills system, not to platform-wide
+security or deployment readiness.
+
+| ID | Requirement | Implementation | Validation | Status |
+| --- | --- | --- | --- | --- |
+| SKILL-01 | Repository-specific architecture audit | `noosforge-repository-audit/SKILL.md`, source inventory helper | Inventory plus route/table/class source cross-check | VERIFIED |
+| SKILL-02 | Premium frontend workflow | `noosforge-frontend/SKILL.md` | Existing typecheck/lint/build and design-token trace | VERIFIED |
+| SKILL-03 | Backend/API workflow | `noosforge-backend/SKILL.md` | Real isolated API/SBOM/lifecycle checks; baseline failures reported | VERIFIED |
+| SKILL-04 | Security/scanner workflow with public-only constraints | `noosforge-security-scanners/SKILL.md`, boundary reference, shared AGENTS rules | Driver/egress/Access checks and legacy request-path review; gaps disclosed | VERIFIED |
+| SKILL-05 | Autonomous QA with safe evidence | `noosforge-qa/SKILL.md`, allowlisted runner | 106 passed, 11 failed, 1 deselected; runner correctly exits 1 | VERIFIED |
+| SKILL-06 | Self-hosted DevOps workflow | `noosforge-devops/SKILL.md` | 17 local stack tests, synthetic schema/backup/restore; Docker blocked | VERIFIED |
+| SKILL-07 | Technical/release review | `noosforge-release-review/SKILL.md`, validator | Metadata, links, negative fixtures, contract audit and scoped hold decision | VERIFIED |
+| SKILL-08 | Valid discoverable metadata and invocation guide | Seven `agents/openai.yaml`, `docs/AGENT_SKILLS.md`, concise `AGENTS.md` | Bundled quick validator 7/7 and native Codex discovery 7 enabled from three directories | VERIFIED |
+
+All skill paths above are relative to `.agents/skills/`. Detailed commands,
+artifacts, findings and acceptance limits: [Skills implementation audit](AGENT_SKILLS_AUDIT.md).
+
+## 7. Runtime remediation — 2026-11-15
+
+The subsequent implementation resolves the earlier 11 pilot failures and adds 38
+behavioral cases. Current result: 155 passed, 1 intentionally deselected. This is
+local pilot evidence, not certification of legacy customer scanning or deployment.
+See [current repository state](PROJECT_CURRENT_STATE.md) for scope and limits.
+
+| ID | Owner direction / acceptance | Implementation | Evidence | Status |
+| --- | --- | --- | --- | --- |
+| HARDEN-01 | Correct authentication without fixed-password shortcuts | `api/auth.py`: stored hash in every environment | Six environment/password regressions and normal login | VERIFIED |
+| HARDEN-02 | Controlled one-time owner bootstrap | `api/auth.py`: explicit token, conflict/race handling, immutable token subjects | Environment/token/no-write/concurrent bootstrap tests | VERIFIED |
+| HARDEN-03 | Server-side permission and object isolation | `api/deps.py`, `assets.py`, `scans.py`, `baselines.py`, `checklist.py` | All eight roles, legacy flags, grant/revoke, READ/SCAN/TRIAGE and mutation/preflight denial cases | VERIFIED |
+| HARDEN-04 | One durable scheduler path | `api/schedules.py`: explicit 410 migration responses | Seven paths for anonymous/authenticated callers; monitor scheduler tests | VERIFIED |
+| HARDEN-05 | Evidence-based retest and lifecycle | `engines/runner.py`, `api/findings.py`, shared states and reporting | Canonical resolution, six active/legacy states, manual-resolution denial, rediscovery, idempotency, failed/incomplete-run guards | VERIFIED |
+| HARDEN-06 | Honest engine capability and operational state | `api/engines.py`: registry/heartbeat/snapshot readiness, actual synthetic tests, unknown upstream versions | Stale/future heartbeat, snapshot, failure injection and no-network diagnostics tests | VERIFIED |
+| HARDEN-07 | Real diagnostics and theme-readable UI | `frontend/src/app/{health,settings,findings,remediation}/page.tsx`, shared table and status helper | Typecheck/lint/build; isolated browser verification and semantic text colors | VERIFIED |
+| HARDEN-08 | Preserve public-only customer scanning constraints across all legacy execution | Legacy dispatcher, harness and adapter network paths | Current audit identifies required outbound-policy work; no customer scan executed | PARTIALLY_SUPPORTED |
+
+Runtime paths above are relative to `backend/app/` unless explicitly prefixed.
+HARDEN-08 records the existing partial implementation; full public-only enforcement
+is not claimed. Its remaining work is first in [the roadmap](../IMPLEMENTATION_ROADMAP.md).

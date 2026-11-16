@@ -384,6 +384,9 @@ class UltraScanPlanner:
                 "environment": "EXTERNAL",
             })
 
+        for item in items:
+            item["environment"] = "SYNTHETIC"
+            item["source_reference"] = "acceptance_fixture_379"
         return items
 
 

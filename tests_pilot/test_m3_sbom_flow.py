@@ -140,7 +140,7 @@ async def test_rescan_patched_marks_fixed_then_reopens(client, owner):
     items = (await client.get(f"{API}/findings", params={"asset_id": str(asset)})).json()["items"]
     status = {x["scanner_rule_id"]: x["status"] for x in items}
     # delta is absent from the patched SBOM: not observed -> unchanged, never "fixed" by omission.
-    assert status == {"PILOT-TEST-0001": "FIXED", "PILOT-TEST-0002": "FIXED", "PILOT-TEST-0003": "FIXED",
+    assert status == {"PILOT-TEST-0001": "RESOLVED", "PILOT-TEST-0002": "RESOLVED", "PILOT-TEST-0003": "RESOLVED",
                       "PILOT-TEST-0004": "NEW"}
     fixed = next(x for x in items if x["scanner_rule_id"] == "PILOT-TEST-0001")
     assert fixed["evidence"]["verified_fixed_by_execution"] == e2

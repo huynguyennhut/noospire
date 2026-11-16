@@ -11,6 +11,7 @@ import psutil
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.core.inventory_reconciliation import execution_block_reasons, fixture_provenance
 from backend.app.core.config import settings
 from backend.app.core.database import AsyncSessionLocal
 from backend.app.core.ssrf import SSRFProtector, SSRFValidationError
@@ -205,8 +206,12 @@ class AsyncWorkerDispatcher(ITaskDispatcher):
         self._completed_count = 0
         self._inflight = 0  # claimed by this worker and not finished (bounded by max_concurrent)
         self._cap_cache: tuple = (0.0, None)
+        self._execution_tasks: set[asyncio.Task] = set()
 
     def _ensure_active_loop(self) -> None:
+        roles = {role.strip().lower() for role in settings.PROCESS_ROLE.split(",")}
+        if not roles.intersection({"all", "worker"}):
+            return
         try:
             current_loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -248,13 +253,16 @@ class AsyncWorkerDispatcher(ITaskDispatcher):
                     await self._worker_task
                 except asyncio.CancelledError:
                     pass
+            for task in list(self._execution_tasks):
+                task.cancel()
+            if self._execution_tasks:
+                await asyncio.gather(*list(self._execution_tasks), return_exceptions=True)
             logger.info("AsyncWorkerDispatcher stopped.")
 
     async def dispatch_scan(self, scan_id: uuid.UUID) -> str:
         self._ensure_active_loop()
-        token = CancellationToken()
-        self.cancellation_tokens[scan_id] = token
-        await self.queue.put(scan_id)
+        # The DB is the only claim path. API dispatch must not start a worker or
+        # bypass lease fencing, capacity and emergency-stop checks via an in-memory ID.
         self._work_available.set()
         await log_buffer.append_log(scan_id, "INFO", "Scan job enqueued into worker queue.")
         try:
@@ -266,9 +274,6 @@ class AsyncWorkerDispatcher(ITaskDispatcher):
 
     async def batch_dispatch_scans(self, scan_ids: List[uuid.UUID], batch_id: Optional[uuid.UUID] = None) -> int:
         self._ensure_active_loop()
-        for scan_id in scan_ids:
-            self.cancellation_tokens[scan_id] = CancellationToken()
-            await self.queue.put(scan_id)
         self._work_available.set()
         if batch_id:
             try:
@@ -463,7 +468,7 @@ class AsyncWorkerDispatcher(ITaskDispatcher):
                 hb = await session.get(WorkerHeartbeat, self.worker_id)
                 if hb is None:
                     hb = WorkerHeartbeat(worker_id=self.worker_id, pid=os.getpid(), hostname=_socket.gethostname(),
-                                         engines=["sbom", "tls_health"], started_at=now)
+                                         engines=["sbom", "tls_health", "public_web"], started_at=now)
                     session.add(hb)
                 hb.last_seen_at = now
                 hb.active_executions = self._inflight
@@ -501,25 +506,24 @@ class AsyncWorkerDispatcher(ITaskDispatcher):
                 if self._inflight >= self.max_concurrent:
                     await asyncio.sleep(0.2)
                     continue
-                # First check in-memory queue
-                try:
-                    scan_id = self.queue.get_nowait()
-                except asyncio.QueueEmpty:
-                    # If in-memory queue is empty, attempt claiming from DB
-                    async with AsyncSessionLocal() as session:
-                        claimed = await IDBDurableQueue.claim_next_job(
-                            session, self.worker_id, max_running=await self._estate_cap())
-                        if claimed:
-                            scan_id = claimed.id
-                        else:
-                            try:
-                                scan_id = await asyncio.wait_for(self.queue.get(), timeout=1.0)
-                            except asyncio.TimeoutError:
-                                continue
+                async with AsyncSessionLocal() as session:
+                    claimed = await IDBDurableQueue.claim_next_job(
+                        session, self.worker_id, max_running=await self._estate_cap())
+                    if claimed:
+                        scan_id = claimed.id
+                    else:
+                        self._work_available.clear()
+                        try:
+                            await asyncio.wait_for(self._work_available.wait(), timeout=1.0)
+                        except asyncio.TimeoutError:
+                            pass
+                        continue
 
                 if scan_id:
                     self._inflight += 1
-                    asyncio.create_task(self._execute_scan_guarded(scan_id))
+                    task = asyncio.create_task(self._execute_scan_guarded(scan_id))
+                    self._execution_tasks.add(task)
+                    task.add_done_callback(self._execution_tasks.discard)
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -550,9 +554,14 @@ class AsyncWorkerDispatcher(ITaskDispatcher):
 
     async def _execute_scan_guarded_inner(self, scan_id: uuid.UUID) -> None:
         from backend.app.core.queue import IDBDurableQueue
+        from backend.app.engines import runner as defensive_runner
+        if settings.DEFENSIVE_ONLY and not await defensive_runner.has_execution(scan_id):
+            logger.warning("Legacy scan %s retained without execution: defensive-only worker.", scan_id)
+            return
         fencing_token = 0
 
-        # Ensure lease and obtain fencing token
+        # Only the durable queue may grant a lease. Do not create or steal one
+        # here: direct dispatch must obey capacity, stop state and queue fencing.
         async with AsyncSessionLocal() as session:
             stmt = select(Scan).where(Scan.id == scan_id)
             res = await session.execute(stmt)
@@ -564,20 +573,15 @@ class AsyncWorkerDispatcher(ITaskDispatcher):
                     pass
                 return
 
-            if s:
-                now = datetime.now(timezone.utc)
-                if s.status != ScanStatus.RUNNING.value or s.leased_by != self.worker_id:
-                    s.status = ScanStatus.RUNNING.value
-                    s.leased_by = self.worker_id
-                    s.leased_at = now
-                    s.lease_expires_at = now + timedelta(seconds=60)
-                    s.heartbeat_at = now
-                    s.fencing_token = (s.fencing_token or 0) + 1
-                    s.attempts = (s.attempts or 0) + 1
-                    if not s.started_at:
-                        s.started_at = now
-                    await session.commit()
-                fencing_token = s.fencing_token or 0
+            now = datetime.now(timezone.utc)
+            expires = s.lease_expires_at if s else None
+            if expires and expires.tzinfo is None:
+                expires = expires.replace(tzinfo=timezone.utc)
+            if (not s or s.status != ScanStatus.RUNNING.value
+                    or s.leased_by != self.worker_id or not expires or expires <= now):
+                logger.warning("Scan %s has no current lease owned by this worker; execution refused.", scan_id)
+                return
+            fencing_token = s.fencing_token or 0
 
         cancel_token = self.cancellation_tokens.setdefault(scan_id, CancellationToken())
         heartbeat_task = None
@@ -706,6 +710,8 @@ class AsyncWorkerDispatcher(ITaskDispatcher):
     async def _run_scan(
         self, scan_id: uuid.UUID, cancel_token: CancellationToken, thread_id: int = 1, fencing_token: int = 0
     ) -> None:
+        if settings.DEFENSIVE_ONLY:
+            raise RuntimeError("LEGACY_EXECUTION_DISABLED: defensive-only worker")
         async with AsyncSessionLocal() as session:
             res = await session.execute(select(Scan).where(Scan.id == scan_id))
             scan = res.scalars().first()
@@ -813,6 +819,22 @@ class AsyncWorkerDispatcher(ITaskDispatcher):
                     pass
 
             await log_cb("system", f"Initializing assessment {scan_id} against target {scan.target_locator}")
+
+            async with AsyncSessionLocal() as inventory_db:
+                inventory_blocks = await execution_block_reasons(inventory_db, [asset])
+            if inventory_blocks or fixture_provenance(asset.id, scan.target_locator):
+                async with AsyncSessionLocal() as session:
+                    row = await session.get(Scan, scan_id)
+                    if row:
+                        row.status = ScanStatus.FAILED.value
+                        row.quality_status = ScanQualityStatus.PARTIAL_COVERAGE.value
+                        reason = inventory_blocks.get(str(asset.id), "SYNTHETIC_INVENTORY")
+                        row.error_message = f"{reason}: unreconciled inventory blocked before target egress."
+                        row.completed_at = datetime.now(timezone.utc)
+                        await session.commit()
+                        if row.batch_id:
+                            await self._update_batch_progress(row.batch_id)
+                return
 
             # Active Scan Authorization Check
             if scan.profile == ScanProfile.DEEP_ACTIVE.value and asset.verification_status != VerificationStatus.VERIFIED.value:

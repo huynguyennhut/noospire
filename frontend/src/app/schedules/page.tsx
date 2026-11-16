@@ -19,14 +19,17 @@ import {
   MonitorSchedule,
   OperationsOverview,
   RunPlan,
+  RunRequestBody,
   RunStatus,
   ScheduleSlotInfo,
 } from '@/lib/api';
+import { Asset } from '@/lib/types';
+import { eligibleAssetIds } from '@/lib/assessment';
 import { LiveEvent, StreamState, subscribeEvents } from '@/lib/events';
 import { useI18n } from '@/lib/i18n';
 
 const TZ = 'Asia/Ho_Chi_Minh';
-const ENGINES: EngineName[] = ['tls_health', 'sbom'];
+const ENGINES: EngineName[] = ['public_web', 'tls_health', 'sbom'];
 
 function ict(iso: string | null | undefined): string {
   if (!iso) return '—';
@@ -57,15 +60,15 @@ const RESULT_STYLE: Record<string, string> = {
   completed: 'text-emerald-300 border-emerald-700 bg-emerald-950',
   partial: 'text-amber-300 border-amber-700 bg-amber-950',
   failed: 'text-rose-300 border-rose-700 bg-rose-950',
-  no_work: 'text-slate-300 border-slate-600 bg-slate-800',
+  no_work: 'text-[var(--text-primary)] border-[var(--border-strong)] bg-[var(--bg-surface-hover)]',
   launched: 'text-cyan-300 border-cyan-700 bg-cyan-950',
   coalesced: 'text-amber-300 border-amber-700 bg-amber-950',
 };
 
 function Badge({ value }: { value: string | null | undefined }) {
-  if (!value) return <span className="text-slate-500">—</span>;
+  if (!value) return <span className="text-[var(--text-secondary)]">—</span>;
   return (
-    <span className={`px-2 py-0.5 rounded border text-[11px] font-mono ${RESULT_STYLE[value] || 'text-slate-300 border-slate-600 bg-slate-800'}`}>
+    <span className={`px-2 py-0.5 rounded border text-[11px] font-mono ${RESULT_STYLE[value] || 'text-[var(--text-primary)] border-[var(--border-strong)] bg-[var(--bg-surface-hover)]'}`}>
       {value}
     </span>
   );
@@ -92,17 +95,20 @@ export default function SchedulesPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [plan, setPlan] = useState<RunPlan | null>(null);
-  const [planEngines, setPlanEngines] = useState<EngineName[]>(ENGINES);
+  const [planEngines, setPlanEngines] = useState<EngineName[]>(['public_web']);
+  const [assets, setAssets] = useState<Asset[]>([]);
+  const plannedRequest = useRef<RunRequestBody | null>(null);
   const [planProfile, setPlanProfile] = useState<'light' | 'slow'>('light');
   const [accepted, setAccepted] = useState<RunStatus | null>(null);
   const [cap, setCap] = useState<CapacityInfo | null>(null);
-  const [form, setForm] = useState({ name: '', profile: 'light' as 'light' | 'slow', interval: 60, workers: 2 });
+  const [form, setForm] = useState({ name: '', profile: 'light' as 'light' | 'slow', interval: 120, workers: 1 });
   const runKey = useRef<string | null>(null);
   const refreshTimer = useRef<any>(null);
 
   const load = useCallback(async () => {
     try {
-      const ov = await api.getOperationsOverview();
+      const [ov, inventory] = await Promise.all([api.getOperationsOverview(), api.listAllAssets(true)]);
+      setAssets(inventory);
       setOverview(ov);
       setCap(ov.capacity);
       setOffsetMs(new Date(ov.server_time).getTime() - Date.now());
@@ -169,7 +175,8 @@ export default function SchedulesPage() {
     setError(null);
     try {
       runKey.current = newKey();
-      setPlan(await api.previewPlan({ selection: { kind: 'all' }, engines: planEngines, profile: planProfile }));
+      plannedRequest.current = { selection: { kind: 'assets', asset_ids: eligibleAssetIds(assets) }, engines: planEngines, profile: planProfile };
+      setPlan(await api.previewPlan(plannedRequest.current));
     } catch (e) {
       setError(errText(e, vi));
     } finally {
@@ -178,10 +185,10 @@ export default function SchedulesPage() {
   }
 
   async function confirmRun() {
-    if (!runKey.current) runKey.current = newKey();
+    if (!plannedRequest.current || !runKey.current || busy) return;
     setBusy(true);
     try {
-      const res = await api.launchRun({ selection: { kind: 'all' }, engines: planEngines, profile: planProfile }, runKey.current);
+      const res = await api.launchRun(plannedRequest.current, runKey.current);
       setAccepted(res);
       setPlan(null);
       runKey.current = null;
@@ -222,9 +229,9 @@ export default function SchedulesPage() {
     setBusy(true);
     try {
       await api.createMonitorSchedule({
-        name: form.name || L('Kiểm tra mỗi giờ', 'Hourly checks'),
-        selection: { kind: 'all' },
-        engines: ENGINES,
+        name: form.name || L('Giám sát phạm vi đã duyệt', 'Approved-scope monitoring'),
+        selection: { kind: 'assets', asset_ids: eligibleAssetIds(assets) },
+        engines: ['public_web'],
         profile: form.profile,
         interval_minutes: form.interval,
         max_workers: form.workers,
@@ -237,6 +244,14 @@ export default function SchedulesPage() {
     } finally {
       setBusy(false);
     }
+  }
+
+  async function emergencyStop() {
+    if (!cap || busy) return;
+    setBusy(true); setError(null);
+    try { await api.setEmergencyStop(!cap.emergency_stop_active); await load(); }
+    catch (e) { setError(errText(e, vi)); }
+    finally { setBusy(false); }
   }
 
   async function saveCapacity(e: React.FormEvent) {
@@ -261,7 +276,7 @@ export default function SchedulesPage() {
 
   const streamLabel = useMemo(() => {
     const m: Record<StreamState, [string, string, string]> = {
-      connecting: ['Đang kết nối luồng sự kiện', 'Connecting event stream', 'text-slate-300'],
+      connecting: ['Đang kết nối luồng sự kiện', 'Connecting event stream', 'text-[var(--text-primary)]'],
       live: ['Trực tiếp', 'Live', 'text-emerald-300'],
       polling: ['Dự phòng: hỏi lại mỗi 10 giây', 'Fallback: polling every 10 s', 'text-amber-300'],
       offline: ['Mất kết nối, đang thử lại', 'Disconnected, retrying', 'text-rose-300'],
@@ -275,15 +290,15 @@ export default function SchedulesPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-slate-100 flex items-center gap-2">
+          <h1 className="text-xl font-semibold text-[var(--text-primary)] flex items-center gap-2">
             <CalendarClock className="w-5 h-5 text-cyan-400" />
             {L('Lịch kiểm tra & công suất', 'Schedules & capacity')}
           </h1>
-          <p className="text-xs text-slate-400 mt-1">
+          <p className="text-xs text-[var(--text-secondary)] mt-1">
             {L('Giờ server', 'Server time')}: {ict(new Date(serverNow).toISOString())} · {L('lưu UTC, hiển thị', 'stored UTC, shown in')} {TZ} · {streamLabel}
           </p>
         </div>
-        <button onClick={() => void load()} className="px-3 py-1.5 rounded border border-slate-600 text-slate-200 text-sm flex items-center gap-1">
+        <button onClick={() => void load()} className="px-3 py-1.5 rounded border border-[var(--border-strong)] text-[var(--text-primary)] text-sm flex items-center gap-1">
           <RefreshCw className="w-4 h-4" /> {L('Tải lại', 'Reload')}
         </button>
       </div>
@@ -296,45 +311,51 @@ export default function SchedulesPage() {
       )}
       {notice && <div className="p-3 rounded border border-emerald-700 bg-emerald-950 text-emerald-200 text-sm">{notice}</div>}
 
-      {/* Run whole system: same planner as the schedule */}
-      <section className="p-4 rounded border border-slate-700 bg-slate-900 space-y-3">
+      <section className="assessment-panel space-y-3">
+        <div className="flex flex-wrap gap-3 items-center justify-between"><h2 className="font-semibold">{L('Điều khiển vận hành', 'Operations control')}</h2>{owner && cap && <button disabled={busy} onClick={() => void emergencyStop()} className="assessment-link disabled:opacity-40">{cap.emergency_stop_active ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}{cap.emergency_stop_active ? L('Tiếp tục hàng đợi', 'Resume queue') : L('Dừng khẩn toàn hệ thống', 'Emergency stop')}</button>}</div>
+        <p role="status" className="text-sm">{cap?.emergency_stop_active ? L('Đang dừng khẩn: worker không nhận job mới; quan sát web đang chạy sẽ dừng.', 'Emergency stop active: workers do not claim new jobs; in-flight public web observations will stop.') : L('Lịch tự động dùng hàng đợi bền vững; worker và scheduler phải chạy để thực thi.', 'Automation uses the durable queue; workers and scheduler must be running.')}</p>
+        <p className="assessment-muted">{L('Mặc định mỗi 120 phút trên các mục tiêu đủ điều kiện hiện tại. public_web kiểm tra URL được duyệt; TLS/health và SBOM chỉ áp dụng khi có cấu hình đầu vào. Hoàn tất job không đồng nghĩa đã đánh giá toàn diện.', 'Defaults to every 120 minutes for currently eligible targets. public_web checks the approved URL; TLS/health and SBOM require configured inputs. Job completion does not mean comprehensive assessment.')}</p>
+        <Link href="/engine-runs/" className="assessment-link">{L('Lượt chạy, nhật ký và bằng chứng', 'Runs, logs and evidence')} →</Link>
+      </section>
+      {/* Run eligible inventory through the same planner as schedules. */}
+      <section className="p-4 rounded border border-[var(--border-subtle)] bg-[var(--bg-surface)] space-y-3">
         <div className="flex flex-wrap items-center gap-3">
           <PlayCircle className="w-5 h-5 text-cyan-400" />
-          <h2 className="text-slate-100 font-medium">{L('Chạy kiểm tra toàn hệ thống', 'Run whole-system check')}</h2>
-          <span className="text-xs text-slate-400">{L('Trong phạm vi quyền của bạn', 'Within your scope')}</span>
+          <h2 className="text-[var(--text-primary)] font-medium">{L('Đánh giá toàn bộ phạm vi đủ điều kiện', 'Assess all eligible targets')}</h2>
+          <span className="text-xs text-[var(--text-secondary)]">{assets.length} {L('mục tiêu đã đối chiếu', 'reconciled targets')}</span>
         </div>
-        <div className="flex flex-wrap items-center gap-4 text-sm text-slate-300">
+        <div className="flex flex-wrap items-center gap-4 text-sm text-[var(--text-primary)]">
           {ENGINES.map((e) => (
             <label key={e} className="flex items-center gap-1">
               <input
                 type="checkbox"
                 checked={planEngines.includes(e)}
-                onChange={(ev) => setPlanEngines((cur) => (ev.target.checked ? [...cur, e] : cur.filter((x) => x !== e)))}
+                onChange={(ev) => { setPlan(null); setPlanEngines((cur) => (ev.target.checked ? [...cur, e] : cur.filter((x) => x !== e))); }}
               />
               {e}
             </label>
           ))}
-          <select value={planProfile} onChange={(e) => setPlanProfile(e.target.value as any)} className="bg-slate-800 border border-slate-600 rounded px-2 py-1">
+          <select value={planProfile} onChange={(e) => { setPlan(null); setPlanProfile(e.target.value as any); }} className="bg-[var(--bg-surface-hover)] border border-[var(--border-strong)] rounded px-2 py-1">
             <option value="light">{L('Nhẹ (kiểm tra nhanh)', 'Light (quick checks)')}</option>
             <option value="slow">{L('Chậm (1 worker, giãn cách theo host)', 'Slow (1 worker, host spacing)')}</option>
           </select>
-          <button disabled={busy || !planEngines.length} onClick={() => void preview()} className="px-3 py-1.5 rounded bg-cyan-700 text-white disabled:opacity-50">
+          <button disabled={busy || !planEngines.length || !assets.length || cap?.emergency_stop_active} onClick={() => void preview()} className="px-3 py-1.5 rounded bg-cyan-700 text-white disabled:opacity-50">
             {L('Xem trước tác động', 'Preview impact')}
           </button>
         </div>
         {plan && (
-          <div className="p-3 rounded border border-cyan-800 bg-slate-950 text-sm text-slate-200 space-y-2">
+          <div className="p-3 rounded border border-cyan-800 bg-[var(--bg-primary)] text-sm text-[var(--text-primary)] space-y-2">
             <p>
               {L('Trong phạm vi', 'In scope')}: <b>{plan.summary.assets_in_scope}</b> asset · {plan.summary.pairs} {L('cặp asset/engine', 'asset/engine pairs')} ·{' '}
               <b className="text-emerald-300">{plan.summary.queue}</b> {L('chạy ngay', 'run now')} · <b className="text-amber-300">{plan.summary.defer}</b>{' '}
-              {L('dời lịch', 'deferred')} · <b className="text-slate-400">{plan.summary.skip}</b> {L('bỏ qua', 'skipped')}
+              {L('dời lịch', 'deferred')} · <b className="text-[var(--text-secondary)]">{plan.summary.skip}</b> {L('bỏ qua', 'skipped')}
             </p>
             {Object.keys(plan.summary.reasons).length > 0 && (
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-[var(--text-secondary)]">
                 {L('Lý do', 'Reasons')}: {Object.entries(plan.summary.reasons).map(([k, v]) => `${k} × ${v}`).join(' · ')}
               </p>
             )}
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-[var(--text-secondary)]">
               {L('Ước tính xong lúc', 'Estimated finish')} {ict(plan.summary.estimated_finish_at)} ({plan.summary.slots} slot,{' '}
               {L('backlog trước đó', 'prior backlog')} {dur(plan.summary.backlog_seconds_before)}) ·{' '}
               {plan.summary.fits_window ? L('vừa trong cửa sổ 1 giờ', 'fits the 1-hour window') : L('vượt cửa sổ: việc dài chuyển sang hàng đợi dài', 'exceeds window: long work moved to the long lane')}
@@ -344,7 +365,7 @@ export default function SchedulesPage() {
               <button disabled={busy || plan.summary.queue + plan.summary.defer === 0} onClick={() => void confirmRun()} className="px-3 py-1.5 rounded bg-emerald-700 text-white disabled:opacity-50">
                 {L('Xác nhận chạy', 'Confirm run')}
               </button>
-              <button onClick={() => setPlan(null)} className="px-3 py-1.5 rounded border border-slate-600 text-slate-300">{L('Hủy', 'Cancel')}</button>
+              <button onClick={() => setPlan(null)} className="px-3 py-1.5 rounded border border-[var(--border-strong)] text-[var(--text-primary)]">{L('Hủy', 'Cancel')}</button>
             </div>
           </div>
         )}
@@ -360,30 +381,30 @@ export default function SchedulesPage() {
       {/* Schedules */}
       {owner ? (
         <section className="space-y-3">
-          <h2 className="text-slate-100 font-medium flex items-center gap-2"><Activity className="w-4 h-4 text-cyan-400" />{L('Lịch định kỳ', 'Recurring schedules')}</h2>
+          <h2 className="text-[var(--text-primary)] font-medium flex items-center gap-2"><Activity className="w-4 h-4 text-cyan-400" />{L('Lịch định kỳ', 'Recurring schedules')}</h2>
           {overview && overview.schedules.length === 0 && (
-            <p className="text-sm text-slate-400">{L('Chưa có lịch. Tạo lịch đầu tiên bên dưới.', 'No schedule yet. Create the first one below.')}</p>
+            <p className="text-sm text-[var(--text-secondary)]">{L('Chưa có lịch. Tạo lịch đầu tiên bên dưới.', 'No schedule yet. Create the first one below.')}</p>
           )}
           {overview?.schedules.map((s) => {
             const next = s.next_run_at ? new Date(s.next_run_at).getTime() : null;
             const left = next !== null ? (next - serverNow) / 1000 : null;
             return (
-              <div key={s.id} className="p-4 rounded border border-slate-700 bg-slate-900 text-sm text-slate-200 space-y-2">
+              <div key={s.id} className="p-4 rounded border border-[var(--border-subtle)] bg-[var(--bg-surface)] text-sm text-[var(--text-primary)] space-y-2">
                 <div className="flex flex-wrap items-center gap-3">
                   <b>{s.name}</b>
-                  <span className="text-xs text-slate-400">{L('mỗi', 'every')} {s.interval_minutes} {L('phút', 'min')} · {s.engines.join(', ')} · {L('tối đa', 'max')} {s.max_workers} worker</span>
-                  <select disabled={busy} value={s.profile} onChange={(e) => void setProfile(s, e.target.value as any)} className="bg-slate-800 border border-slate-600 rounded px-2 py-0.5 text-xs">
+                  <span className="text-xs text-[var(--text-secondary)]">{L('mỗi', 'every')} {s.interval_minutes} {L('phút', 'min')} · {s.engines.join(', ')} · {L('tối đa', 'max')} {s.max_workers} worker</span>
+                  <select disabled={busy} value={s.profile} onChange={(e) => void setProfile(s, e.target.value as any)} className="bg-[var(--bg-surface-hover)] border border-[var(--border-strong)] rounded px-2 py-0.5 text-xs">
                     <option value="light">{L('nhẹ', 'light')}</option>
                     <option value="slow">{L('chậm', 'slow')}</option>
                   </select>
-                  <button disabled={busy} onClick={() => void toggle(s)} className="ml-auto px-2 py-1 rounded border border-slate-600 text-xs flex items-center gap-1">
+                  <button disabled={busy} onClick={() => void toggle(s)} className="ml-auto px-2 py-1 rounded border border-[var(--border-strong)] text-xs flex items-center gap-1">
                     {s.is_active ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
                     {s.is_active ? L('Tạm dừng', 'Pause') : L('Bật lại', 'Resume')}
                   </button>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
                   <div>
-                    <div className="text-slate-400">{L('Lần dự kiến tiếp theo', 'Next run')}</div>
+                    <div className="text-[var(--text-secondary)]">{L('Lần dự kiến tiếp theo', 'Next run')}</div>
                     <div>{s.is_active ? ict(s.next_run_at) : L('đang tạm dừng', 'paused')}</div>
                     {s.is_active && left !== null && (
                       <div className="font-mono text-cyan-300" aria-live="off">
@@ -392,20 +413,20 @@ export default function SchedulesPage() {
                     )}
                   </div>
                   <div>
-                    <div className="text-slate-400">{L('Lần chạy trước', 'Last run')}</div>
+                    <div className="text-[var(--text-secondary)]">{L('Lần chạy trước', 'Last run')}</div>
                     <div>{ict(s.last_run_at)}</div>
-                    <div className="text-slate-400 mt-1">{L('Thành công đầy đủ gần nhất', 'Last full success')}</div>
+                    <div className="text-[var(--text-secondary)] mt-1">{L('Tất cả job đã hoàn tất gần nhất', 'Last successful scheduled jobs')}</div>
                     <div>{ict(s.last_full_success_at)}</div>
                   </div>
                   <div>
-                    <div className="text-slate-400">{L('Kết quả mới nhất (kể cả partial)', 'Latest result (incl. partial)')}</div>
+                    <div className="text-[var(--text-secondary)]">{L('Kết quả mới nhất (kể cả partial)', 'Latest result (incl. partial)')}</div>
                     <div className="flex items-center gap-2"><Badge value={s.latest_result.status} /> {ict(s.latest_result.at)}</div>
                     {s.latest_result.batch_id && (
                       <Link className="underline text-cyan-300" href={`/engine-runs/?run=${s.latest_result.batch_id}`}>{L('Xem lượt chạy', 'Open run')}</Link>
                     )}
                   </div>
                 </div>
-                <div className="flex flex-wrap gap-4 text-xs text-slate-300">
+                <div className="flex flex-wrap gap-4 text-xs text-[var(--text-primary)]">
                   <span>{s.running ? L('Đang chạy', 'Running') : L('Không có lượt đang chạy', 'Idle')}</span>
                   <span>{L('Slot bị lỡ/gộp', 'Missed/coalesced slots')}: <b>{s.missed_slots}</b>{s.pending_catchup ? ` · ${L('1 lượt bù đang chờ', '1 catch-up pending')}` : ''}</span>
                   <span>Backlog: <b>{s.backlog}</b>{s.estimated_drain_at ? ` · ${L('ước tính xong', 'est. drain')} ${ict(s.estimated_drain_at)}` : ''}</span>
@@ -415,7 +436,7 @@ export default function SchedulesPage() {
                   <p className="text-xs text-amber-300 flex items-center gap-1"><AlertTriangle className="w-3 h-3" />{s.overdue_reason}</p>
                 )}
                 <button
-                  className="text-xs underline text-slate-300"
+                  className="text-xs underline text-[var(--text-primary)]"
                   onClick={() => {
                     const next = openSlots === s.id ? null : s.id;
                     setOpenSlots(next);
@@ -426,15 +447,15 @@ export default function SchedulesPage() {
                 </button>
                 {openSlots === s.id && (
                   <table className="w-full text-xs mt-2">
-                    <thead className="text-slate-400 text-left">
+                    <thead className="text-[var(--text-secondary)] text-left">
                       <tr><th>Slot (ICT)</th><th>{L('Loại', 'Kind')}</th><th>{L('Trạng thái', 'Status')}</th><th>{L('Lỡ trước đó', 'Missed before')}</th><th>{L('Gộp', 'Coalesced')}</th><th>{L('Kế hoạch', 'Plan')}</th><th>{L('Kết quả', 'Result')}</th></tr>
                     </thead>
                     <tbody>
                       {(slots[s.id] || []).map((x) => (
-                        <tr key={x.id} className="border-t border-slate-800 align-top">
+                        <tr key={x.id} className="border-t border-[var(--border-subtle)] align-top">
                           <td>{ict(x.slot_at)}</td>
                           <td>{x.kind}</td>
-                          <td><Badge value={x.status} />{x.reason ? <div className="text-slate-500">{x.reason}</div> : null}</td>
+                          <td><Badge value={x.status} />{x.reason ? <div className="text-[var(--text-secondary)]">{x.reason}</div> : null}</td>
                           <td>{x.missed_before}</td>
                           <td>{x.coalesced_slots}</td>
                           <td>{'queue' in x.plan_summary ? `${x.plan_summary.queue}/${x.plan_summary.defer}/${x.plan_summary.skip}` : '—'}</td>
@@ -447,43 +468,45 @@ export default function SchedulesPage() {
               </div>
             );
           })}
-          <form onSubmit={create} className="p-4 rounded border border-dashed border-slate-600 flex flex-wrap items-end gap-3 text-sm text-slate-200">
+          <p className="assessment-muted">{L('Lịch mới dùng public_web trên', 'New schedules use public_web for')} {assets.length} {L('mục tiêu đủ điều kiện đang hiển thị; danh sách mục tiêu được lưu cố định.', 'currently eligible targets; the target selection is stored explicitly.')}</p>
+          <form onSubmit={create} className="p-4 rounded border border-dashed border-[var(--border-strong)] flex flex-wrap items-end gap-3 text-sm text-[var(--text-primary)]">
             <label className="flex flex-col text-xs">{L('Tên', 'Name')}
-              <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="bg-slate-800 border border-slate-600 rounded px-2 py-1" maxLength={200} />
+              <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="bg-[var(--bg-surface-hover)] border border-[var(--border-strong)] rounded px-2 py-1" maxLength={200} />
             </label>
             <label className="flex flex-col text-xs">{L('Chu kỳ (phút)', 'Interval (min)')}
-              <select value={form.interval} onChange={(e) => setForm({ ...form, interval: Number(e.target.value) })} className="bg-slate-800 border border-slate-600 rounded px-2 py-1">
+              <select value={form.interval} onChange={(e) => setForm({ ...form, interval: Number(e.target.value) })} className="bg-[var(--bg-surface-hover)] border border-[var(--border-strong)] rounded px-2 py-1">
                 {[15, 30, 60, 120, 240].map((m) => <option key={m} value={m}>{m}</option>)}
               </select>
             </label>
             <label className="flex flex-col text-xs">Profile
-              <select value={form.profile} onChange={(e) => setForm({ ...form, profile: e.target.value as any })} className="bg-slate-800 border border-slate-600 rounded px-2 py-1">
+              <select value={form.profile} onChange={(e) => setForm({ ...form, profile: e.target.value as any })} className="bg-[var(--bg-surface-hover)] border border-[var(--border-strong)] rounded px-2 py-1">
                 <option value="light">{L('nhẹ', 'light')}</option>
                 <option value="slow">{L('chậm', 'slow')}</option>
               </select>
             </label>
             <label className="flex flex-col text-xs">{L('Số worker tối đa', 'Max workers')}
-              <input type="number" min={1} max={32} value={form.workers} onChange={(e) => setForm({ ...form, workers: Number(e.target.value) })} className="bg-slate-800 border border-slate-600 rounded px-2 py-1 w-20" />
+              <input type="number" min={1} max={32} value={form.workers} onChange={(e) => setForm({ ...form, workers: Number(e.target.value) })} className="bg-[var(--bg-surface-hover)] border border-[var(--border-strong)] rounded px-2 py-1 w-20" />
             </label>
-            <button disabled={busy} className="px-3 py-1.5 rounded bg-cyan-700 text-white flex items-center gap-1 disabled:opacity-50"><Plus className="w-4 h-4" />{L('Tạo lịch', 'Create schedule')}</button>
+            <button disabled={busy || !assets.length} className="px-3 py-1.5 rounded bg-cyan-700 text-white flex items-center gap-1 disabled:opacity-50"><Plus className="w-4 h-4" />{L('Tạo lịch', 'Create schedule')}</button>
           </form>
         </section>
       ) : (
-        overview && <p className="text-sm text-slate-400">{L('Chỉ chủ hệ thống xem và chỉnh lịch định kỳ.', 'Only the system owner sees and edits recurring schedules.')}</p>
+        overview && <p className="text-sm text-[var(--text-secondary)]">{L('Chỉ chủ hệ thống xem và chỉnh lịch định kỳ.', 'Only the system owner sees and edits recurring schedules.')}</p>
       )}
 
       {/* Engines: staleness and queue age */}
       {overview && (
         <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div className="p-4 rounded border border-slate-700 bg-slate-900 text-sm text-slate-200">
+          <div className="p-4 rounded border border-[var(--border-subtle)] bg-[var(--bg-surface)] text-sm text-[var(--text-primary)]">
             <h2 className="font-medium mb-2 flex items-center gap-2"><Gauge className="w-4 h-4 text-cyan-400" />{L('Theo engine', 'Per engine')}</h2>
             <table className="w-full text-xs">
-              <thead className="text-slate-400 text-left"><tr><th>Engine</th><th>{L('Thành công cuối', 'Last success')}</th><th>{L('Kết quả mới nhất', 'Latest')}</th><th>{L('Hàng đợi', 'Queue')}</th><th>{L('Tuổi hàng đợi', 'Queue age')}</th></tr></thead>
+              <thead className="text-[var(--text-secondary)] text-left"><tr><th>Engine</th><th>{L('Thành công cuối', 'Last success')}</th><th>{L('Kết quả mới nhất', 'Latest')}</th><th>{L('Hàng đợi', 'Queue')}</th><th>{L('Tuổi hàng đợi', 'Queue age')}</th></tr></thead>
               <tbody>
                 {ENGINES.map((e) => {
                   const x = overview.engines[e];
+                  if (!x) return null;
                   return (
-                    <tr key={e} className="border-t border-slate-800">
+                    <tr key={e} className="border-t border-[var(--border-subtle)]">
                       <td className="font-mono">{e}</td>
                       <td>
                         {ict(x.last_success_at)}
@@ -497,14 +520,14 @@ export default function SchedulesPage() {
                 })}
               </tbody>
             </table>
-            <p className="text-[11px] text-slate-500 mt-2">{L('Ngưỡng cũ', 'Stale threshold')}: {dur(overview.stale_threshold_seconds)} · {L('bằng chứng mới nhất', 'newest evidence')} {ict(overview.evidence.newest_observation_at)}</p>
+            <p className="text-[11px] text-[var(--text-secondary)] mt-2">{L('Ngưỡng cũ', 'Stale threshold')}: {dur(overview.stale_threshold_seconds)} · {L('bằng chứng mới nhất', 'newest evidence')} {ict(overview.evidence.newest_observation_at)}</p>
           </div>
 
-          <div className="p-4 rounded border border-slate-700 bg-slate-900 text-sm text-slate-200 space-y-1">
+          <div className="p-4 rounded border border-[var(--border-subtle)] bg-[var(--bg-surface)] text-sm text-[var(--text-primary)] space-y-1">
             <h2 className="font-medium mb-2 flex items-center gap-2"><Server className="w-4 h-4 text-cyan-400" />{L('Vận hành', 'Operations')}</h2>
             <p>Worker online: <b>{overview.workers_online}</b> / {overview.workers.length}</p>
             {overview.workers.map((w) => (
-              <p key={w.worker_id} className="text-xs text-slate-400">
+              <p key={w.worker_id} className="text-xs text-[var(--text-secondary)]">
                 <code>{w.worker_id}</code> · {w.state} · {L('thấy cách đây', 'seen')} {dur(w.age_seconds)} · {w.active_executions} {L('đang chạy', 'active')}
                 {w.throttle_reason && <span className="block text-amber-300">{w.throttle_reason}</span>}
               </p>
@@ -518,31 +541,32 @@ export default function SchedulesPage() {
 
       {/* Capacity & metrics (owner) */}
       {owner && cap && (
-        <section className="p-4 rounded border border-slate-700 bg-slate-900 text-sm text-slate-200 space-y-3">
+        <section className="p-4 rounded border border-[var(--border-subtle)] bg-[var(--bg-surface)] text-sm text-[var(--text-primary)] space-y-3">
           <h2 className="font-medium">{L('Công suất và số đo', 'Capacity and measurements')}</h2>
           <form onSubmit={saveCapacity} className="flex flex-wrap items-end gap-3">
             <label className="flex flex-col text-xs">{L('Tối đa job chạy đồng thời', 'Max running executions')}
-              <input type="number" min={1} max={64} value={cap.max_running_executions} onChange={(e) => setCap({ ...cap, max_running_executions: Number(e.target.value) })} className="bg-slate-800 border border-slate-600 rounded px-2 py-1 w-24" />
+              <input type="number" min={1} max={64} value={cap.max_running_executions} onChange={(e) => setCap({ ...cap, max_running_executions: Number(e.target.value) })} className="bg-[var(--bg-surface-hover)] border border-[var(--border-strong)] rounded px-2 py-1 w-24" />
             </label>
             <label className="flex flex-col text-xs">{L('Quota mỗi host / giờ', 'Per-host quota / hour')}
-              <input type="number" min={1} max={3600} value={cap.per_host_hourly_quota} onChange={(e) => setCap({ ...cap, per_host_hourly_quota: Number(e.target.value) })} className="bg-slate-800 border border-slate-600 rounded px-2 py-1 w-24" />
+              <input type="number" min={1} max={3600} value={cap.per_host_hourly_quota} onChange={(e) => setCap({ ...cap, per_host_hourly_quota: Number(e.target.value) })} className="bg-[var(--bg-surface-hover)] border border-[var(--border-strong)] rounded px-2 py-1 w-24" />
             </label>
             <label className="flex flex-col text-xs">{L('Ngân sách egress mỗi host / giờ (byte)', 'Per-host egress / hour (bytes)')}
-              <input type="number" min={10000} value={cap.per_host_egress_bytes_hourly} onChange={(e) => setCap({ ...cap, per_host_egress_bytes_hourly: Number(e.target.value) })} className="bg-slate-800 border border-slate-600 rounded px-2 py-1 w-36" />
+              <input type="number" min={10000} value={cap.per_host_egress_bytes_hourly} onChange={(e) => setCap({ ...cap, per_host_egress_bytes_hourly: Number(e.target.value) })} className="bg-[var(--bg-surface-hover)] border border-[var(--border-strong)] rounded px-2 py-1 w-36" />
             </label>
             <button disabled={busy} className="px-3 py-1.5 rounded bg-cyan-700 text-white disabled:opacity-50">{L('Lưu', 'Save')}</button>
           </form>
           {metrics && (
             <>
               <table className="w-full text-xs">
-                <thead className="text-slate-400 text-left">
+                <thead className="text-[var(--text-secondary)] text-left">
                   <tr><th>Engine</th><th>{L('Lượt (24h)', 'Attempts (24h)')}</th><th>{L('Retry', 'Retries')}</th><th>p50 / p95 engine</th><th>p50 / p95 slot</th><th>{L('Trễ hàng đợi', 'Queue delay')} p50 / p95</th><th>CPU {L('TB', 'avg')}</th><th>RAM max</th><th>Byte in / out / egress</th><th>{L('Công suất lý thuyết / giờ', 'Theoretical / hour')}</th></tr>
                 </thead>
                 <tbody>
                   {ENGINES.map((e) => {
                     const m = metrics.engines[e];
+                    if (!m) return null;
                     return (
-                      <tr key={e} className="border-t border-slate-800">
+                      <tr key={e} className="border-t border-[var(--border-subtle)]">
                         <td className="font-mono">{e}</td>
                         <td>{m.attempts}</td>
                         <td>{m.retries}</td>
@@ -558,13 +582,13 @@ export default function SchedulesPage() {
                   })}
                 </tbody>
               </table>
-              <p className="text-[11px] text-slate-500">{metrics.capacity_formula}. {metrics.cpu_rss_note}.</p>
+              <p className="text-[11px] text-[var(--text-secondary)]">{metrics.capacity_formula}. {metrics.cpu_rss_note}.</p>
               {Object.keys(metrics.hosts_last_hour).length > 0 && (
                 <table className="w-full text-xs">
-                  <thead className="text-slate-400 text-left"><tr><th>Host</th><th>{L('Yêu cầu / quota (1 giờ)', 'Requests / quota (1 h)')}</th><th>Egress / {L('ngân sách', 'budget')}</th></tr></thead>
+                  <thead className="text-[var(--text-secondary)] text-left"><tr><th>Host</th><th>{L('Yêu cầu / quota (1 giờ)', 'Requests / quota (1 h)')}</th><th>Egress / {L('ngân sách', 'budget')}</th></tr></thead>
                   <tbody>
                     {Object.entries(metrics.hosts_last_hour).map(([h, v]: [string, any]) => (
-                      <tr key={h} className={`border-t border-slate-800 ${v.over_budget ? 'text-amber-300' : ''}`}>
+                      <tr key={h} className={`border-t border-[var(--border-subtle)] ${v.over_budget ? 'text-amber-300' : ''}`}>
                         <td className="font-mono">{h}</td>
                         <td>{v.requests} / {v.quota}</td>
                         <td>{v.egress_bytes} / {v.egress_budget_bytes}</td>
@@ -579,18 +603,18 @@ export default function SchedulesPage() {
       )}
 
       {/* Live events */}
-      <section className="p-4 rounded border border-slate-700 bg-slate-900 text-xs text-slate-300">
-        <h2 className="font-medium text-sm text-slate-100 mb-2">{L('Sự kiện gần đây', 'Recent events')}</h2>
-        {events.length === 0 && <p className="text-slate-500">{L('Chưa có sự kiện mới từ khi mở trang.', 'No new events since this page opened.')}</p>}
+      <section className="p-4 rounded border border-[var(--border-subtle)] bg-[var(--bg-surface)] text-xs text-[var(--text-primary)]">
+        <h2 className="font-medium text-sm text-[var(--text-primary)] mb-2">{L('Sự kiện gần đây', 'Recent events')}</h2>
+        {events.length === 0 && <p className="text-[var(--text-secondary)]">{L('Chưa có sự kiện mới từ khi mở trang.', 'No new events since this page opened.')}</p>}
         <ul className="space-y-1">
           {events.map((e) => (
             <li key={e.id} className="flex flex-wrap gap-2">
-              <span className="text-slate-500">#{e.id}</span>
+              <span className="text-[var(--text-secondary)]">#{e.id}</span>
               <span>{ict(e.occurred_at)}</span>
               <span className="font-mono">{e.type}</span>
               <span>{e.message}</span>
               {e.batch_id && <Link className="underline text-cyan-300" href={`/engine-runs/?run=${e.batch_id}`}>{L('lượt chạy', 'run')}</Link>}
-              {e.correlation_id && <span className="text-slate-500">corr {e.correlation_id}</span>}
+              {e.correlation_id && <span className="text-[var(--text-secondary)]">corr {e.correlation_id}</span>}
             </li>
           ))}
         </ul>

@@ -109,7 +109,7 @@ export type ApiErrorKind =
   | 'network'
   | 'access_denied'; // Cloudflare Access at the gateway (missing/expired token) — sign in again via Access
 
-export type EngineName = 'sbom' | 'tls_health';
+export type EngineName = 'sbom' | 'tls_health' | 'public_web';
 
 export interface RunRequestBody {
   selection: { kind: 'all' | 'assets' | 'module'; asset_ids?: string[]; module?: string };
@@ -202,6 +202,7 @@ export interface ScheduleSlotInfo {
 }
 
 export interface CapacityInfo {
+  emergency_stop_active: boolean;
   max_running_executions: number;
   per_host_hourly_quota: number;
   per_host_egress_bytes_hourly: number;
@@ -465,6 +466,7 @@ class ApiClient {
     size?: number;
     search?: string;
     status?: string;
+    assessment_eligible?: boolean;
   } | string): Promise<{ items: Asset[]; total: number }> {
     if (typeof params === 'string') {
       const empireModule = params;
@@ -477,7 +479,20 @@ class ApiClient {
     if (params?.empire_module && params.empire_module !== 'ALL') query.set('empire_module', params.empire_module);
     if (params?.search) query.set('search', params.search);
     if (params?.status && params.status !== 'ALL') query.set('status', params.status);
+    if (params?.assessment_eligible !== undefined) query.set('assessment_eligible', String(params.assessment_eligible));
     return this.fetchJson<{ items: Asset[]; total: number }>(`/assets?${query.toString()}`);
+  }
+
+  /** Fetch every inventory page; never label the first 200 rows as the whole estate. */
+  public async listAllAssets(eligibleOnly = false): Promise<Asset[]> {
+    const items: Asset[] = [];
+    for (let page = 1; page <= 1000; page++) {
+      const result = await this.listAssets({ page, size: 200, ...(eligibleOnly ? { assessment_eligible: true } : {}) });
+      items.push(...result.items);
+      if (items.length >= result.total) return items;
+      if (result.items.length === 0) throw new Error('Inventory changed while loading. Refresh to reconcile the current selection.');
+    }
+    throw new Error('Inventory is too large for this view. Narrow the server selection.');
   }
 
   public async createAsset(data: Partial<Asset>): Promise<Asset> {
@@ -550,6 +565,10 @@ class ApiClient {
   public async getScanLogs(scanId: string, size: number = 500): Promise<Array<{ timestamp: string; level: string; message: string; source: string }>> {
     const data = await this.fetchJson<any>(`/scans/${scanId}/logs?size=${size}`);
     return Array.isArray(data) ? data : (data.items || []);
+  }
+
+  public async getScanLogPage(scanId: string, page = 1): Promise<{ items: Array<{ timestamp: string; level: string; message: string; source: string }>; total: number; page: number; pages: number }> {
+    return this.fetchJson(`/scans/${scanId}/logs?size=100&page=${page}`);
   }
 
   public async getScanEvents(scanId: string, afterId: number = 0, limit: number = 200): Promise<{
@@ -734,8 +753,12 @@ class ApiClient {
     return this.fetchJson<CapacityInfo>('/operations/capacity');
   }
 
-  public async putCapacity(body: Omit<CapacityInfo, 'updated_by' | 'updated_at'>): Promise<CapacityInfo> {
+  public async putCapacity(body: Omit<CapacityInfo, 'updated_by' | 'updated_at' | 'emergency_stop_active'>): Promise<CapacityInfo> {
     return this.fetchJson<CapacityInfo>('/operations/capacity', { method: 'PUT', body: JSON.stringify(body) });
+  }
+
+  public async setEmergencyStop(active: boolean): Promise<CapacityInfo> {
+    return this.fetchJson<CapacityInfo>('/operations/emergency-stop', { method: 'PUT', body: JSON.stringify({ active }) });
   }
 
   public async getOperationsOverview(): Promise<OperationsOverview> {
@@ -924,7 +947,7 @@ class ApiClient {
   }
 
   public async launchExecution(
-    body: { asset_id: string; engine: 'sbom' | 'tls_health'; artifact_id?: string },
+    body: { asset_id: string; engine: EngineName; artifact_id?: string },
     idempotencyKey: string,
   ): Promise<ExecutionLaunch> {
     return this.fetchJson<ExecutionLaunch>('/executions', {

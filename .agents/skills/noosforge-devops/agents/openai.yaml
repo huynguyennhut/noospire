@@ -1,0 +1,4 @@
+interface:
+  display_name: "Self-hosted DevOps & Infrastructure"
+  short_description: "Verify NOOSFORGE packaging and local recovery"
+  default_prompt: "Use $noosforge-devops. Validate the self-hosted configuration and synthetic backup recovery without deploying."

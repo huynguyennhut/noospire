@@ -96,6 +96,7 @@ class CapacitySettings(Base):
     max_running_executions: Mapped[int] = mapped_column(Integer, default=4, nullable=False)
     per_host_hourly_quota: Mapped[int] = mapped_column(Integer, default=12, nullable=False)
     per_host_egress_bytes_hourly: Mapped[int] = mapped_column(Integer, default=2_000_000, nullable=False)
+    emergency_stop_active: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     updated_by: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=_now, nullable=False)
 

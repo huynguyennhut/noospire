@@ -44,12 +44,12 @@ from backend.app.models.lifecycle import FindingChange, FindingObservation, Hidd
 from backend.app.models.operations import MonitorSchedule, RunRequest
 from backend.app.models.scan import ScanBatch
 from backend.app.models.user import User
-from backend.app.schemas.common import EmpireModule
+from backend.app.schemas.common import EmpireModule, OPEN_FINDING_STATES
 
 router = APIRouter(tags=["Console"])
 
 TZ = zoneinfo.ZoneInfo(settings.DEFAULT_TIMEZONE)
-OPEN_STATES = ("NEW", "OPEN", "CONFIRMED", "IN_REMEDIATION", "REOPENED")
+OPEN_STATES = OPEN_FINDING_STATES
 SEVERITIES = ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO")
 SERVICE_STALE = timedelta(hours=2)
 WORKER_STALE = timedelta(seconds=30)
@@ -288,7 +288,7 @@ async def finding_history(finding_id: uuid.UUID, current_user: User = Depends(ge
 async def recheck_finding_impl(db: AsyncSession, user: User, finding_id: uuid.UUID, request: Request,
                                idempotency_key: Optional[str]) -> JSONResponse:
     """Re-run exactly the defensive control that produced the finding (same engine) on its asset,
-    with the currently approved input. FIXED is only set later by the runner if equivalent evidence
+    with the currently approved input. RESOLVED is only set later by the runner if equivalent evidence
     no longer matches; this endpoint never changes the finding's status itself."""
     f = await db.get(NormalizedFinding, finding_id)
     if f is None:

@@ -64,6 +64,11 @@ class AssetResponse(AssetBase):
     # (e.g. imported fixtures) · otherwise mirrors PENDING / FAILED / REVOKED.
     verification_state: str = "UNPROVEN"
     verification_proof: Optional[Dict[str, Any]] = None
+    # Derived execution eligibility; stored VERIFIED alone cannot enable scanning.
+    assessment_eligible: bool = False
+    assessment_block_reason: Optional[str] = "OWNERSHIP_NOT_VERIFIED"
+    inventory_classification: str = "UNKNOWN_OR_UNVERIFIED"
+    inventory_provenance: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

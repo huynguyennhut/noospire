@@ -99,7 +99,7 @@ async def test_engine_health_reports_measured_state_only(client, owner):
     from backend.app.models.defensive import WorkerHeartbeat
     from datetime import datetime, timezone
     async with AsyncSessionLocal() as db:
-        db.add(WorkerHeartbeat(worker_id="pilot-test-worker", engines=["sbom", "tls_health"],
+        db.add(WorkerHeartbeat(worker_id="pilot-test-worker", engines=["sbom", "tls_health", "public_web"],
                                last_seen_at=datetime.now(timezone.utc)))
         await db.commit()
     r = (await client.get(f"{API}/engines/health")).json()
@@ -111,7 +111,9 @@ async def test_engine_health_reports_measured_state_only(client, owner):
     assert r["status"] == "HEALTHY" and r["all_healthy"] is True
 
     t = (await client.post(f"{API}/engines/test", headers=h)).json()
-    assert t["overall_status"] == "PASS" and [x["engine"] for x in t["results"]] == ["sbom", "tls_health"]
+    assert t["overall_status"] == "PASS"
+    assert {x["engine"] for x in t["results"]} == {"sbom", "tls_health", "public_web"}
+    assert len(t["results"]) == 3
     assert all(x["status"] == "PASS" for x in t["results"]) and "duration_ms" in t
     u = (await client.post(f"{API}/engines/check-updates", headers=h)).json()
     assert u["updates_available"] is False and u["engines"][0]["latest_version"] is None

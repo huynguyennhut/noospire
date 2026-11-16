@@ -221,16 +221,10 @@ class AccessScope:
 
 
 async def load_scope(user: User, db: AsyncSession) -> AccessScope:
-    role_upper = (user.role or "").upper()
-    if is_sole_owner(user) or user.is_superuser or role_upper in (
-        UserRole.OWNER.value,
-        UserRole.SUPER_ADMIN.value,
-        UserRole.ADMIN.value,
-        UserRole.OPERATOR.value,
-        UserRole.VIEWER.value,
-        UserRole.SECURITY_LEAD.value,
-    ):
+    if is_sole_owner(user):
         return AccessScope(user=user, estate_wide=True)
+    if not user.is_active:
+        return AccessScope(user=user, estate_wide=False)
     res = await db.execute(
         select(UserAssetGrant.asset_id, UserAssetGrant.permissions).where(UserAssetGrant.user_id == user.id)
     )
@@ -254,9 +248,9 @@ async def get_authorized_asset_ids(user: User, db: AsyncSession) -> Optional[Lis
     return (await load_scope(user, db)).asset_ids
 
 
-require_admin = require_roles(
-    [UserRole.OWNER.value, UserRole.SUPER_ADMIN.value, UserRole.ADMIN.value]
-)
+# Global administration has no per-asset grant. Legacy role names or superuser
+# flags cannot confer it; keep the dependency name for existing route imports.
+require_admin = require_owner
 require_operator = require_roles(
     [
         UserRole.OWNER.value,

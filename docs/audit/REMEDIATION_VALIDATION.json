@@ -1,0 +1,231 @@
+{
+  "date": "2026-11-15",
+  "base_revision": "cc3a5e0",
+  "scope": "Local authentication, authorization, diagnostics and lifecycle remediation; not production certification",
+  "checks": {
+    "pilot": {
+      "preset": "pilot",
+      "checks": [
+        {
+          "command": [
+            ".venv/bin/python",
+            "-m",
+            "pytest",
+            "-p",
+            "pytest_asyncio.plugin",
+            "-q",
+            "tests_pilot",
+            "--deselect=tests_pilot/test_m7_round_a.py::test_legacy_database_upgrades_in_place_and_backup_restores",
+            "--junitxml=/tmp/noosforge-pilot-dcyw63i9/pytest.xml"
+          ],
+          "cwd": ".",
+          "exit_code": 0,
+          "status": "PASS",
+          "seconds": 187.66,
+          "log": "/tmp/noosforge-pilot-dcyw63i9/01.log"
+        }
+      ],
+      "artifacts": "/tmp/noosforge-pilot-dcyw63i9",
+      "pytest": {
+        "tests": 157,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    "security": {
+      "preset": "security",
+      "checks": [
+        {
+          "command": [
+            ".venv/bin/python",
+            "-m",
+            "pytest",
+            "-p",
+            "pytest_asyncio.plugin",
+            "-q",
+            "tests_pilot/test_m1_identity_scope.py",
+            "tests_pilot/test_platform_access_security.py",
+            "tests_pilot/test_engine_diagnostics.py",
+            "tests_pilot/test_m3_engine_units.py",
+            "tests_pilot/test_m3_tls_health.py",
+            "tests_pilot/test_m6_contract.py",
+            "--deselect=tests_pilot/test_m7_round_a.py::test_legacy_database_upgrades_in_place_and_backup_restores",
+            "--junitxml=/tmp/noosforge-security-p68ralf8/pytest.xml"
+          ],
+          "cwd": ".",
+          "exit_code": 0,
+          "status": "PASS",
+          "seconds": 32.71,
+          "log": "/tmp/noosforge-security-p68ralf8/01.log"
+        }
+      ],
+      "artifacts": "/tmp/noosforge-security-p68ralf8",
+      "pytest": {
+        "tests": 86,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    "frontend": {
+      "preset": "frontend",
+      "checks": [
+        {
+          "command": [
+            "npm",
+            "run",
+            "test:lifecycle"
+          ],
+          "cwd": "frontend",
+          "exit_code": 0,
+          "status": "PASS",
+          "seconds": 0.45,
+          "log": "/tmp/noosforge-frontend-xjfsh8tg/01.log"
+        },
+        {
+          "command": [
+            "npm",
+            "run",
+            "typecheck"
+          ],
+          "cwd": "frontend",
+          "exit_code": 0,
+          "status": "PASS",
+          "seconds": 2.45,
+          "log": "/tmp/noosforge-frontend-xjfsh8tg/02.log"
+        },
+        {
+          "command": [
+            "npm",
+            "run",
+            "lint"
+          ],
+          "cwd": "frontend",
+          "exit_code": 0,
+          "status": "PASS",
+          "seconds": 1.89,
+          "log": "/tmp/noosforge-frontend-xjfsh8tg/03.log"
+        },
+        {
+          "command": [
+            "npm",
+            "run",
+            "build"
+          ],
+          "cwd": "frontend",
+          "exit_code": 0,
+          "status": "PASS",
+          "seconds": 28.05,
+          "log": "/tmp/noosforge-frontend-xjfsh8tg/04.log"
+        }
+      ],
+      "artifacts": "/tmp/noosforge-frontend-xjfsh8tg",
+      "unit_tests": {
+        "tests": 3,
+        "failures": 0
+      }
+    },
+    "contract": {
+      "preset": "contract",
+      "checks": [
+        {
+          "command": [
+            ".venv/bin/python",
+            "scripts/contract_audit.py"
+          ],
+          "cwd": ".",
+          "exit_code": 0,
+          "status": "PASS",
+          "seconds": 4.83,
+          "log": "/tmp/noosforge-contract-xqhuzj8v/01.log"
+        }
+      ],
+      "artifacts": "/tmp/noosforge-contract-xqhuzj8v"
+    }
+  },
+  "baseline": {
+    "passed": 106,
+    "failed": 11,
+    "deselected": 1,
+    "new_access_regressions_before_fix": {
+      "passed": 3,
+      "failed": 17
+    }
+  },
+  "new_behavioral_cases": {
+    "access_security": 27,
+    "engine_diagnostics": 5,
+    "verified_recheck_lifecycle": 8,
+    "frontend_lifecycle": 3
+  },
+  "browser": {
+    "environment": "Disposable local API/gateway and empty synthetic DB; real static export; no worker/customer targets",
+    "pages": [
+      "/health/",
+      "/settings/"
+    ],
+    "themes": [
+      "obsidian-dark",
+      "warm-light"
+    ],
+    "viewports": [
+      [
+        1440,
+        1000
+      ],
+      [
+        390,
+        844
+      ]
+    ],
+    "observations": [
+      "Empty stack renders two unavailable defensive engines and five not-integrated legacy modes",
+      "Offline self-test returns actual results and explicit scope",
+      "Driver versions dialog shows unknown upstream versions instead of up-to-date claims",
+      "Warm-light heading computed color rgb(24, 24, 27)",
+      "Mobile document scroll width 385 at viewport width 390; no horizontal overflow",
+      "No console errors/warnings before deliberate outage",
+      "Stopping only the disposable API renders The API origin is unreachable instead of stale diagnostics",
+      "Screenshots inspected inline; viewport restored and test tab closed"
+    ],
+    "lifecycle": {
+      "environment": "Separate throwaway DB with ten explicitly synthetic states; actual API, no worker/customer network",
+      "pages": [
+        "/findings/",
+        "/remediation/"
+      ],
+      "observations": [
+        "Ten canonical states rendered with board column counts 4/1/1/1/1/2",
+        "Claim fix moved IN_PROGRESS to pending without changing verified count",
+        "RESOLVED filter returned only the resolved finding",
+        "Shared table and page headings/controls use semantic surface/text tokens",
+        "Final rebuilt board and findings inspected in both themes on desktop/mobile; semantic SLA/action text, no page-wide horizontal overflow"
+      ],
+      "viewports": [
+        "default desktop",
+        [
+          390,
+          844
+        ]
+      ],
+      "themes": [
+        "obsidian-dark",
+        "warm-light"
+      ],
+      "console_warnings_errors": [],
+      "mobile_scroll_width": 385,
+      "mobile_viewport_width": 390,
+      "cleanup": "Viewport restored; final test tab closed; disposable lifecycle services stopped"
+    }
+  },
+  "limitations": [
+    "Legacy scanner/checklist public-only outbound enforcement remains incomplete",
+    "Docker and native scanner binaries unavailable; no image/scanner execution",
+    "PostgreSQL and production backup/restore/deployment unverified",
+    "One pilot test that copies the real DB remains deselected",
+    "No credential reset, data migration, commit or push performed",
+    "Existing shell/legacy badge theme contrast, complete accessibility and finding-list pagination beyond the 100-record request remain follow-up work"
+  ],
+  "source_inventory": "/tmp/noosforge-final-inventory.json"
+}
