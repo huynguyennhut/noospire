@@ -134,7 +134,7 @@ function NotificationList({ items, error, vi, onOpen, onDelete }: {
       {items.map((n) => (
         <li key={n.id} className={`p-2.5 rounded-xl border text-xs ${n.isRead ? 'bg-white/[0.01] border-white/5 text-nf-500' : 'bg-white/[0.04] border-white/10 text-nf-200'}`}>
           <div className="flex items-start justify-between gap-2">
-            <button onClick={() => onOpen(n)} className="text-left font-bold text-white text-xs hover:underline focus:outline-none focus:ring-1 focus:ring-white/40 rounded flex items-center gap-1.5">
+            <button onClick={() => onOpen(n)} className="text-left font-bold text-[var(--text-primary)] text-xs hover:underline focus:outline-none focus:ring-1 focus:ring-white/40 rounded flex items-center gap-1.5">
               <span className={`inline-block w-1.5 h-1.5 rounded-full ${SEV_DOT[n.severity] || SEV_DOT.INFO}`} aria-hidden />
               {!n.isRead && <span className="sr-only">{vi ? 'Chưa đọc: ' : 'Unread: '}</span>}
               {n.title}
@@ -393,7 +393,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       {/* =================================================================== */}
       {/* MOBILE STICKY TOP BAR (< 768px)                                      */}
       {/* =================================================================== */}
-      <header className="md:hidden sticky top-0 z-40 flex items-center justify-between px-4 h-14 bg-nf-950/85 backdrop-blur-2xl border-b border-white/[0.08] shadow-sm">
+      <header className="md:hidden sticky top-0 z-40 flex items-center justify-between px-4 h-14 bg-[var(--bg-primary)] backdrop-blur-2xl border-b border-[var(--border-subtle)] shadow-sm">
         {/* Brand Mark */}
         <Link href="/dashboard" className="flex items-center gap-2.5 group/brand">
           <div className="w-8 h-8 rounded-xl backdrop-blur-md bg-white/5 border border-white/10 p-1 flex items-center justify-center shadow-[inset_0_1px_2px_rgba(255,255,255,0.2),0_4px_12px_rgba(0,0,0,0.5)] overflow-hidden transition-all duration-300 group-hover/brand:border-white/30">
@@ -407,7 +407,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             />
           </div>
           <div>
-            <div className="font-extrabold tracking-tight text-white text-xs leading-none">NOOSFORGE</div>
+            <div className="font-extrabold tracking-tight text-[var(--text-primary)] text-xs leading-none">NOOSFORGE</div>
             <div className="text-[9px] font-bold text-nf-400 tracking-wider uppercase mt-0.5">EMPIRE SOC</div>
           </div>
         </Link>
@@ -461,9 +461,9 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             aria-label="Toggle Language"
           >
             <Languages className="w-3.5 h-3.5 text-nf-400" />
-            <span className={locale === 'vi' ? 'text-white font-extrabold' : 'text-nf-500'}>VI</span>
+            <span className={locale === 'vi' ? 'text-[var(--text-primary)] font-extrabold' : 'text-nf-500'}>VI</span>
             <span className="text-nf-600 text-[10px]">/</span>
-            <span className={locale === 'en' ? 'text-white font-extrabold' : 'text-nf-500'}>EN</span>
+            <span className={locale === 'en' ? 'text-[var(--text-primary)] font-extrabold' : 'text-nf-500'}>EN</span>
           </button>
 
           {/* Animated Hamburger Button */}
@@ -544,7 +544,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                 />
               </div>
               <div>
-                <div className="font-black text-sm tracking-wider text-white">NOOSFORGE</div>
+                <div className="font-black text-sm tracking-wider text-[var(--text-primary)]">NOOSFORGE</div>
                 <div className="text-[10px] font-bold text-nf-400 tracking-widest uppercase">
                   {t('brand.soc', 'Empire Security SOC')}
                 </div>
@@ -564,7 +564,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-sm shadow-emerald-400/50" />
               <div>
-                <div className="text-[11px] font-bold text-white">Empire Education Platform</div>
+                <div className="text-[11px] font-bold text-[var(--text-primary)]">Empire Education Platform</div>
                 <div className="text-[9px] text-nf-400 font-mono">empire.edu.vn • SAME-ORIGIN</div>
               </div>
             </div>
@@ -652,7 +652,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                   />
                 </div>
                 <div>
-                  <div className="font-black text-sm tracking-wider text-white">NOOSFORGE</div>
+                  <div className="font-black text-sm tracking-wider text-[var(--text-primary)]">NOOSFORGE</div>
                   <div className="text-[10px] font-bold text-nf-400 tracking-widest uppercase">
                     {t('brand.soc', 'Empire Security SOC')}
                   </div>
@@ -703,7 +703,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           {!sidebarCollapsed && (
             <div className="px-3.5 py-2.5 bg-white/[0.02] border-b border-white/[0.05] flex items-center justify-between text-xs">
               <span className="text-nf-400 font-medium text-[11px]">{t('brand.targetContext', 'Target Context:')}</span>
-              <span className="px-2 py-0.5 rounded-md bg-white/[0.06] text-white border border-white/10 text-[10px] font-bold shadow-sm backdrop-blur-md">
+              <span className="px-2 py-0.5 rounded-md bg-white/[0.06] text-[var(--text-primary)] border border-white/10 text-[10px] font-bold shadow-sm backdrop-blur-md">
                 Empire Education
               </span>
             </div>
@@ -807,10 +807,10 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
               </div>
-              <span className="font-bold text-white text-xs">Empire Education Platform</span>
+              <span className="font-bold text-[var(--text-primary)] text-xs">Empire Education Platform</span>
               <span className="text-nf-600">|</span>
               <span className="text-[10px] font-mono font-semibold text-nf-300">empire.edu.vn</span>
-              <span className="px-1.5 py-0.5 rounded-md bg-white/[0.06] text-white border border-white/10 text-[9px] font-extrabold uppercase tracking-wide">
+              <span className="px-1.5 py-0.5 rounded-md bg-white/[0.06] text-[var(--text-primary)] border border-white/10 text-[9px] font-extrabold uppercase tracking-wide">
                 SAME-ORIGIN
               </span>
             </div>
@@ -819,10 +819,10 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             <div
               className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium border shadow-sm backdrop-blur-md ${
                 backendStatus === 'online'
-                  ? 'bg-emerald-950/20 text-emerald-400 border-emerald-500/20'
+                  ? (isDark ? 'bg-emerald-950/20 text-emerald-400 border-emerald-500/20' : 'bg-emerald-50 text-emerald-800 border-emerald-800/20')
                   : backendStatus === 'checking'
-                  ? 'bg-amber-950/20 text-amber-400 border-amber-500/20'
-                  : 'bg-rose-950/20 text-rose-400 border-rose-500/20'
+                  ? (isDark ? 'bg-amber-950/20 text-amber-400 border-amber-500/20' : 'bg-amber-50 text-amber-800 border-amber-800/20')
+                  : (isDark ? 'bg-rose-950/20 text-rose-400 border-rose-500/20' : 'bg-rose-50 text-rose-800 border-rose-800/20')
               }`}
               title="Backend API Connection Health"
             >
@@ -830,7 +830,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                 <>
                   <Wifi className="w-3.5 h-3.5" />
                   <span>{t('shell.backendOnline', 'API: Online')}</span>
-                  {latencyMs !== null && <span className="font-mono text-[10px] text-emerald-400/80">({latencyMs}ms)</span>}
+                  {latencyMs !== null && <span className="font-mono text-[10px]">({latencyMs}ms)</span>}
                 </>
               ) : backendStatus === 'checking' ? (
                 <>
@@ -957,7 +957,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                 >
                   <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]" />
                   <span className="font-bold truncate max-w-[120px]">{currentUser.name || 'Ultra Admin'}</span>
-                  <span className="px-1.5 py-0.2 rounded bg-white/10 text-[9px] font-mono font-bold text-cyan-300 uppercase">
+                  <span className="px-1.5 py-0.2 rounded bg-white/10 text-[9px] font-mono font-bold text-[var(--text-primary)] uppercase">
                     {currentUser.role === 'SUPER_ADMIN' ? 'ULTRA' : currentUser.role}
                   </span>
                 </Link>

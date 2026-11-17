@@ -129,8 +129,8 @@ export default function RemediationPage() {
   const fetchFindings = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await api.listFindings();
-      setFindings(res.items || []);
+      const res = await api.listAllFindings();
+      setFindings(res);
       setLoadError(null);
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : String(err));

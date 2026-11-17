@@ -130,6 +130,10 @@ async def annotate_verification(db: AsyncSession, assets) -> None:
             "TARGET_EMERGENCY_STOP" if any(s.emergency_stop_active for s in related) else
             "SCOPE_EXPIRED" if not active else None)
         a.assessment_eligible = a.assessment_block_reason is None
+        # Supplied artifacts are analyzed locally: no target connection or ownership
+        # challenge is needed. Seed provenance and emergency stops still apply.
+        a.artifact_analysis_eligible = not provenance and not (has_seed and not proof) and not any(
+            s.emergency_stop_active for s in related)
 
 
 @router.get("/reconciliation")

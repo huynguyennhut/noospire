@@ -78,6 +78,7 @@ function FindingsContent() {
   // Core Data
   const [findings, setFindings] = useState<Finding[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -93,6 +94,7 @@ function FindingsContent() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkStatus, setBulkStatus] = useState<string>('IN_PROGRESS');
   const [bulkAssignee, setBulkAssignee] = useState<string>('');
+  const [bulkReason, setBulkReason] = useState('');
   const [bulkProcessing, setBulkProcessing] = useState(false);
 
   // Pagination
@@ -106,14 +108,15 @@ function FindingsContent() {
   const fetchFindings = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await api.listFindings({
+      const res = await api.listAllFindings({
         assetId: initialAssetId || undefined,
         module: moduleFilter !== 'ALL' ? moduleFilter : undefined,
         ...JSON.parse(drillKey),
       });
-      setFindings(res.items || []);
+      setFindings(res);
+      setLoadError(null);
     } catch (err) {
-      console.error('Failed to fetch findings:', err);
+      setLoadError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
@@ -229,19 +232,28 @@ function FindingsContent() {
   const handleApplyBulkStatus = async (overrideStatus?: string) => {
     if (selectedIds.size === 0) return;
     const targetStatus = overrideStatus || bulkStatus;
+    if (['FALSE_POSITIVE', 'ACCEPTED_RISK'].includes(targetStatus) && bulkReason.trim().length < 8) {
+      setLoadError(t('findings.reasonRequired', 'Enter a reason of at least 8 characters for a dismissal or exception.'));
+      return;
+    }
     try {
       setBulkProcessing(true);
       const updates = Array.from(selectedIds).map((id) =>
         api.triageFinding(
           id,
           targetStatus,
-          `Bulk updated via Command Center`,
+          bulkReason.trim() || `Bulk updated via Command Center`,
           bulkAssignee || undefined
         )
       );
-      await Promise.allSettled(updates);
+      const results = await Promise.allSettled(updates);
+      const failed = Array.from(selectedIds).filter((_, index) => results[index].status === 'rejected');
       await fetchFindings();
-      setSelectedIds(new Set());
+      setSelectedIds(new Set(failed));
+      if (failed.length) {
+        const first = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+        setLoadError(`${failed.length}/${results.length} updates failed; failed rows remain selected. ${String(first?.reason?.message || first?.reason || '')}`);
+      }
     } catch (err) {
       alert(`Bulk triage failed: ${err}`);
     } finally {
@@ -356,6 +368,7 @@ function FindingsContent() {
 
   return (
     <div className="space-y-6">
+      {loadError && <div role="alert" className="assessment-alert">{loadError}</div>}
       {/* Page Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-white/10">
         <div>
@@ -816,6 +829,7 @@ function FindingsContent() {
               >
                 Apply Triage
               </Button>
+              <input aria-label={t('findings.triageReason', 'Triage reason')} placeholder={t('findings.triageReason', 'Triage reason')} value={bulkReason} maxLength={500} onChange={(e) => setBulkReason(e.target.value)} className="w-48 px-2 py-1.5 rounded bg-[var(--bg-primary)] border border-[var(--border-strong)] text-[var(--text-primary)]" />
 
               <Button
                 variant="destructive"

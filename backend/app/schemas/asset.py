@@ -66,6 +66,7 @@ class AssetResponse(AssetBase):
     verification_proof: Optional[Dict[str, Any]] = None
     # Derived execution eligibility; stored VERIFIED alone cannot enable scanning.
     assessment_eligible: bool = False
+    artifact_analysis_eligible: bool = False
     assessment_block_reason: Optional[str] = "OWNERSHIP_NOT_VERIFIED"
     inventory_classification: str = "UNKNOWN_OR_UNVERIFIED"
     inventory_provenance: Optional[str] = None

@@ -1,0 +1,246 @@
+[
+  {
+    "route": "/dashboard/",
+    "headings": [
+      "Giám sát thực tế & phạm vi đã đối chiếu",
+      "TÌNH BÁO BẢO MẬT NỀN TẢNG EMPIRE",
+      "Chưa thể kết luận tình trạng an ninh từ số lượng finding",
+      "Chart 1 — Findings by Severity Distribution",
+      "Chart 2 — Vulnerability Lifecycle Trend",
+      "Chart 3 — Security Risk by Empire Business Module",
+      "Biểu đồ 4 — Lịch sử lượt chạy trên kiểm kê",
+      "Chart 5 — Risk Score Evolution ($SRS$)",
+      "Chart 6 — Scanner Engine Performance & Completion Rate",
+      "Biểu đồ 7 — Dữ liệu threat intelligence đã lưu",
+      "Chart 8 — Finding Remediation Lifecycle Breakdown"
+    ],
+    "alerts": [
+      ""
+    ],
+    "characters": 3282
+  },
+  {
+    "route": "/assets/",
+    "headings": [
+      "QUẢN LÝ MỤC TIÊU BẢO MẬT EMPIRE"
+    ],
+    "alerts": [
+      ""
+    ],
+    "characters": 812
+  },
+  {
+    "route": "/scans/",
+    "headings": [
+      "Trung tâm đánh giá",
+      "Quan sát web công khai",
+      "Phạm vi chưa được đánh giá",
+      "Lượt chạy gần đây"
+    ],
+    "alerts": [
+      ""
+    ],
+    "characters": 1088
+  },
+  {
+    "route": "/active-assessments/",
+    "headings": [
+      "GIÁM SÁT ĐÁNH GIÁ THỜI GIAN THỰC",
+      "Active Worker Thread Matrix (\"trackcurrent\")",
+      "Hàng đợi tác vụ đánh giá"
+    ],
+    "alerts": [
+      ""
+    ],
+    "characters": 817
+  },
+  {
+    "route": "/engine-runs/",
+    "headings": [
+      " Lượt chạy engine phòng thủ",
+      "Kết quả hôm nay "
+    ],
+    "alerts": [
+      ""
+    ],
+    "characters": 853
+  },
+  {
+    "route": "/schedules/",
+    "headings": [
+      "Lịch kiểm tra & công suất",
+      "Điều khiển vận hành",
+      "Đánh giá toàn bộ phạm vi đủ điều kiện",
+      "Sự kiện gần đây"
+    ],
+    "alerts": [
+      ""
+    ],
+    "characters": 703
+  },
+  {
+    "route": "/empire-modules/",
+    "headings": [
+      "EMPIRE BUSINESS MODULE HUB",
+      "Học viên & định danh",
+      "Học liệu",
+      "Công cụ hỗ trợ",
+      "API",
+      "Ứng dụng web",
+      "Hạ tầng"
+    ],
+    "alerts": [
+      ""
+    ],
+    "characters": 1669
+  },
+  {
+    "route": "/checklist/",
+    "headings": [
+      "DANH MỤC KIỂM THỬ BẢO MẬT EMPIRE",
+      "Kiểm soát ủy quyền cấp đối tượng (BOLA/IDOR)",
+      "Xác thực người dùng API & Kiểm tra JWT",
+      "Phòng chống lộ dữ liệu thừa & Mass Assignment",
+      "Giới hạn tần suất & Phòng chống Brute Force",
+      "Kiểm soát ủy quyền cấp hàm/chức năng (BFLA)",
+      "Phòng thủ SSRF trong tích hợp API",
+      "Cấu hình bảo mật & Tăng cường Gateway",
+      "Chống tự động hóa & Bảo vệ cào dữ liệu",
+      "Phát hiện API ẩn, Điểm cuối Debug & Lộ GraphQL Introspection",
+      "Tích hợp API bên thứ ba & Bảo vệ khóa bí mật",
+      "Chống tấn công dò mật khẩu & Credential Stuffing",
+      "Độ phức tạp Token phiên & Thu hồi an toàn",
+      "Chính sách mật khẩu & Kiểm soát độ phức tạp",
+      "Chống liệt kê tài khoản & Tấn công định thời",
+      "Xác thực đa yếu tố & Chống leo thang đặc quyền",
+      "Kiểm tra thư viện mã nguồn mở có lỗ hổng CVE",
+      "Quét lỗ hổng Container Base Image",
+      "Sinh & Theo dõi danh mục thành phần phần mềm (SBOM)",
+      "Phát hiện khóa bí mật & API Key cứng trong mã nguồn",
+      "Kiểm toán môi trường thực thi hết vòng đời (EOL)",
+      "Chính sách tài liệu học tập công khai (PUBLIC_BY_DESIGN)",
+      "Ngăn chặn rò rỉ tệp nhạy cảm (.csv, .env, backups, keys)",
+      "Kiểm tra an toàn Bucket MinIO / S3",
+      "Kiểm soát tải lên tệp tùy ý & Quét mã độc",
+      "Ngăn chặn duyệt đường dẫn & LFI",
+      "Quét cổng chu vi & Đóng dịch vụ không cần thiết",
+      "Phòng chống Zone Transfer & Chiếm đoạt subdomain",
+      "Giảm thiểu thông tin Server & Banner OS",
+      "Kiểm định Tường lửa, WAF & Lọc lưu lượng egress",
+      "Cấu hình TLS/SSL & Bộ mã hóa mật mã",
+      "Tiêu đề bảo mật HTTP (HSTS, CSP, X-Frame-Options)",
+      "Phòng chống tấn công Cross-Site Scripting (XSS)",
+      "Bảo vệ chống Cross-Site Request Forgery (CSRF)",
+      "Kiểm soát SQL Injection & Truy vấn tham số hóa",
+      "Phòng thủ SSRF & Giới hạn egress",
+      "Đánh giá lỗ hổng chuyển hướng hở (Open Redirect)",
+      "Xử lý lỗi & Chống rò rỉ stack trace",
+      "Xác thực chính sách CORS",
+      "Ngăn chặn duyệt thư mục & Lộ đường dẫn nhạy cảm"
+    ],
+    "alerts": [
+      ""
+    ],
+    "characters": 12488
+  },
+  {
+    "route": "/findings/",
+    "headings": [
+      "TRUNG TÂM LỖ HỔNG & BẰNG CHỨNG PHÁP Y"
+    ],
+    "alerts": [
+      ""
+    ],
+    "characters": 1436
+  },
+  {
+    "route": "/threat-intel/",
+    "headings": [
+      "TRUNG TÂM TÌNH BÁO LỖ HỔNG & CVE",
+      "CVE INTELLIGENCE LOOKUP",
+      "CISA KNOWN EXPLOITED VULNERABILITIES (KEV) CATALOG (0)"
+    ],
+    "alerts": [
+      ""
+    ],
+    "characters": 517
+  },
+  {
+    "route": "/remediation/",
+    "headings": [
+      "THEO DÕI & KHẮC PHỤC LỖ HỔNG"
+    ],
+    "alerts": [
+      ""
+    ],
+    "characters": 1030
+  },
+  {
+    "route": "/detection-rules/",
+    "headings": [
+      "QUẢN LÝ QUY TẮC PHÁT HIỆN"
+    ],
+    "alerts": [
+      ""
+    ],
+    "characters": 240
+  },
+  {
+    "route": "/reports/",
+    "headings": [
+      "Báo cáo có snapshot",
+      "Lịch sử lượt chạy",
+      "TRUNG TÂM BÁO CÁO BẢO MẬT",
+      "Supported Empire Report Types"
+    ],
+    "alerts": [
+      ""
+    ],
+    "characters": 2614
+  },
+  {
+    "route": "/users/",
+    "headings": [
+      "Người dùng và quyền",
+      "Audit: ai thực hiện gì, khi nào"
+    ],
+    "alerts": [
+      ""
+    ],
+    "characters": 2912
+  },
+  {
+    "route": "/integrations/",
+    "headings": [
+      "Tích hợp",
+      "Engine phòng thủ và worker",
+      "Nguồn threat intelligence",
+      "Webhook (Discord / Telegram)"
+    ],
+    "alerts": [
+      ""
+    ],
+    "characters": 1039
+  },
+  {
+    "route": "/health/",
+    "headings": [
+      "TRẠNG THÁI SỨC KHỎE HỆ THỐNG"
+    ],
+    "alerts": [
+      ""
+    ],
+    "characters": 1361
+  },
+  {
+    "route": "/settings/",
+    "headings": [
+      "CÀI ĐẶT HỆ THỐNG NOOSFORGE",
+      "Giao diện & Chủ đề"
+    ],
+    "alerts": [
+      ""
+    ],
+    "characters": 771
+  }
+]

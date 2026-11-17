@@ -42,6 +42,7 @@ async def list_findings(
     outcome: Optional[str] = Query(None, pattern="^(new|unchanged|reopened|fixed|unavailable|changed_scope)$"),
     day: Optional[date] = Query(None, description="ICT day for `outcome` (observation-based)"),
     execution_id: Optional[uuid.UUID] = None,
+    observation_group: Optional[str] = Query(None, pattern="^detected$"),
     current_user: User = Depends(require_viewer),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
@@ -53,7 +54,13 @@ async def list_findings(
     if asset_id:
         stmt = stmt.where(NormalizedFinding.asset_id == asset_id)
     if scan_id:
-        stmt = stmt.where(NormalizedFinding.scan_id == scan_id)
+        from backend.app.models.defensive import ExecutionRecord
+        from backend.app.models.lifecycle import FindingObservation
+        detected = select(FindingObservation.finding_id).join(
+            ExecutionRecord, ExecutionRecord.id == FindingObservation.execution_id).where(
+            ExecutionRecord.scan_id == scan_id,
+            FindingObservation.outcome.in_(("new", "unchanged", "reopened")))
+        stmt = stmt.where(or_(NormalizedFinding.scan_id == scan_id, NormalizedFinding.id.in_(detected)))
     if empire_module:
         stmt = stmt.where(NormalizedFinding.empire_module == empire_module.value)
     if exposure_classification:
@@ -71,7 +78,7 @@ async def list_findings(
         stmt = stmt.where(NormalizedFinding.status.in_(open_states))
     elif status_group == "closed":
         stmt = stmt.where(NormalizedFinding.status.not_in(open_states))
-    if outcome or day or execution_id:
+    if outcome or day or execution_id or observation_group:
         from backend.app.api.console import ict_day_bounds
         from backend.app.models.lifecycle import FindingObservation
         obs = select(FindingObservation.finding_id)
@@ -82,6 +89,8 @@ async def list_findings(
             obs = obs.where(FindingObservation.observed_at >= lo, FindingObservation.observed_at < hi)
         if execution_id:
             obs = obs.where(FindingObservation.execution_id == execution_id)
+        if observation_group == "detected":
+            obs = obs.where(FindingObservation.outcome.in_(("new", "unchanged", "reopened")))
         stmt = stmt.where(NormalizedFinding.id.in_(obs))
     if search:
         search_filter = f"%{search}%"
@@ -176,6 +185,8 @@ async def triage_finding(
 
     if triage_req.status == FindingStatus.RESOLVED and finding.status != "RESOLVED":
         raise HTTPException(status_code=409, detail="Resolution requires an equivalent successful engine recheck. Claim FIXED_PENDING_RETEST, then recheck.")
+    if triage_req.status in (FindingStatus.FALSE_POSITIVE, FindingStatus.ACCEPTED_RISK) and len((triage_req.comment or "").strip()) < 8:
+        raise HTTPException(status_code=422, detail="False positives and accepted risks require a reason of at least 8 characters.")
 
     old_status = finding.status
     old_assignee = finding.assignee

@@ -29,3 +29,13 @@ The requested reconciliation covers production, seeded/test and unknown assets;
 existing health endpoints and non-secret credential references; missing
 configuration and required owner inputs. Results and implementation evidence:
 [production reconciliation](audit/EMPIRE_PRODUCTION_RECONCILIATION.md).
+
+## Subsequent manual test identity clarification
+
+The owner later identified the browser login as an Empire-provided student test
+account and requested anonymous/signed-in coverage. That permits the designated
+manual test context; it does not supply an automated target-auth profile,
+secret-store reference, multi-role matrix or safe mutable test records. Do not
+copy browser credentials into the scanner or promote a manual session into
+scheduled authenticated coverage. The 2026-11-17 software acceptance used an
+isolated SBOM lab and performed no new Empire probe.

@@ -628,7 +628,7 @@ export default function DashboardPage() {
             <InteractiveGaugeChart
               value={coverage?.coverage_percentage ?? 0}
               height={160}
-              postureText={`${coverage ? `${coverage.coverage_percentage}%` : '—'} {locale === 'vi' ? 'có lịch sử' : 'with history'}`}
+              postureText={`${coverage ? `${coverage.coverage_percentage}%` : '—'} ${locale === 'vi' ? 'có lịch sử' : 'with history'}`}
               zones={[
                 { max: 100, label: locale === 'vi' ? 'LỊCH SỬ' : 'HISTORY', color: '#94A3B8' },
               ]}

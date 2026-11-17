@@ -1,0 +1,207 @@
+{
+  "appendix_errors_exclusions": [],
+  "changes_vs_previous": {
+    "fixed": [],
+    "new": [],
+    "previous_generated_at": null,
+    "previous_snapshot_id": null,
+    "reopened": [],
+    "unchanged": 0
+  },
+  "correlation_ids": [
+    "b76d8ac721bd4e64b402d42dc0363022"
+  ],
+  "coverage": [
+    {
+      "asset": "SYNTHETIC LAB — supplied SBOM only",
+      "asset_id": "032b0d0d-94ee-4343-aaeb-e8f265500146",
+      "engines": {
+        "public_web": {
+          "coverage_gaps": [],
+          "last_success_at": null,
+          "runs": 0,
+          "succeeded": 0
+        },
+        "sbom": {
+          "coverage_gaps": [],
+          "last_success_at": "2026-11-16T16:52:07.510603+00:00",
+          "runs": 1,
+          "succeeded": 1
+        },
+        "tls_health": {
+          "coverage_gaps": [],
+          "last_success_at": null,
+          "runs": 0,
+          "succeeded": 0
+        }
+      },
+      "module": "STUDENT_MANAGEMENT"
+    }
+  ],
+  "display_timezone": "Asia/Ho_Chi_Minh",
+  "executions": [
+    "baeb6caa-4fd4-4918-a659-c832b694e7dd"
+  ],
+  "executive_summary": {
+    "coverage": {
+      "assets_in_scope": 1,
+      "assets_with_successful_check": 1
+    },
+    "errors_or_exclusions": 0,
+    "fixed_since_previous": 0,
+    "new_since_previous": 0,
+    "open_by_severity": {
+      "CRITICAL": 2,
+      "HIGH": 0,
+      "INFO": 0,
+      "LOW": 0,
+      "MEDIUM": 2
+    },
+    "open_total": 4,
+    "reopened_since_previous": 0
+  },
+  "findings": [
+    {
+      "affected_version": "1.5.0",
+      "asset": "SYNTHETIC LAB — supplied SBOM only",
+      "asset_id": "032b0d0d-94ee-4343-aaeb-e8f265500146",
+      "assignee": null,
+      "component": "pilot-test-alpha",
+      "cve": "CVE-2099-0001",
+      "engine": "sbom",
+      "evidence": {
+        "confidence": "high",
+        "execution_id": "baeb6caa-4fd4-4918-a659-c832b694e7dd",
+        "input_sha256": "7582166fde72243140e2824a40e18d2f468ab106ce8c1b1e5cdeddac948e1b90",
+        "observed_at": "2026-11-16T16:52:07.464111+00:00",
+        "output_sha256": "9ee41bd816e3e4482c4e9a238e20320f70ebb2291401af85dbbf5de3e295e77a",
+        "rule_digest": "b020b79b6f2d3f4c658399a18c4ba9ba6e116c849beed2efd0d1f07385759e29"
+      },
+      "fingerprint": "c2919f2d28667a632cb7c107ffb0dc0a828435ac895beb6acb1205a4af115e04",
+      "first_seen_at": "2026-11-16T16:52:07.510603+00:00",
+      "fixed_version": "2.0.0",
+      "id": "6dff6119-58d5-4bdb-9687-e0bc9c57176f",
+      "last_seen_at": "2026-11-16T16:52:07.510603+00:00",
+      "last_verified_at": "2026-11-16T16:52:07.510603+00:00",
+      "location": "pkg:pypi/pilot-test-alpha",
+      "owner": null,
+      "remediation": "Upgrade pilot-test-alpha to 2.0.0 or later.",
+      "rule": "PILOT-TEST-0001",
+      "severity": "CRITICAL",
+      "status": "NEW",
+      "title": "PILOT-TEST-0001: SYNTHETIC TEST ADVISORY: alpha deserialization flaw (pilot-test-alpha@1.5.0)"
+    },
+    {
+      "affected_version": "2.14.1",
+      "asset": "SYNTHETIC LAB — supplied SBOM only",
+      "asset_id": "032b0d0d-94ee-4343-aaeb-e8f265500146",
+      "assignee": null,
+      "component": "org.pilottest:gamma",
+      "cve": "CVE-2099-0003",
+      "engine": "sbom",
+      "evidence": {
+        "confidence": "high",
+        "execution_id": "baeb6caa-4fd4-4918-a659-c832b694e7dd",
+        "input_sha256": "7582166fde72243140e2824a40e18d2f468ab106ce8c1b1e5cdeddac948e1b90",
+        "observed_at": "2026-11-16T16:52:07.464111+00:00",
+        "output_sha256": "9ee41bd816e3e4482c4e9a238e20320f70ebb2291401af85dbbf5de3e295e77a",
+        "rule_digest": "b020b79b6f2d3f4c658399a18c4ba9ba6e116c849beed2efd0d1f07385759e29"
+      },
+      "fingerprint": "a3441c8f8ef3c5914ee5d302e4f05b38a8738f5b288e77f62bae4c085ceb48bd",
+      "first_seen_at": "2026-11-16T16:52:07.510603+00:00",
+      "fixed_version": "2.15.0",
+      "id": "69c472e9-69f6-43ac-af22-e98df3b14994",
+      "last_seen_at": "2026-11-16T16:52:07.510603+00:00",
+      "last_verified_at": "2026-11-16T16:52:07.510603+00:00",
+      "location": "pkg:maven/org.pilottest/gamma",
+      "owner": null,
+      "remediation": "Upgrade org.pilottest:gamma to 2.15.0 or later.",
+      "rule": "PILOT-TEST-0003",
+      "severity": "CRITICAL",
+      "status": "NEW",
+      "title": "PILOT-TEST-0003: SYNTHETIC TEST ADVISORY: gamma lookup injection (org.pilottest:gamma@2.14.1)"
+    },
+    {
+      "affected_version": "1.4.1",
+      "asset": "SYNTHETIC LAB — supplied SBOM only",
+      "asset_id": "032b0d0d-94ee-4343-aaeb-e8f265500146",
+      "assignee": null,
+      "component": "@pilot-test/beta",
+      "cve": null,
+      "engine": "sbom",
+      "evidence": {
+        "confidence": "high",
+        "execution_id": "baeb6caa-4fd4-4918-a659-c832b694e7dd",
+        "input_sha256": "7582166fde72243140e2824a40e18d2f468ab106ce8c1b1e5cdeddac948e1b90",
+        "observed_at": "2026-11-16T16:52:07.464111+00:00",
+        "output_sha256": "9ee41bd816e3e4482c4e9a238e20320f70ebb2291401af85dbbf5de3e295e77a",
+        "rule_digest": "b020b79b6f2d3f4c658399a18c4ba9ba6e116c849beed2efd0d1f07385759e29"
+      },
+      "fingerprint": "a7be167eb435ecb67be7ba5922e33b0892a0e50eaa65bbe9170aa38e12a5e3ae",
+      "first_seen_at": "2026-11-16T16:52:07.510603+00:00",
+      "fixed_version": "1.4.2",
+      "id": "6b76f316-bd1a-4476-8e39-47291d665a32",
+      "last_seen_at": "2026-11-16T16:52:07.510603+00:00",
+      "last_verified_at": "2026-11-16T16:52:07.510603+00:00",
+      "location": "pkg:npm/%40pilot-test/beta",
+      "owner": null,
+      "remediation": "Upgrade @pilot-test/beta to 1.4.2 or later.",
+      "rule": "PILOT-TEST-0002",
+      "severity": "MEDIUM",
+      "status": "NEW",
+      "title": "PILOT-TEST-0002: SYNTHETIC TEST ADVISORY: beta prototype pollution (@pilot-test/beta@1.4.1)"
+    },
+    {
+      "affected_version": "0.9.1",
+      "asset": "SYNTHETIC LAB — supplied SBOM only",
+      "asset_id": "032b0d0d-94ee-4343-aaeb-e8f265500146",
+      "assignee": null,
+      "component": "pilot-test-delta",
+      "cve": null,
+      "engine": "sbom",
+      "evidence": {
+        "confidence": "high",
+        "execution_id": "baeb6caa-4fd4-4918-a659-c832b694e7dd",
+        "input_sha256": "7582166fde72243140e2824a40e18d2f468ab106ce8c1b1e5cdeddac948e1b90",
+        "observed_at": "2026-11-16T16:52:07.464111+00:00",
+        "output_sha256": "9ee41bd816e3e4482c4e9a238e20320f70ebb2291401af85dbbf5de3e295e77a",
+        "rule_digest": "b020b79b6f2d3f4c658399a18c4ba9ba6e116c849beed2efd0d1f07385759e29"
+      },
+      "fingerprint": "e9642019651abc804751c1d1ae091aea6788ecc4eacadd588aded6d0ecfeb253",
+      "first_seen_at": "2026-11-16T16:52:07.510603+00:00",
+      "fixed_version": null,
+      "id": "96643a61-0120-42a9-8ce2-4ba15b7bf6fb",
+      "last_seen_at": "2026-11-16T16:52:07.510603+00:00",
+      "last_verified_at": "2026-11-16T16:52:07.510603+00:00",
+      "location": "pkg:pypi/pilot-test-delta",
+      "owner": null,
+      "remediation": "No fixed version published; mitigate or replace the component.",
+      "rule": "PILOT-TEST-0004",
+      "severity": "MEDIUM",
+      "status": "NEW",
+      "title": "PILOT-TEST-0004: SYNTHETIC TEST ADVISORY: delta single bad release (pilot-test-delta@0.9.1)"
+    }
+  ],
+  "generated_at_local": "2026-11-17 14:13:57 ICT",
+  "generated_at_utc": "2026-11-17T07:13:57.081723+00:00",
+  "generated_by": "0f0f0f0f-0000-4000-8000-000000000001",
+  "redaction": "Query strings, bearer tokens, secrets, cookies and e-mail addresses are removed; response bodies and learner data are never stored.",
+  "scope": {
+    "asset_ids": [
+      "032b0d0d-94ee-4343-aaeb-e8f265500146"
+    ],
+    "assets": [
+      {
+        "id": "032b0d0d-94ee-4343-aaeb-e8f265500146",
+        "module": "STUDENT_MANAGEMENT",
+        "name": "SYNTHETIC LAB — supplied SBOM only"
+      }
+    ],
+    "batch_id": "e828fede-7c51-40e5-9c09-68048df6c17b",
+    "kind": "run",
+    "window_days": null,
+    "window_from_utc": null
+  },
+  "template_version": "noospire-pilot-report/1.1",
+  "title": "SYNTHETIC LAB acceptance — not Empire evidence"
+}

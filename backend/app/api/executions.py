@@ -18,7 +18,7 @@ from urllib.parse import urlsplit
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.deps import get_current_active_user, load_scope, require_owner
@@ -185,11 +185,13 @@ async def import_advisory_snapshot(
     db: AsyncSession = Depends(get_db),
 ) -> Any:
     body = await request.body()
+    if len(body) > settings.MAX_ARTIFACT_BYTES:
+        raise HTTPException(status_code=413, detail="Advisory snapshot exceeds the configured upload limit")
     try:
         records = parse_snapshot(body)
-    except AdvisoryFormatError as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
-    idx = AdvisoryIndex.build(records)
+        idx = AdvisoryIndex.build(records)
+    except (AdvisoryFormatError, TypeError, ValueError, AttributeError):
+        raise HTTPException(status_code=422, detail="Snapshot is not compatible with the OSV parser/index")
     existing = (await db.execute(select(AdvisorySnapshot).where(AdvisorySnapshot.digest == idx.digest))).scalars().first()
     if existing is None:
         d = storage_root() / "advisories"
@@ -202,14 +204,59 @@ async def import_advisory_snapshot(
                                     imported_by=str(current_user.id))
         db.add(existing)
     if activate:
-        for s in (await db.execute(select(AdvisorySnapshot).where(AdvisorySnapshot.is_active == True))).scalars():  # noqa
-            s.is_active = False
-        existing.is_active = True
+        await db.flush()
+        await _validate_stored_snapshot(existing)
+        # A single write selects the active version; concurrent activations cannot
+        # leave two active rows. Preserve every imported version and old output.
+        await db.execute(update(AdvisorySnapshot).values(is_active=AdvisorySnapshot.id == existing.id))
     _audit(db, current_user, "ADVISORY_SNAPSHOT_IMPORT",
            f"digest={idx.digest} records={idx.record_count} source={source} version={version_label} active={activate}",
            request)
     await db.commit()
+    await db.refresh(existing)
     return _snapshot_out(existing)
+
+
+async def _validate_stored_snapshot(snapshot: AdvisorySnapshot) -> None:
+    path = Path(snapshot.storage_path).resolve()
+    if not path.is_relative_to(storage_root()) or not path.is_file():
+        raise HTTPException(status_code=409, detail="Snapshot file is missing or outside managed storage")
+    if path.stat().st_size > settings.MAX_ARTIFACT_BYTES:
+        raise HTTPException(status_code=413, detail="Snapshot exceeds the configured upload limit")
+    try:
+        index = AdvisoryIndex.build(parse_snapshot(path.read_bytes()))
+    except (OSError, AdvisoryFormatError, ValueError, TypeError, AttributeError):
+        raise HTTPException(status_code=409, detail="Stored snapshot is not compatible with the OSV parser/index")
+    if index.digest != snapshot.digest:
+        raise HTTPException(status_code=409, detail="Snapshot integrity check failed; active rules were not changed")
+    if index.record_count == 0 or not index.by_pkg:
+        raise HTTPException(status_code=409, detail="An empty/non-evaluable snapshot cannot be activated")
+
+
+class SnapshotActivation(BaseModel):
+    active: bool
+    reason: str = Field(..., min_length=8, max_length=500)
+
+
+@router.put("/threat-intel/advisory-snapshots/{snapshot_id}/activation")
+async def activate_advisory_snapshot(snapshot_id: uuid.UUID, payload: SnapshotActivation, request: Request,
+                                     current_user: User = Depends(require_owner),
+                                     db: AsyncSession = Depends(get_db)) -> Any:
+    snapshot = await db.get(AdvisorySnapshot, snapshot_id)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="Snapshot not found")
+    if payload.active:
+        await _validate_stored_snapshot(snapshot)
+        await db.execute(update(AdvisorySnapshot).values(is_active=AdvisorySnapshot.id == snapshot.id))
+    else:
+        snapshot.is_active = False
+    from backend.app.api.findings import redact_secrets
+    _audit(db, current_user, "ADVISORY_SNAPSHOT_ACTIVATION",
+           json.dumps({"digest": snapshot.digest, "active": payload.active,
+                       "reason": redact_secrets(payload.reason)}), request)
+    await db.commit()
+    await db.refresh(snapshot)
+    return _snapshot_out(snapshot)
 
 
 def _snapshot_out(s: AdvisorySnapshot) -> dict:
@@ -418,9 +465,13 @@ async def get_execution(execution_id: uuid.UUID, current_user: User = Depends(ge
                                  .order_by(ExecutionAttempt.attempt_no))).scalars().all()
     finding_ids = []
     if rec.status == "succeeded":
-        rows = (await db.execute(select(NormalizedFinding.id, NormalizedFinding.evidence).where(
-            NormalizedFinding.asset_id == rec.asset_id, NormalizedFinding.scanner_engine == rec.engine_id))).all()
-        finding_ids = [str(fid) for fid, ev in rows if (ev or {}).get("execution_id") == str(rec.id)]
+        from backend.app.models.lifecycle import FindingObservation
+        rows = (await db.execute(select(FindingObservation.finding_id).where(
+            FindingObservation.execution_id == rec.id,
+            FindingObservation.asset_id == rec.asset_id,
+            FindingObservation.outcome.in_(("new", "unchanged", "reopened")))
+            .order_by(FindingObservation.finding_id))).scalars().all()
+        finding_ids = [str(fid) for fid in rows]
     out = _record_out(rec)
     out["attempts"] = [{
         "attempt_id": str(a.id), "attempt_no": a.attempt_no, "fencing_token": a.fencing_token,
@@ -447,6 +498,24 @@ async def download_execution_output(execution_id: uuid.UUID, current_user: User 
         raise HTTPException(status_code=409, detail="Stored output does not match its recorded hash")
     return FileResponse(p, media_type="application/json", filename=f"execution-{rec.id}.json",
                         headers={"Cache-Control": "private, no-store", "X-Content-SHA256": rec.output_sha256})
+
+
+@router.get("/executions/{execution_id}/logs")
+async def execution_logs(execution_id: uuid.UUID, page: int = Query(1, ge=1),
+                         size: int = Query(50, ge=1, le=200),
+                         current_user: User = Depends(get_current_active_user),
+                         db: AsyncSession = Depends(get_db)) -> Any:
+    """Defensive workers persist ScanEvent, not the legacy ScanLog table."""
+    from backend.app.models.event import ScanEvent
+    from backend.app.engines.runner import redact
+    rec = await _scoped_record(db, current_user, execution_id)
+    stmt = select(ScanEvent).where(ScanEvent.scan_id == rec.scan_id)
+    total = (await db.execute(select(func.count()).select_from(stmt.subquery()))).scalar() or 0
+    rows = (await db.execute(stmt.order_by(ScanEvent.id).offset((page - 1) * size).limit(size))).scalars().all()
+    return {"items": [{"id": e.id, "timestamp": _iso(e.occurred_at), "level": e.level,
+                       "message": redact(e.message), "source": e.engine or "worker",
+                       "event_type": e.event_type} for e in rows],
+            "total": total, "page": page, "size": size, "pages": max(1, (total + size - 1) // size)}
 
 
 @router.post("/executions/{execution_id}/cancel")

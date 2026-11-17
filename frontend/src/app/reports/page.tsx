@@ -21,16 +21,16 @@ import { useI18n } from '@/lib/i18n';
 import { HistoryPanel, SnapshotsPanel } from '@/components/console/HistoryAndSnapshots';
 
 const REPORT_TEMPLATES = [
-  { key: 'daily_summary', label: 'Daily Security Summary', desc: 'Summary of daily automated scans, target availability, and newly discovered risks.' },
-  { key: 'weekly_report', label: 'Weekly Assessment Report', desc: 'Weekly roll-up of posture changes, fixed vulnerabilities, and remediation velocity.' },
-  { key: 'monthly_posture', label: 'Monthly Security Posture Report', desc: 'Executive metrics, trend analytics, risk score evolution, and compliance tracking.' },
-  { key: 'technical', label: 'Full Technical Assessment Report', desc: 'Complete in-depth audit report with verbatim forensic evidence, cURL, and CVE/CWE data.' },
-  { key: 'executive', label: 'Executive Leadership Summary', desc: 'High-level business risk overview, CVSS score distribution, and priority remediation roadmap.' },
-  { key: 'student_management', label: 'Student Management Security Report', desc: 'Detailed audit of Better-Auth identity, student account access controls, and BOLA/IDOR findings.' },
-  { key: 'materials_exposure', label: 'Learning Materials & /media Exposure Report', desc: 'Approved Public Exposure baseline audit, MinIO bucket listing checks, and file leaks.' },
-  { key: 'api_security', label: 'API Security Assessment Report', desc: 'OWASP API Top 10 evaluation covering API Gateway routes, BFLA, and CORS policies.' },
-  { key: 'infrastructure', label: 'Infrastructure & Server Report', desc: 'TLS/SSL posture, port exposures, reverse proxy configs, and container configurations.' },
-  { key: 'remediation', label: 'Vulnerability Remediation Report', desc: 'Lifecycle audit tracking OPEN, IN REMEDIATION, FIXED, and REOPENED findings.' },
+  { key: 'daily_summary', label: 'Daily Security Summary', desc: 'Stored findings and execution coverage for the selected scope; no new assessment is performed.' },
+  { key: 'weekly_report', label: 'Weekly Assessment Report', desc: 'A report label for stored results; select the relevant scope and review recorded observation dates.' },
+  { key: 'monthly_posture', label: 'Monthly Security Posture Report', desc: 'Stored severity/lifecycle metrics. This label does not certify monthly coverage or compliance.' },
+  { key: 'technical', label: 'Full Technical Assessment Report', desc: 'Recorded findings and available evidence only; missing captures and coverage gaps remain explicit.' },
+  { key: 'executive', label: 'Executive Leadership Summary', desc: 'Stored severity distribution and remediation guidance; unknown scores remain unrated.' },
+  { key: 'student_management', label: 'Student Management Security Report', desc: 'Stored findings for your chosen student-management scope; no identity/BOLA tests are implied by this label.' },
+  { key: 'materials_exposure', label: 'Learning Materials & /media Exposure Report', desc: 'Stored material-related findings; approved public media is not automatically a vulnerability.' },
+  { key: 'api_security', label: 'API Security Assessment Report', desc: 'Stored API-related findings; this label does not establish OWASP API Top 10 coverage.' },
+  { key: 'infrastructure', label: 'Infrastructure & Server Report', desc: 'Stored infrastructure results; port scans and container analysis require separately integrated controls.' },
+  { key: 'remediation', label: 'Vulnerability Remediation Report', desc: 'Stored lifecycle states; FIXED_PENDING_RETEST is a claim, RESOLVED requires equivalent engine verification.' },
 ];
 
 export default function ReportsPage() {
@@ -313,7 +313,7 @@ export default function ReportsPage() {
                   onChange={(e) => setFormAssetId(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl bg-cyber-950 border border-white/10 text-white focus:outline-none focus:border-cyan-500"
                 >
-                  <option value="">All Empire Targets (Comprehensive Portfolio)</option>
+                  <option value="">All stored targets (coverage limits apply)</option>
                   {assets.map((a) => (
                     <option key={a.id} value={a.id}>
                       {a.name} ({a.target_locator})

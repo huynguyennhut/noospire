@@ -66,6 +66,7 @@ export interface Asset {
   verification_status: VerificationStatus;
   /** Server-authoritative inventory admission, independent of historical VERIFIED flags. */
   assessment_eligible?: boolean;
+  artifact_analysis_eligible?: boolean;
   assessment_block_reason?: string | null;
   inventory_classification?: string;
   inventory_provenance?: string | null;

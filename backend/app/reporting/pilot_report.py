@@ -7,7 +7,7 @@ after findings change status later.
 Sections: executive summary, scope, coverage, changes vs the previous report for the same scope,
 findings with redacted evidence, remediation with owner/assignee, appendix of errors/exclusions.
 The customer-approved Empire template has not been supplied: this is internal template
-`noospire-pilot-report/1.0`; reconciliation items are listed in the M5 handover.
+`noospire-pilot-report/1.2`; reconciliation items are listed in the M5 handover.
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ from backend.app.models.defensive import ExecutionRecord
 from backend.app.models.finding import NormalizedFinding
 from backend.app.models.lifecycle import FindingObservation, ReportSnapshot
 
-TEMPLATE_VERSION = "noospire-pilot-report/1.1"
+TEMPLATE_VERSION = "noospire-pilot-report/1.2"
 TZ = zoneinfo.ZoneInfo(settings.DEFAULT_TIMEZONE)
 OPEN_STATES = OPEN_FINDING_STATES
 SEV_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "INFO": 4}
@@ -71,8 +71,13 @@ async def build_snapshot(db, *, title: str, assets: List[Asset], batch_id: Optio
         exec_stmt.where(ExecutionRecord.queued_at >= since)
     execs = (await db.execute(exec_stmt.order_by(ExecutionRecord.queued_at))).scalars().all()
 
-    findings = (await db.execute(select(NormalizedFinding).where(NormalizedFinding.asset_id.in_(ids))
-                                 .order_by(NormalizedFinding.severity, NormalizedFinding.title))).scalars().all()
+    finding_stmt = select(NormalizedFinding).where(NormalizedFinding.asset_id.in_(ids))
+    if batch_id:
+        # A run report must not pull unrelated findings from the same asset.
+        # Observation links survive deduplication and later changes to scan_id.
+        finding_stmt = finding_stmt.where(NormalizedFinding.id.in_(select(FindingObservation.finding_id).where(
+            FindingObservation.batch_id == batch_id)))
+    findings = (await db.execute(finding_stmt.order_by(NormalizedFinding.severity, NormalizedFinding.title))).scalars().all()
     findings = [f for f in findings if f.status in OPEN_STATES or (f.last_seen_at and
                                                                     _utc(f.last_seen_at) >= since)]
     last_verified: Dict[uuid.UUID, datetime] = {}
@@ -223,24 +228,27 @@ def render_pdf(snap: dict, snap_sha: str) -> bytes:
     import io
 
     from reportlab.lib.pagesizes import A4
-    from reportlab.pdfgen import canvas
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 
     font, unicode_ok = _font()
     txt = (lambda s: s) if unicode_ok else _ascii
     buf = io.BytesIO()
-    c = canvas.Canvas(buf, pagesize=A4, invariant=1)  # invariant: no timestamps/IDs in PDF bytes
-    c.setTitle(_ascii(snap["title"]))
-    w, h = A4
-    y = h - 50
+    document = SimpleDocTemplate(buf, pagesize=A4, leftMargin=40, rightMargin=40,
+                                 topMargin=45, bottomMargin=45, invariant=1,
+                                 title=txt(snap["title"]), author="NOOSFORGE")
+    story = []
 
     def line(s: str, size: int = 9, gap: int = 13):
-        nonlocal y
-        if y < 60:
-            c.showPage()
-            y = h - 50
-        c.setFont(font, size)
-        c.drawString(40, y, txt(s)[:150])
-        y -= gap
+        if not s:
+            story.append(Spacer(1, gap / 2))
+            return
+        # Wrap by measured page width, including long hashes/locators. Escaping
+        # keeps user titles and advisory text literal rather than PDF markup.
+        style = ParagraphStyle("report-line", fontName=font, fontSize=size,
+                               leading=max(size + 3, gap), spaceAfter=4,
+                               splitLongWords=True, allowWidows=0, allowOrphans=0)
+        story.append(Paragraph(html.escape(txt(str(s))), style))
 
     es = snap["executive_summary"]
     line(snap["title"], 15, 22)
@@ -254,21 +262,45 @@ def render_pdf(snap: dict, snap_sha: str) -> bytes:
     line(f"Coverage: {es['coverage']['assets_with_successful_check']}/{es['coverage']['assets_in_scope']} assets · "
          f"errors/exclusions {es['errors_or_exclusions']}")
     line("")
+    line("Scope & coverage limitations", 12, 16)
+    scope = snap["scope"]
+    line(f"{scope['kind']} · batch {scope.get('batch_id') or '-'} · window {scope.get('window_days') or '-'} days")
+    line("Successful checks cover only the recorded engine/input. SBOM analysis does not probe the target. "
+         "A public_web success covers one unauthenticated HEAD response and TLS handshake, not application health "
+         "or a comprehensive security assessment.")
+    for entry in snap["coverage"]:
+        line(f"{entry['asset']} · {entry['module']}")
+        for engine, coverage in entry["engines"].items():
+            line(f"  {engine}: {coverage['succeeded']}/{coverage['runs']} successful · last success "
+                 f"{_ict(coverage['last_success_at']) or '-'}", 8, 11)
+            for coverage_gap in coverage.get("coverage_gaps", []):
+                line(f"  Coverage gap: {coverage_gap}", 8, 11)
+    line("")
     line("Findings & remediation", 12, 16)
     for f in snap["findings"]:
         line(f"[{f['severity']}] {f['status']} · {f['title']}")
         line(f"   {f['asset']} · {f['location']} · last verified {_ict(f['last_verified_at']) or '-'}", 8, 11)
-        line(f"   Fix: {(f['remediation'] or '-')[:130]} · owner {f['owner'] or '-'} / {f['assignee'] or '-'}", 8, 11)
+        line(f"   Fix: {f['remediation'] or '-'} · owner {f['owner'] or '-'} / {f['assignee'] or '-'}", 8, 11)
+        evidence = f.get("evidence") or {}
+        for key in ("execution_id", "input_sha256", "output_sha256", "rule_digest"):
+            if evidence.get(key):
+                line(f"   {key}: {evidence[key]}", 7, 10)
     line("")
     line("Appendix: errors & exclusions", 12, 16)
     for a in snap["appendix_errors_exclusions"]:
-        line(f"{a['asset']} · {a['engine']} · {a['status']} · {a['reason'][:100]}", 8, 11)
+        line(f"{a['asset']} · {a['engine']} · {a['status']} · {a['reason']}", 8, 11)
     line("")
-    line(snap["redaction"][:150], 7, 10)
+    line(snap["redaction"], 7, 10)
     if not unicode_ok:
         line("Note: no Unicode font found on this server; Vietnamese diacritics are transliterated in the PDF "
              "(HTML/JSON keep them).", 7, 10)
-    c.save()
+    def page_number(canvas, doc):
+        canvas.saveState()
+        canvas.setFont(font, 7)
+        canvas.drawRightString(A4[0] - 40, 25, f"NOOSFORGE · {doc.page}")
+        canvas.restoreState()
+
+    document.build(story, onFirstPage=page_number, onLaterPages=page_number)
     return buf.getvalue()
 
 

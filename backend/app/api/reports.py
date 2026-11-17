@@ -95,6 +95,22 @@ async def generate_report(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Estate-wide reports are restricted to the owner.")
     if req.asset_id is not None:
         scope.require(req.asset_id, "REPORT")
+    from backend.app.models.scan import Scan
+    if req.scan_id:
+        scan = await db.get(Scan, req.scan_id)
+        if scan is None:
+            raise HTTPException(status_code=404, detail="Scan not found")
+        scope.require(scan.asset_id, "REPORT")
+        if req.asset_id and req.asset_id != scan.asset_id:
+            raise HTTPException(status_code=422, detail="Selected scan does not belong to the selected asset")
+        if req.batch_id and req.batch_id != scan.batch_id:
+            raise HTTPException(status_code=422, detail="Selected scan does not belong to the selected batch")
+    if req.batch_id:
+        batch_assets = (await db.execute(select(Scan.asset_id).where(Scan.batch_id == req.batch_id))).scalars().all()
+        if not batch_assets:
+            raise HTTPException(status_code=404, detail="Batch has no scans")
+        for aid in set(batch_assets):
+            scope.require(aid, "REPORT")
     generator = ReportGenerator()
     report = await generator.generate(
         db=db,
