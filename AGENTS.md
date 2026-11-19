@@ -13,8 +13,11 @@ Historical audit reports and `.agent/MEMORY.md` are context, not current proof.
   Standing authorization covers ordinary non-destructive in-scope assessment; do not
   repeatedly request permission. Scope inventory and technical target authentication
   are separate prerequisites. Never infer ownership from DNS suffixes or seeded flags.
-  Current [inventory guidance](docs/EMPIRE_INVENTORY_GUIDANCE.md) designates the root
-  only; automated checks remain unauthenticated until approved profiles exist.
+  The owner's 2026-11-17 clarification authorizes assessment of all Empire-owned
+  infrastructure. The root is the currently identified/configured target, not an
+  authorization limit. Follow [inventory guidance](docs/EMPIRE_INVENTORY_GUIDANCE.md)
+  to identify additional real assets; do not promote fixtures or third-party hosts.
+  Automated checks remain unauthenticated until provisioned profiles exist.
 - Assess public and authenticated surfaces when provisioned test identities and safe
   test records exist. Use designated secret references; never invent/guess credentials
   or forward NOOSFORGE platform credentials. Missing identity/capability is a named

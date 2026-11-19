@@ -353,7 +353,7 @@ async def launch_execution(
     await db.flush()
     scan = Scan(asset_id=asset.id, batch_id=batch.id, engine=payload.engine, profile="BASELINE", status="QUEUED",
                 target_locator=f"engine://{payload.engine}/{asset.id}",
-                timeout_seconds=min(payload.timeout_seconds, 12) if payload.engine == "public_web" else payload.timeout_seconds,
+                timeout_seconds=min(payload.timeout_seconds, planned_item.timeout_seconds) if payload.engine == "public_web" else payload.timeout_seconds,
                 max_retries=0 if payload.engine == "public_web" else 3,
                 available_at=datetime.fromisoformat(planned_item.available_at) if planned_item and planned_item.available_at else None)
     db.add(scan)

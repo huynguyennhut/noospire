@@ -28,7 +28,7 @@ from backend.app.models.scope import AssetAssessmentScope
 
 ENGINE_ID = "public_web"
 DRIVER_NAME = "noospire-public-web-native"
-DRIVER_VERSION = "1.0.0"
+DRIVER_VERSION = "1.1.0"
 MAX_HEADER_BYTES = 16384
 MAX_SECONDS = 12.0
 RULESET = {"id": "public-web-head-baseline", "version": "2026.11.15", "rules": {
@@ -69,17 +69,24 @@ def normalized_url(raw: str) -> str:
         raise PolicyDenied("INVALID_PUBLIC_URL", "Use an exact HTTPS URL without credentials, query or fragment.")
 
 
-def approval_policy(asset, url: str, actor_id: str) -> dict:
+def approval_policy(asset, url: str, actor_id: str, *, mode: str = "head") -> dict:
     """Pure approval builder for the owner API; it does not assert ownership or invent scope."""
     canonical = normalized_url(url)
     if canonical != normalized_url(asset.target_locator):
         raise PolicyDenied("TARGET_MISMATCH", "Public monitoring must use this asset's exact target URL.")
+    if mode not in ("head", "surface"):
+        raise PolicyDenied("INVALID_PUBLIC_MODE", "Choose head or surface mode.")
     import uuid
-    return {"url": canonical, "approved_by": actor_id, "approved_at": datetime.now(timezone.utc).isoformat(),
+    policy = {"url": canonical, "approved_by": actor_id, "approved_at": datetime.now(timezone.utc).isoformat(),
             "revision": uuid.uuid4().hex, "method": "HEAD", "max_requests": 1, "allow_private": False}
+    if mode == "surface":
+        from backend.app.engines import web_surface
+        policy.update(mode="surface", method="GET", max_requests=web_surface.MAX_REQUESTS,
+                      byte_budget=web_surface.MAX_BYTES)
+    return policy
 
 
-def scope_allows(scope, url: str, now: datetime) -> bool:
+def scope_allows(scope, url: str, now: datetime, *, max_requests: int = 1, byte_budget: int = MAX_HEADER_BYTES + 2048) -> bool:
     parts, origin = urlsplit(url), urlsplit(scope.exact_origin)
     if (origin.scheme != "https" or origin.hostname != parts.hostname
             or (origin.port or 443) != (parts.port or 443) or (parts.port or 443) not in (scope.ports or [])):
@@ -94,7 +101,7 @@ def scope_allows(scope, url: str, now: datetime) -> bool:
         return False
     if min(scope.rate_limit_rps or 0, scope.concurrency_limit or 0, scope.max_requests_per_run or 0) < 1:
         return False
-    if (scope.byte_budget or 0) < MAX_HEADER_BYTES + 2048:
+    if (scope.byte_budget or 0) < byte_budget or (scope.max_requests_per_run or 0) < max_requests:
         return False
     # Windows are UTC HH:MM; an incomplete/invalid window fails closed.
     if scope.time_window_start or scope.time_window_end:
@@ -124,6 +131,14 @@ async def validate_approval(db, asset, revision: str | None = None) -> dict:
         raise PolicyDenied("TARGET_MISMATCH", "The asset URL changed after monitoring approval.")
     if revision is not None and revision != policy["revision"]:
         raise PolicyDenied("SCOPE_CHANGED", "Public monitoring approval changed after this job was queued.")
+    mode = policy.get("mode", "head")
+    if mode not in ("head", "surface"):
+        raise PolicyDenied("INVALID_PUBLIC_MODE", "Unknown configured public web mode.")
+    if mode == "surface":
+        from backend.app.engines import web_surface
+        if (policy.get("method") != "GET" or policy.get("max_requests") != web_surface.MAX_REQUESTS
+                or policy.get("byte_budget") != web_surface.MAX_BYTES):
+            raise PolicyDenied("INVALID_SURFACE_BUDGET", "Surface mode requires the bounded request/byte policy.")
     now = datetime.now(timezone.utc)
     try:
         approved_at = datetime.fromisoformat(policy["approved_at"])
@@ -142,7 +157,9 @@ async def validate_approval(db, asset, revision: str | None = None) -> dict:
     if ((cap and getattr(cap, "emergency_stop_active", False))
             or (Path(settings.STORAGE_DIR) / "production-emergency-stop").exists()):
         raise PolicyDenied("GLOBAL_STOP_ACTIVE", "Global emergency stop is active.")
-    grant = next((s for s in scopes if scope_allows(s, url, now)), None)
+    grant = next((s for s in scopes if scope_allows(s, url, now,
+        max_requests=policy.get("max_requests", 1),
+        byte_budget=policy.get("byte_budget", MAX_HEADER_BYTES+2048))), None)
     if not grant:
         raise PolicyDenied("PUBLIC_SCOPE_NOT_APPROVED", "No active scope permits this exact URL and public_web check budget.")
     return {**policy, "url": url, "scope_id": str(grant.id)}

@@ -1,7 +1,7 @@
 """Reconcile an existing SQLite inventory without app startup, writes or network.
 
-Use --database explicitly. Only the separately owner-designated primary target is
-in the current production scope; legacy flags/documents never expand that scope.
+Use --database explicitly. All Empire-owned infrastructure is authorized, while
+the root is the currently identified target. Legacy flags never establish ownership.
 """
 from __future__ import annotations
 

@@ -1,7 +1,32 @@
-# Empire inventory guidance — 2026-11-15
+# Empire inventory guidance — updated 2026-11-17
+
+## Current owner authorization
+
+The owner explicitly clarified on 2026-11-17: assessment is authorized across
+**all infrastructure owned by Empire**, not only `https://empire.edu.vn/`.
+This supersedes the earlier root-only designation as an authorization boundary.
+Ordinary non-destructive assessment and scheduled scans do not require permission
+again for each asset or execution once the real target and technical scope are
+established. Authorization is not the current missing prerequisite.
+
+The root is the currently identified and configured live target. It does not
+represent the complete authorized estate. Discover and reconcile additional
+assets using owner/developer inventory, genuine ownership evidence, deployment
+configuration and other attributable sources. A domain suffix, DNS result or old
+seeded VERIFIED row alone does not establish that a host belongs to Empire.
+Do not automatically probe all historical seed/test records, shared hosting IPs
+or third-party services. Private infrastructure may be assessed through an
+appropriately scoped connector/network configuration; do not globally disable
+SSRF or metadata protection to reach it.
+
+Technical credentials, safe test records, scanner integration and target
+reachability remain separate from the permission to assess. Missing credentials
+are coverage gaps; they are not a request to authorize assessment again.
+
+## Earlier inventory facts (2026-11-15)
 
 Source: the owner's reply to the production-inventory clarification in this chat.
-This guidance narrows current execution configuration alongside the adopted
+These facts describe the then-current execution configuration alongside the adopted
 [operations brief](EMPIRE_PRODUCTION_AUTHORIZED_OPERATIONS.md). It is not a new
 request for authorization.
 

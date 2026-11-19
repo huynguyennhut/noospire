@@ -1,5 +1,7 @@
 # NOOSFORGE / Noospire
 
+> Đây là repo dùng cho dự án của Empire Team x Noosforge Lab - hiện tại đang được triển khai và thử nghiệm. Back-end hiện tại đang được track phụ thuộc vào Nuclei, ZAP và Trivy. Hạ tầng được bảo mật hoàn toàn để phục vụ cho quá trình thực hiện và nghiên cứu. Các check list pentest đang được triển khai đúng mục đích.
+
 Self-hosted security intelligence, asset monitoring and evidence-based remediation.
 The console uses Obsidian Dark / Warm Light Liquid Glass and Vietnamese/English.
 

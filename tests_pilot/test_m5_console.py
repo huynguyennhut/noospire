@@ -294,7 +294,7 @@ async def test_report_snapshot_is_reproducible_and_scoped(client, owner):
     r = await client.post(f"{API}/report-snapshots", headers=h, json={"title": "Báo cáo pilot-test", "batch_id": run["batch_id"]})
     assert r.status_code == 201, r.text
     rep = r.json()
-    assert rep["template_version"] == "noospire-pilot-report/1.2" and rep["finding_count"] == 4
+    assert rep["template_version"] == "noospire-pilot-report/1.3" and rep["finding_count"] == 4
     assert rep["execution_ids"] == [run["executions"][0]["execution_id"]] and rep["correlation_ids"]
 
     got = {}
@@ -306,7 +306,7 @@ async def test_report_snapshot_is_reproducible_and_scoped(client, owner):
         got[fmt] = d.content
     assert got["pdf"].startswith(b"%PDF")
     html = got["html"].decode()
-    assert rep["snapshot_sha256"] in html and "noospire-pilot-report/1.2" in html and "Asia/Ho_Chi_Minh" in html
+    assert rep["snapshot_sha256"] in html and "noospire-pilot-report/1.3" in html and "Asia/Ho_Chi_Minh" in html
     doc = __import__("json").loads(got["json"])
     assert set(doc) >= {"executive_summary", "scope", "coverage", "changes_vs_previous", "findings",
                         "appendix_errors_exclusions", "redaction"}

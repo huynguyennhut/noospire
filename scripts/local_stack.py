@@ -191,6 +191,9 @@ def start(args):
 
 def supervise(args):
     prepare_dir()
+    pid_file = STATE_DIR / "supervisor.pid"
+    pid_file.write_text(str(os.getpid()) + "\n")
+    pid_file.chmod(0o600)
     state = {"token": args.token, "supervisor": identity(os.getpid()), "phase": "starting",
              "started_at": timestamp(), "jobs_enabled": args.enable_jobs,
              "defensive_only": True, "api_port": args.api_port, "gateway_port": args.port,
@@ -268,6 +271,8 @@ def supervise(args):
             state["phase"] = "stopped"
         state["stopped_at"] = timestamp()
         write_state(state)
+        if pid_file.read_text().strip() == str(os.getpid()):
+            pid_file.unlink()
     return 1 if state["phase"] == "failed" else 0
 
 

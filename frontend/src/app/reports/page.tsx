@@ -118,7 +118,7 @@ export default function ReportsPage() {
   return (
     <div className="space-y-6">
       {/* Milestone 5: snapshot reports (template version + checksum) and run history */}
-      <SnapshotsPanel />
+      <React.Suspense fallback={null}><SnapshotsPanel /></React.Suspense>
       <React.Suspense fallback={null}>
         <HistoryPanel />
       </React.Suspense>

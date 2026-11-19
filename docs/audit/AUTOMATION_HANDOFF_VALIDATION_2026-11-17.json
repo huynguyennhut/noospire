@@ -1,0 +1,294 @@
+{
+  "recorded_at": "2026-11-17T08:32:27.635028+00:00",
+  "scope": "Local automation implementation and expressly requested exact Empire-root operation",
+  "checks": {
+    "pilot": {
+      "preset": "pilot",
+      "checks": [
+        {
+          "command": [
+            "/home/nhut-nguyen/noospire/.venv/bin/python",
+            "-m",
+            "pytest",
+            "-p",
+            "pytest_asyncio.plugin",
+            "-q",
+            "tests_pilot",
+            "--deselect=tests_pilot/test_m7_round_a.py::test_legacy_database_upgrades_in_place_and_backup_restores",
+            "--junitxml=/tmp/noosforge-pilot-kcr2p7hy/pytest.xml"
+          ],
+          "cwd": "/home/nhut-nguyen/noospire",
+          "exit_code": 0,
+          "status": "PASS",
+          "seconds": 250.53,
+          "log": "/tmp/noosforge-pilot-kcr2p7hy/01.log"
+        }
+      ]
+    },
+    "devops": {
+      "preset": "devops",
+      "checks": [
+        {
+          "command": [
+            "/home/nhut-nguyen/noospire/.venv/bin/python",
+            "-m",
+            "pytest",
+            "-p",
+            "pytest_asyncio.plugin",
+            "-q",
+            "tests_pilot/test_m1_gateway.py",
+            "tests_pilot/test_m3_restart.py",
+            "tests_pilot/test_m6_smoke.py",
+            "tests_pilot/test_local_operations.py",
+            "--deselect=tests_pilot/test_m7_round_a.py::test_legacy_database_upgrades_in_place_and_backup_restores",
+            "--junitxml=/tmp/noosforge-devops-q90kecvf/pytest.xml"
+          ],
+          "cwd": "/home/nhut-nguyen/noospire",
+          "exit_code": 0,
+          "status": "PASS",
+          "seconds": 79.66,
+          "log": "/tmp/noosforge-devops-q90kecvf/01.log"
+        },
+        {
+          "command": [
+            "/home/nhut-nguyen/noospire/.venv/bin/python",
+            "-m",
+            "backend.app.cli",
+            "init-db"
+          ],
+          "cwd": "/home/nhut-nguyen/noospire",
+          "exit_code": 0,
+          "status": "PASS",
+          "seconds": 2.09,
+          "log": "/tmp/noosforge-devops-q90kecvf/02.log"
+        },
+        {
+          "command": [
+            "/home/nhut-nguyen/noospire/.venv/bin/python",
+            "-m",
+            "backend.app.cli",
+            "backup",
+            "--out",
+            "/tmp/noosforge-devops-q90kecvf/backup.db"
+          ],
+          "cwd": "/home/nhut-nguyen/noospire",
+          "exit_code": 0,
+          "status": "PASS",
+          "seconds": 0.36,
+          "log": "/tmp/noosforge-devops-q90kecvf/03.log"
+        },
+        {
+          "command": [
+            "/home/nhut-nguyen/noospire/.venv/bin/python",
+            "-m",
+            "backend.app.cli",
+            "restore-check",
+            "--backup",
+            "/tmp/noosforge-devops-q90kecvf/backup.db"
+          ],
+          "cwd": "/home/nhut-nguyen/noospire",
+          "exit_code": 0,
+          "status": "PASS",
+          "seconds": 0.35,
+          "log": "/tmp/noosforge-devops-q90kecvf/04.log"
+        }
+      ]
+    },
+    "frontend": {
+      "preset": "frontend",
+      "checks": [
+        {
+          "command": [
+            "npm",
+            "run",
+            "test:lifecycle"
+          ],
+          "cwd": "/home/nhut-nguyen/noospire/frontend",
+          "exit_code": 0,
+          "status": "PASS",
+          "seconds": 2.3,
+          "log": "/tmp/noosforge-frontend-pba57wej/01.log"
+        },
+        {
+          "command": [
+            "npm",
+            "run",
+            "typecheck"
+          ],
+          "cwd": "/home/nhut-nguyen/noospire/frontend",
+          "exit_code": 0,
+          "status": "PASS",
+          "seconds": 5.04,
+          "log": "/tmp/noosforge-frontend-pba57wej/02.log"
+        },
+        {
+          "command": [
+            "npm",
+            "run",
+            "lint"
+          ],
+          "cwd": "/home/nhut-nguyen/noospire/frontend",
+          "exit_code": 0,
+          "status": "PASS",
+          "seconds": 3.35,
+          "log": "/tmp/noosforge-frontend-pba57wej/03.log"
+        },
+        {
+          "command": [
+            "npm",
+            "run",
+            "build"
+          ],
+          "cwd": "/home/nhut-nguyen/noospire/frontend",
+          "exit_code": 0,
+          "status": "PASS",
+          "seconds": 44.16,
+          "log": "/tmp/noosforge-frontend-pba57wej/04.log"
+        }
+      ]
+    },
+    "contract": {
+      "preset": "contract",
+      "checks": [
+        {
+          "command": [
+            "/home/nhut-nguyen/noospire/.venv/bin/python",
+            "scripts/contract_audit.py"
+          ],
+          "cwd": "/home/nhut-nguyen/noospire",
+          "exit_code": 0,
+          "status": "PASS",
+          "seconds": 6.86,
+          "log": "/tmp/noosforge-contract-myd2gyc2/01.log"
+        }
+      ]
+    }
+  },
+  "pilot_summary": {
+    "passed": 259,
+    "deselected": 1,
+    "warnings": 261
+  },
+  "devops_summary": {
+    "passed": 25,
+    "warnings": 25
+  },
+  "frontend_tests_passed": 18,
+  "clock_test": "12 simulated two-hour slots, actual isolated queue and SBOM runner; not a real 24-hour soak",
+  "real_customer_execution_ids": [
+    "47a2fec1-6b5b-44d7-bc01-2685c2be8ce4",
+    "a3450a9c-821b-4e16-9e98-72e86d0b35d6"
+  ],
+  "report_id": "25cdd2c8-ef2b-46b6-a486-af7902b80942",
+  "runtime": {
+    "phase": "ready",
+    "supervisor_running": true,
+    "jobs_enabled": true,
+    "defensive_only": true,
+    "console_url": "http://localhost:8080/",
+    "api_ready": true,
+    "gateway_ready": true,
+    "services": {
+      "api": {
+        "pid": 28080,
+        "created": 1794904210.17,
+        "log": "/home/nhut-nguyen/noospire/storage/local-stack/api.log",
+        "restarts": 0,
+        "running": true
+      },
+      "gateway": {
+        "pid": 28084,
+        "created": 1794904212.97,
+        "log": "/home/nhut-nguyen/noospire/storage/local-stack/gateway.log",
+        "restarts": 0,
+        "running": true
+      },
+      "worker": {
+        "pid": 28085,
+        "created": 1794904213.38,
+        "log": "/home/nhut-nguyen/noospire/storage/local-stack/worker.log",
+        "restarts": 0,
+        "running": true
+      },
+      "scheduler": {
+        "pid": 28086,
+        "created": 1794904213.38,
+        "log": "/home/nhut-nguyen/noospire/storage/local-stack/scheduler.log",
+        "restarts": 0,
+        "running": true
+      }
+    },
+    "log_directory": "/home/nhut-nguyen/noospire/storage/local-stack",
+    "error": null
+  },
+  "unit": {
+    "name": "noospire-local.service",
+    "active": "active",
+    "enabled": "enabled",
+    "controlled_restart_verified": true,
+    "linger": false
+  },
+  "browser": {
+    "themes": [
+      "obsidian-dark",
+      "warm-light"
+    ],
+    "languages": [
+      "vi",
+      "en"
+    ],
+    "mobile_viewport": {
+      "width": 390,
+      "height": 844,
+      "document_client_width": 385,
+      "document_scroll_width": 385,
+      "panel_client_width": 351,
+      "panel_scroll_width": 351
+    },
+    "warning_error_console_entries": 0,
+    "scan_center_button_enabled": true,
+    "plan_preview_optional": true
+  },
+  "source_sha256": {
+    "backend/app/api/operations.py": "6a9a29b924abfe793354f921ba80d4e8d2180be3ad051796317651171e8140a4",
+    "backend/app/core/monitor_scheduler.py": "42384a33543ab3389f7f4bd9298c91b4b8b4aab7c359719eb589869100b19af6",
+    "backend/app/models/operations.py": "e39e0dc98df90e02b8e76086bb0cd918b222183b0e16fa932f87b4ce6a2874a8",
+    "frontend/src/app/dashboard/page.tsx": "4adb2b0c27b78bdd442ca1898eef53fb3caf19f5584985b35673674d3d06f37b",
+    "frontend/src/app/scans/page.tsx": "0815c1cf0855ee2b8e2c536c6ca2a767724573f87b39bea0db1548c89ab927de",
+    "frontend/src/components/console/MonitoringReadinessPanel.tsx": "81dfb73f4ee76993d4b1963049154737d8fb9b3a9fcf3536af69b6a95c31e0f7",
+    "frontend/src/lib/api.ts": "2944f9b866e685cdd322e7440f3489a12a0e29a8779e20e6cad60ad20157c396",
+    "scripts/local_stack.py": "4ebd14512fc54f901c8f8421c224d769f78517405532d6272e3968ae43c38a72",
+    "tests_pilot/test_automation_controls.py": "f21ddd05587d2eb72f5b53881ecbd2e0468f22bc4862a4879f736f291a4c108b",
+    "tests_pilot/test_local_operations.py": "6ddbbdd0d7e72dcf584a88c5e545873487bd13ccb58aadb646dd4fce7fc20403",
+    "frontend/tests/automation-status.test.cjs": "ca332a5b141cc4a137e3ca2adcf824d7418a231be03d52bf1f1b405089dce2b9",
+    "deploy/noospire-local.service": "4e1f52b04654604fac031299662048ea37e1775d71fec2c87c6e8a688780e562"
+  },
+  "screenshots_sha256": {
+    "docs/audit/screenshots/automation-handoff-2026-11-17/main-dark-desktop.png": "5a8af8a2b3f365f58db1f54f97e0014135908e4c2a075e70dd4544b47dd5e1da",
+    "docs/audit/screenshots/automation-handoff-2026-11-17/main-dark-mobile.png": "221355bf5b42b6e2de35b7cd5fc5594574c87161dabac242b2f732937182cac7",
+    "docs/audit/screenshots/automation-handoff-2026-11-17/main-scan-center.png": "822518834882f7ac77e767c8998dc6be0d9864a03326f3b7bddcd3b4d5d69c9c",
+    "docs/audit/screenshots/automation-handoff-2026-11-17/main-warm-desktop.png": "1fc90038982040d0648530f47efad0e0a6b15be56b054f8f2326dc27975a6de8",
+    "docs/audit/screenshots/automation-handoff-2026-11-17/main-warm-mobile.png": "66871e2a770983d386001b6e3de4b958ddf6adadd56cab4b903784de6a260c42",
+    "docs/audit/screenshots/automation-handoff-2026-11-17/real-run-report.png": "57161b109add14d9eab0deaa630fbefc808a9c92f5c3f8e36b5866c838383dd7"
+  },
+  "limitations": [
+    "Only exact-root unauthenticated TLS+HEAD baseline observed; six checks",
+    "No native Nuclei/ZAP/Trivy binaries or Docker available",
+    "Authenticated API/business logic/server/mobile/cloud coverage not implemented by this monitor",
+    "Host must remain awake; lingering is disabled"
+  ],
+  "commit_or_push_performed": false,
+  "report_files_sha256": {
+    "report.html": "a4520b3c29994e6adc83f095153536ca73d4b45dece5f4f89ce8aa9f1beae10e",
+    "report.json": "f93136c866fc1c3b69fdcb84f6916cc7ea98fef2a50bd09fbe6441fa87ee9c78",
+    "report.pdf": "d83764dee558d09e76a834e469fb16b0e0e7ad2454ebb9432e687e1e5312fa04",
+    "report.snapshot.json": "849e6486d50c0eca65bb38c299adcb70d8da4ec33a4ac2247188bf734095671a"
+  },
+  "pdf_validation": {
+    "pages": 1,
+    "poppler_rendered": true,
+    "visually_inspected": true,
+    "clipping_or_overlap_observed": false
+  },
+  "lab_8082_stopped": true
+}

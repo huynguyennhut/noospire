@@ -1,5 +1,7 @@
 'use client';
 
+import Link from 'next/link';
+
 import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { FileCode, Lock, RefreshCw, Upload, XCircle, Download, ExternalLink, ShieldAlert } from 'lucide-react';
@@ -240,6 +242,7 @@ function EngineRunsInner() {
             </span>
           </div>
           <p>{Object.entries(run.by_status).map(([k, v]) => `${k}: ${v}`).join(' · ') || (vi ? 'Không có execution nào trong phạm vi của bạn.' : 'No executions in your scope.')}</p>
+          {run.finished && run.executions.length > 0 && <Link className="assessment-link" href={`/reports/?batch=${run.batch_id}`}>{vi ? 'Xuất báo cáo lượt này' : 'Export this run report'} →</Link>}
           {run.plan_summary && Object.keys(run.plan_summary.reasons || {}).length > 0 && (
             <p className="text-[var(--text-secondary)]">{vi ? 'Lý do bỏ qua/dời' : 'Skip/defer reasons'}: {Object.entries(run.plan_summary.reasons).map(([k, v]) => `${k} × ${v}`).join(' · ')}</p>
           )}
@@ -281,7 +284,7 @@ function EngineRunsInner() {
             </label>
           ) : (
             <p className="text-xs text-[var(--text-secondary)]">
-              {engine === 'public_web' ? (vi ? 'Một HEAD trên URL được duyệt: TLS, HTTP, header bảo mật và thuộc tính cookie. Không theo redirect, không gửi credential; không thay thế đánh giá toàn diện.' : 'One HEAD on the approved URL: TLS, HTTP, security headers and cookie attributes. No redirects or credentials; this does not replace comprehensive assessment.') : vi ? 'Chỉ đo endpoint health mà owner đã duyệt trên asset này (một GET, không theo redirect, không gửi credential).'
+              {engine === 'public_web' ? (vi ? 'Theo chế độ của mục tiêu: HEAD hoặc duyệt tối đa 12 trang cùng origin, có giới hạn byte, tốc độ và dừng khẩn. Nuclei thụ động chạy trong sandbox khi có sẵn. Không gửi credential hoặc submit form; giới hạn thực tế nằm trong kết quả.' : 'Uses the target’s HEAD or bounded same-origin traversal mode (up to 12 pages), with byte/rate budgets and emergency stop. Passive Nuclei runs in a sandbox when available. No credentials or form submissions; actual limits are recorded in results.') : vi ? 'Chỉ đo endpoint health mà owner đã duyệt trên asset này (một GET, không theo redirect, không gửi credential).'
                   : 'Measures only the owner-approved health endpoint of this asset (one GET, no redirects, no credentials).'}
             </p>
           )}

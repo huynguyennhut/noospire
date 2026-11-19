@@ -50,6 +50,14 @@ class MonitorSchedule(Base):
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=_now, nullable=False)
 
 
+class SchedulerHeartbeat(Base):
+    """Last completed scheduler tick, distinct from worker/process liveness."""
+    __tablename__ = "scheduler_heartbeats"
+
+    scheduler_id: Mapped[str] = mapped_column(String(200), primary_key=True)
+    last_tick_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False)
+
+
 class ScheduleSlot(Base):
     """One claimed slot of a schedule. The unique (schedule_id, slot_at) constraint is the
     leader election: whichever scheduler commits the row first owns that slot."""

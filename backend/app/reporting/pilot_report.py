@@ -33,7 +33,7 @@ from backend.app.models.defensive import ExecutionRecord
 from backend.app.models.finding import NormalizedFinding
 from backend.app.models.lifecycle import FindingObservation, ReportSnapshot
 
-TEMPLATE_VERSION = "noospire-pilot-report/1.2"
+TEMPLATE_VERSION = "noospire-pilot-report/1.3"
 TZ = zoneinfo.ZoneInfo(settings.DEFAULT_TIMEZONE)
 OPEN_STATES = OPEN_FINDING_STATES
 SEV_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "INFO": 4}
@@ -132,6 +132,11 @@ async def build_snapshot(db, *, title: str, assets: List[Asset], batch_id: Optio
             ok = [e for e in mine if e.engine_id == eng and e.status == "succeeded"]
             per_engine[eng] = {"runs": sum(1 for e in mine if e.engine_id == eng), "succeeded": len(ok),
                                "last_success_at": _iso(max((e.finished_at for e in ok), default=None)),
+                               "measurement_types": sorted({(e.summary or {}).get("measurement_type") for e in mine
+                                   if e.engine_id == eng and (e.summary or {}).get("measurement_type")}),
+                               "requests_sent": sum((e.summary or {}).get("requests_sent", 0) for e in mine if e.engine_id == eng),
+                               "pages_observed": sum(len((e.summary or {}).get("pages", [])) for e in mine if e.engine_id == eng),
+                               "checks_evaluated": sum((e.summary or {}).get("checks_evaluated", 0) for e in mine if e.engine_id == eng),
                                "coverage_gaps": sorted({gap for e in mine if e.engine_id == eng
                                                         for gap in (e.summary or {}).get("coverage_gaps", [])})}
         coverage.append({"asset": a.name, "asset_id": str(a.id), "module": a.empire_module, "engines": per_engine})
@@ -178,7 +183,8 @@ def render_html(snap: dict, snap_sha: str) -> bytes:
         f"<td><code>{e((f['evidence'].get('output_sha256') or '')[:16])}</code></td></tr>" for f in snap["findings"])
     cov = "".join(
         f"<tr><td>{e(c['asset'])}</td><td>{e(c['module'] or '')}</td>"
-        + "".join(f"<td>{v['succeeded']}/{v['runs']} · {e(_ict(v['last_success_at']) or '—')}</td>"
+        + "".join(f"<td>{v['succeeded']}/{v['runs']} · {e(_ict(v['last_success_at']) or '—')}"
+                  + (f"<br>{e(', '.join(v.get('measurement_types', [])))} · requests {v.get('requests_sent', 0)} · pages {v.get('pages_observed', 0)} · checks {v.get('checks_evaluated', 0)}" if v.get('measurement_types') else "") + "</td>"
                   for v in c["engines"].values()) + "</tr>" for c in snap["coverage"])
     app = "".join(f"<tr><td>{e(a['asset'] or '')}</td><td>{e(a['engine'])}</td><td>{e(a['status'])}</td>"
                   f"<td>{e(a['reason'])}</td></tr>" for a in snap["appendix_errors_exclusions"])
@@ -196,7 +202,7 @@ td,th{{border:1px solid #ccc;padding:4px;vertical-align:top}}th{{background:#f3f
 {(' · kỳ trước/previous ' + e(_ict(ch['previous_generated_at']) or '')) if ch['previous_snapshot_id'] else ' · chưa có kỳ trước/no previous report'}</p>
 <p>Coverage: {es['coverage']['assets_with_successful_check']}/{es['coverage']['assets_in_scope']} asset có kiểm tra thành công · lỗi/loại trừ: {es['errors_or_exclusions']}</p>
 <h2>Phạm vi / Scope</h2><p>{e(snap['scope']['kind'])} · {len(snap['scope']['assets'])} asset · {('batch ' + e(str(snap['scope']['batch_id']))) if snap['scope']['batch_id'] else ('window ' + e(str(snap['scope']['window_days'])) + ' ngày/days')}</p>
-<h2>Coverage</h2><p>A successful public_web run covers one unauthenticated HEAD response and TLS handshake; it does not establish application health or a complete security assessment.</p><table><tr><th>Asset</th><th>Module</th><th>sbom</th><th>tls_health</th><th>public_web</th></tr>{cov}</table>
+<h2>Coverage</h2><p>public_web records either a single HEAD or bounded same-origin GET traversal as identified below. Passive native Nuclei checks, when available, analyze captured headers in a network-isolated sandbox. Neither mode establishes application health, authenticated coverage or a complete security assessment.</p><table><tr><th>Asset</th><th>Module</th><th>sbom</th><th>tls_health</th><th>public_web</th></tr>{cov}</table>
 <h2>Findings &amp; remediation</h2><table><tr><th>Severity</th><th>Status</th><th>Title</th><th>Asset</th><th>Location</th><th>Last verified</th><th>Remediation</th><th>Owner / assignee</th><th>Evidence sha</th></tr>{rows}</table>
 <h2>Phụ lục lỗi / loại trừ · Appendix: errors &amp; exclusions</h2><table><tr><th>Asset</th><th>Engine</th><th>Status</th><th>Reason</th></tr>{app}</table>
 <footer>{e(snap['redaction'])}<br>Template {e(snap['template_version'])} · snapshot sha256 {snap_sha} · executions {len(snap['executions'])} · correlation {e(', '.join(snap['correlation_ids'])[:300])}</footer>
@@ -266,13 +272,17 @@ def render_pdf(snap: dict, snap_sha: str) -> bytes:
     scope = snap["scope"]
     line(f"{scope['kind']} · batch {scope.get('batch_id') or '-'} · window {scope.get('window_days') or '-'} days")
     line("Successful checks cover only the recorded engine/input. SBOM analysis does not probe the target. "
-         "A public_web success covers one unauthenticated HEAD response and TLS handshake, not application health "
-         "or a comprehensive security assessment.")
+         "public_web records single HEAD or bounded same-origin GET traversal. Passive native Nuclei analyzes "
+         "captured headers in an isolated network namespace when available. These do not establish application health, "
+         "authenticated coverage or comprehensive security assessment.")
     for entry in snap["coverage"]:
         line(f"{entry['asset']} · {entry['module']}")
         for engine, coverage in entry["engines"].items():
             line(f"  {engine}: {coverage['succeeded']}/{coverage['runs']} successful · last success "
                  f"{_ict(coverage['last_success_at']) or '-'}", 8, 11)
+            if coverage.get("measurement_types"):
+                line(f"  Modes: {', '.join(coverage['measurement_types'])}; requests {coverage.get('requests_sent', 0)}; "
+                     f"pages {coverage.get('pages_observed', 0)}; checks {coverage.get('checks_evaluated', 0)}", 8, 11)
             for coverage_gap in coverage.get("coverage_gaps", []):
                 line(f"  Coverage gap: {coverage_gap}", 8, 11)
     line("")

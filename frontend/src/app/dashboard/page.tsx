@@ -274,7 +274,7 @@ export default function DashboardPage() {
             className="border-cyan-500/40 text-cyan-300 hover:bg-cyan-950/40 hover:text-cyan-200 shadow-[0_0_15px_rgba(6,182,212,0.15)]"
             icon={<Zap className="w-3.5 h-3.5 text-cyan-400" />}
           >
-            <span>{locale === 'vi' ? 'Xem kế hoạch đánh giá' : 'Preview assessment'}</span>
+            <span>{locale === 'vi' ? 'Chọn kiểm tra' : 'Choose checks'}</span>
           </Button>
 
           {/* Quick Action: Launch Assessment */}

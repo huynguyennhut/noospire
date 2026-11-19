@@ -174,7 +174,7 @@ export interface MonitorSchedule {
   last_run_at: string | null;
   last_batch_id: string | null;
   last_full_success_at: string | null;
-  latest_result: { status: string | null; at: string | null; batch_id: string | null };
+  latest_result: { status: string | null; at: string | null; batch_id: string | null; report_id?: string | null };
   running: boolean;
   pending_catchup: boolean;
   missed_slots: number;
@@ -234,6 +234,7 @@ export interface OperationsOverview {
   feed: { source: string; version: string; digest: string; imported_at: string; age_hours: number } | null;
   workers: Array<{ worker_id: string; last_seen_at: string; age_seconds: number; state: string; active_executions: number; throttle_reason: string | null }>;
   workers_online: number;
+  scheduler: { online: boolean; last_tick_at: string | null; age_seconds: number | null };
   capacity: CapacityInfo;
 }
 

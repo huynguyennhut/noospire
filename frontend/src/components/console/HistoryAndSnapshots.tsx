@@ -162,16 +162,18 @@ export function HistoryPanel() {
 }
 
 export function SnapshotsPanel() {
+  const params = useSearchParams();
+  const uuid = (value: string | null) => value && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value) ? value : '';
   const { locale } = useI18n();
   const vi = locale === 'vi';
   const L = (a: string, b: string) => (vi ? a : b);
   const [items, setItems] = useState<ReportSnapshotInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [title, setTitle] = useState('');
-  const [batchId, setBatchId] = useState('');
+  const [batchId, setBatchId] = useState(uuid(params.get('batch')));
   const [assetIds, setAssetIds] = useState('');
   const [busy, setBusy] = useState(false);
-  const [view, setView] = useState<string | null>(null);
+  const [view, setView] = useState<string | null>(uuid(params.get('report')) || null);
 
   const load = useCallback(async () => {
     try {

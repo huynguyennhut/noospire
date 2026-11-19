@@ -1,0 +1,149 @@
+{
+  "recorded_at_utc": "2026-11-17T08:08:54.074580+00:00",
+  "scope": "Reported dashboard summary block; isolated local lab; no customer assessment",
+  "base_commit": "e908597",
+  "delivery": "local working tree, no new commit or push",
+  "frontend": {
+    "preset": "frontend",
+    "checks": [
+      {
+        "command": [
+          "npm",
+          "run",
+          "test:lifecycle"
+        ],
+        "cwd": "/home/nhut-nguyen/noospire/frontend",
+        "exit_code": 0,
+        "status": "PASS",
+        "seconds": 3.59,
+        "log": "/tmp/noosforge-frontend-d2hc7_uk/01.log"
+      },
+      {
+        "command": [
+          "npm",
+          "run",
+          "typecheck"
+        ],
+        "cwd": "/home/nhut-nguyen/noospire/frontend",
+        "exit_code": 0,
+        "status": "PASS",
+        "seconds": 6.41,
+        "log": "/tmp/noosforge-frontend-d2hc7_uk/02.log"
+      },
+      {
+        "command": [
+          "npm",
+          "run",
+          "lint"
+        ],
+        "cwd": "/home/nhut-nguyen/noospire/frontend",
+        "exit_code": 0,
+        "status": "PASS",
+        "seconds": 3.29,
+        "log": "/tmp/noosforge-frontend-d2hc7_uk/03.log"
+      },
+      {
+        "command": [
+          "npm",
+          "run",
+          "build"
+        ],
+        "cwd": "/home/nhut-nguyen/noospire/frontend",
+        "exit_code": 0,
+        "status": "PASS",
+        "seconds": 61.77,
+        "log": "/tmp/noosforge-frontend-d2hc7_uk/04.log"
+      }
+    ]
+  },
+  "frontend_unit_tests": 16,
+  "contract": {
+    "preset": "contract",
+    "checks": [
+      {
+        "command": [
+          "/home/nhut-nguyen/noospire/.venv/bin/python",
+          "scripts/contract_audit.py"
+        ],
+        "cwd": "/home/nhut-nguyen/noospire",
+        "exit_code": 0,
+        "status": "PASS",
+        "seconds": 5.04,
+        "log": "/tmp/noosforge-contract-n565gugi/01.log"
+      }
+    ]
+  },
+  "browser": {
+    "origin": "http://127.0.0.1:8082",
+    "themes": [
+      "obsidian-dark",
+      "warm"
+    ],
+    "languages": [
+      "vi",
+      "en"
+    ],
+    "worker_online": 1,
+    "inactive_worker_records": 3,
+    "health_unknown": 1,
+    "health_reason": "no approved endpoint configured; left unknown",
+    "new_bar": {
+      "url": "/findings/?outcome=new&day=2026-11-16",
+      "matching": 4
+    },
+    "fixed_bar": {
+      "url": "/findings/?outcome=fixed&day=2026-11-17",
+      "matching": 3
+    },
+    "refresh": "server as_of updated via UI",
+    "mobile_viewport": [
+      390,
+      844
+    ],
+    "mobile_document_width_scrollWidth": [
+      385,
+      385
+    ],
+    "mobile_panel_width_scrollWidth": [
+      353,
+      353
+    ],
+    "viewport_reset": true,
+    "console_warning_error_entries": []
+  },
+  "checks_not_run": [
+    "No new full backend pilot run for this frontend-only change",
+    "No customer scan or external deployment",
+    "Not an all-screen accessibility certification"
+  ],
+  "files": [
+    {
+      "path": "frontend/src/components/console/DashboardSummaryPanel.tsx",
+      "sha256": "44b220238938e91578e88405b636cf2e000dc461c25fdd78707acd28902c902e"
+    },
+    {
+      "path": "frontend/src/components/console/MonitoringReadinessPanel.tsx",
+      "sha256": "46b7a4ebedbb76c96af6a08e751cef75cd6a771828244544b2c70053be056041"
+    },
+    {
+      "path": "frontend/tests/dashboard-summary.test.cjs",
+      "sha256": "18de5f83d9c8ae7658df21eacfea7bea2ad1f025122d0b660f0c04c98b5db0dd"
+    },
+    {
+      "path": "docs/audit/screenshots/dashboard-ui-2026-11-17/dark-desktop.jpg",
+      "sha256": "5231a5a029d6b0b2022a8579aac8a5409f8fff1b140ff57920c799a078264697"
+    },
+    {
+      "path": "docs/audit/screenshots/dashboard-ui-2026-11-17/dark-mobile-chart.jpg",
+      "sha256": "649d604699a63fbfcd3341a59a609a36b1cd5d89a874df4a995327369f1a27f3"
+    },
+    {
+      "path": "docs/audit/screenshots/dashboard-ui-2026-11-17/warm-desktop.jpg",
+      "sha256": "a0e3405b3b7602d9f701060cbe4d63d88da265a8ef9e4c17d664c851fe9d48f6"
+    },
+    {
+      "path": "docs/audit/screenshots/dashboard-ui-2026-11-17/warm-mobile-cards.jpg",
+      "sha256": "cf2290bd9a683442396def7181daf37c7f758f99fc80cda44a0210e8b4b33b64"
+    }
+  ]
+}
