@@ -24,6 +24,7 @@ function ScanCenter() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const submitting = useRef(false);
   const request = useRef<RunRequestBody | null>(null);
   const intentKey = useRef<string | null>(null);
 
@@ -57,14 +58,18 @@ function ScanCenter() {
   }
 
   async function launch() {
-    if (busy || !request.current || !intentKey.current || !plan) return;
+    if (submitting.current || targetIds.length === 0) return;
+    submitting.current = true;
+    // Preview is optional. The API always validates the current scope itself.
+    request.current ??= { selection: { kind: 'assets', asset_ids: targetIds }, engines: ['public_web'], profile: 'light' };
+    intentKey.current ??= crypto.randomUUID();
     setBusy(true); setError(null);
     try {
       const result = await api.launchRun(request.current, intentKey.current);
-      setAccepted(result); setPlan(null); intentKey.current = null;
+      setAccepted(result); setPlan(null); intentKey.current = null; request.current = null;
       void load();
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
-    finally { setBusy(false); }
+    finally { submitting.current = false; setBusy(false); }
   }
 
   return (
@@ -89,7 +94,7 @@ function ScanCenter() {
 
       <section className="assessment-panel space-y-4">
         <div className="flex items-center gap-2"><Eye className="w-5 h-5" /><h2 className="font-semibold">{L('Quan sát web công khai', 'Public web observation')}</h2><code className="text-xs text-[var(--text-secondary)]">public_web</code></div>
-        <p className="text-sm text-[var(--text-secondary)]">{L('Kiểm tra TLS, phản hồi HTTP, header bảo mật và thuộc tính cookie trên URL được duyệt. Không theo chuyển hướng, không gửi thông tin đăng nhập. Mỗi lượt ghi lại giới hạn phạm vi.', 'Checks TLS, HTTP response, security headers and cookie attributes on the approved URL. No redirects or credentials. Every run records its coverage limits.')}</p>
+        <p className="text-sm text-[var(--text-secondary)]">{L('Chạy chế độ đã cấu hình trên từng mục tiêu: HEAD tại URL cụ thể hoặc duyệt tối đa 12 trang công khai cùng origin, 1 request/giây và 1 MB/lượt. Kiểm tra TLS, header, cookie và chính sách HTML; Nuclei thụ động phân tích header trong sandbox khi có sẵn. Không gửi credential, không theo redirect hoặc submit form.', 'Uses each target’s configured mode: single-URL HEAD or up to 12 same-origin public pages, 1 request/second and 1 MB/run. Checks TLS, headers, cookies and HTML policies; passive Nuclei analyzes headers in a sandbox when available. No credentials, redirects or form submissions.')}</p>
         <label className="block text-sm font-medium" htmlFor="scan-target">{L('Phạm vi đánh giá', 'Assessment scope')}</label>
         <select id="scan-target" value={selection} disabled={busy || loading} onChange={(e) => { setSelection(e.target.value); setPlan(null); request.current = null; intentKey.current = null; }} className="assessment-input w-full">
           <option value="eligible">{L('Tất cả mục tiêu đủ điều kiện', 'All eligible targets')} ({eligible.length})</option>
@@ -97,7 +102,7 @@ function ScanCenter() {
         </select>
         {selected && <p className="text-xs text-[var(--text-secondary)] break-all">{selected.target_locator} · {assessmentLabel(selected, vi)}</p>}
         <p className="text-xs text-[var(--text-secondary)]">{L('Các bản ghi mẫu không được đưa vào đánh giá khách hàng. VERIFIED cũ không thay thế nguồn kiểm kê và phạm vi được duyệt.', 'Seeded records are excluded from customer assessments. A historical VERIFIED flag does not replace inventory provenance and approved scope.')}</p>
-        <Button onClick={() => void preview()} loading={busy} disabled={loading || targetIds.length === 0} icon={<Eye className="w-4 h-4" />}>{L('Xem kế hoạch chạy', 'Preview run plan')}</Button>
+        <div className="flex flex-wrap gap-2"><Button onClick={() => void launch()} loading={busy} disabled={loading || targetIds.length === 0 || !!ops?.capacity.emergency_stop_active} icon={<Play className="w-4 h-4" />}>{L('Quét ngay', 'Scan now')}</Button><Button variant="outline" onClick={() => void preview()} disabled={busy || loading || targetIds.length === 0} icon={<Eye className="w-4 h-4" />}>{L('Chi tiết kế hoạch', 'Plan details')}</Button></div>
       </section>
 
       {plan && <section className="assessment-panel space-y-4" aria-live="polite">
@@ -107,7 +112,7 @@ function ScanCenter() {
         <div className="flex gap-2"><Button onClick={() => void launch()} loading={busy} disabled={plan.summary.queue + plan.summary.defer === 0} icon={<Play className="w-4 h-4" />}>{L('Chạy kế hoạch này', 'Run this plan')}</Button><Button onClick={() => setPlan(null)} disabled={busy}>{L('Đóng', 'Close')}</Button></div>
       </section>}
 
-      {accepted && <section className="assessment-panel space-y-2" role="status"><div className="flex gap-2 items-center"><CheckCircle className="w-4 h-4" /><strong>{L('Đã nhận vào hàng đợi', 'Accepted into queue')}</strong></div><p className="text-sm">{L('Đã nhận không có nghĩa là đã quét xong. Theo dõi trạng thái, lần thử và bằng chứng của từng engine.', 'Accepted does not mean completed. Track each engine status, attempts and evidence.')}</p><Link href={`/engine-runs/?run=${accepted.batch_id}`} className="assessment-link">{L('Theo dõi lượt chạy', 'Track run')} →</Link></section>}
+      {accepted && <section className="assessment-panel space-y-2" role="status"><div className="flex gap-2 items-center"><CheckCircle className="w-4 h-4" /><strong>{accepted.executions.length ? L('Đã nhận vào hàng đợi', 'Accepted into queue') : L('Không có kiểm tra nào được xếp hàng', 'No checks queued')}</strong></div><p className="text-sm">{accepted.executions.length ? L('Theo dõi tiến độ, kết quả và log ở lượt chạy bên dưới.', 'Follow progress, results and logs in the run below.') : L('Xem lý do cụ thể trong lượt chạy; chưa có kiểm tra nào được thực hiện.', 'Inspect the specific reasons in the run; no checks were performed.')}</p><Link href={`/engine-runs/?run=${accepted.batch_id}`} className="assessment-link">{L('Theo dõi lượt chạy', 'Track run')} →</Link></section>}
 
       <section className="assessment-panel space-y-3"><h2 className="font-semibold flex gap-2 items-center"><ShieldAlert className="w-4 h-4" />{L('Phạm vi chưa được đánh giá', 'Coverage not yet assessed')}</h2><p className="text-sm text-[var(--text-secondary)]">{L('Phân quyền, tài khoản, logic nghiệp vụ và kiểm thử có đăng nhập cần hồ sơ xác thực và dữ liệu kiểm thử được chỉ định. SBOM cần artifact và advisory; health cần endpoint được duyệt. Các engine ngoài chỉ được dùng sau khi tích hợp và kiểm chứng khả năng thực tế.', 'Authorization, account, business-logic and authenticated checks need designated identities and test records. SBOM needs an artifact and advisory snapshot; health needs an approved endpoint. External engines require validated integrations and capabilities.')}</p><Link href="/engine-runs/" className="text-sm underline">{L('Xem engine, bằng chứng và cấu hình bổ sung', 'Inspect engines, evidence and additional configuration')}</Link></section>
 

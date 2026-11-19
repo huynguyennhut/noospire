@@ -105,3 +105,90 @@ Practical verification uses disposable data and random loopback ports:
 The suite verifies console-only startup, opt-in roles, occupied-port protection,
 worker crash recovery, status/logs/stop, no implicit asset seeding, queue isolation,
 stop enforcement and refusal to create/steal leases outside the atomic claim path.
+
+## Managed local operation (Linux user service)
+
+`deploy/noospire-local.service` runs the same supervisor, API, gateway, worker and
+scheduler with restart on supervisor failure. It expects this checkout at
+`~/noospire`, an existing frontend export and the current application configuration.
+It does not create accounts or change target scope. The supervisor writes its own
+private `storage/local-stack/supervisor.pid` and removes it on clean shutdown.
+
+After verifying the export and taking an online database backup:
+
+```bash
+./run.sh stop
+install -Dm644 deploy/noospire-local.service ~/.config/systemd/user/noospire-local.service
+systemctl --user daemon-reload
+systemctl --user enable --now noospire-local.service
+systemctl --user status noospire-local.service
+./run.sh status
+```
+
+Use `systemctl --user stop noospire-local.service` to stop a managed installation;
+use `disable --now` to undo autostart. Preserve the application DB and evidence.
+The unit's failure restart observes systemd's configured burst limit; persistent
+failures remain visible instead of restarting endlessly.
+
+A user service starts with the user's service manager. Without user lingering it
+is **not** guaranteed to run before login or after the last session ends. Inspect
+`loginctl show-user "$USER" -p Linger`; enabling host-level lingering, preventing
+sleep, or deploying to an always-on server is an explicit host operation separate
+from this local unit. A suspended or powered-off host cannot perform scans.
+
+The dashboard now reports a fresh completed **scheduler tick**, separately from
+worker heartbeats. Enabled schedules without these signals display a warning.
+“Scan now” queues the saved selection/engines directly; plan preview is optional.
+No per-run permission approval is required. Existing scope/egress and emergency
+stop controls still apply. Scheduled and manual executions share the same durable
+planner and worker path.
+
+## Bounded public-surface mode and passive Nuclei (Linux x86-64)
+
+`public_web` retains the original `head` configuration. Its explicit `surface`
+mode performs serial, verified-TLS GETs to discovered same-origin HTML links: at
+most 12 request attempts, one-second spacing, 1 MB of HTTP bytes including framing,
+96 KiB per body and 75 seconds total. Queries, forms, logout/action paths, media,
+static files, private DNS addresses and redirects are excluded. It revalidates
+persisted scope and emergency stops before writing each request. A 429/5xx or
+slow response stops the traversal. Raw HTML and cookies are not stored.
+
+Preview the current root configuration without changing it:
+
+```bash
+.venv/bin/python scripts/configure_empire_monitor.py \
+  --database noospire.db --schedule-id <existing-schedule-id> --mode surface
+```
+
+Adding `--apply` takes an online backup first and changes only the dedicated
+`noosforge:public-monitor` grant for the already proven root origin. It enables
+`/*`, 12 attempts and the 1 MB budget; existing unrelated grants and fixtures remain
+untouched. `--queue-first-run` adds one durable idempotent job. This is local
+monitor configuration under the owner's standing Empire authorization, not an
+external deployment or permission to treat every database row as production.
+
+The optional native subdriver analyzes only sanitized `Server`/`X-Powered-By`
+headers already captured by that GET. Provision it locally with:
+
+```bash
+.venv/bin/python scripts/install_nuclei.py
+```
+
+The installer downloads the pinned official Nuclei 3.11.1 Linux amd64 archive and
+checks its SHA-256. Runtime independently checks the binary and both repository
+header templates. `bubblewrap` must support unprivileged namespaces on this host.
+The process has no network interface or host home/environment mounts, no target
+URL, no body, cookies or credentials; templates and input are read-only. It cannot
+update templates, use Interactsh, execute arbitrary supplied templates or perform
+active CVE checks. Timeout, resource/output bounds and process-tree cancellation
+apply. Missing binary/sandbox or rejected input produces an explicit coverage gap
+and no fabricated negative check. The legacy standalone Nuclei adapter still has
+`NOT_INTEGRATED` status; this bounded passive subdriver does not change that claim.
+This local installer does not provision Docker images or non-amd64 hosts.
+
+Scheduled `public_web` slots now create one frozen JSON/HTML/PDF snapshot on
+finalization, including partial/failed execution evidence when available. The
+dashboard links to it; manual runs offer a report form prefilled with the actual
+batch ID. Two schedulers race through one atomic slot claim before creating the
+snapshot. Report creation failure rolls the finalization back for a later retry.
+Old frozen snapshots retain their original template and hashes.

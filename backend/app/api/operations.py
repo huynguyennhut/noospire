@@ -67,6 +67,7 @@ from backend.app.models.operations import (
     MonitorSchedule,
     RunRequest,
     ScheduleSlot,
+    SchedulerHeartbeat,
 )
 from backend.app.models.scan import Scan, ScanBatch
 from backend.app.models.user import User
@@ -233,6 +234,7 @@ def _check_interval(m: int) -> None:
 
 async def _schedule_out(db: AsyncSession, s: MonitorSchedule, now: datetime) -> dict:
     from backend.app.core.monitor_scheduler import active_work
+    from backend.app.models.lifecycle import ReportSnapshot
     busy = await active_work(db, s.id)
     nxt = _utc(s.next_run_at) or (floor_slot(now, s.interval_minutes) + timedelta(minutes=s.interval_minutes))
     backlog = (await db.execute(select(func.count()).select_from(ExecutionRecord)
@@ -244,6 +246,8 @@ async def _schedule_out(db: AsyncSession, s: MonitorSchedule, now: datetime) -> 
     slots = max(1, min(cs.max_running_executions, s.max_workers, PROFILES[s.profile]["max_workers"] or 999))
     avg = statistics.mean([est[e]["p50"] for e in s.engines]) if s.engines else 1.0
     eta = now + timedelta(seconds=backlog * avg / slots) if backlog else None
+    report_id = (await db.execute(select(ReportSnapshot.id).where(ReportSnapshot.batch_id == s.last_result_batch_id)
+        .order_by(ReportSnapshot.generated_at.desc()).limit(1))).scalar() if s.last_result_batch_id else None
     return {
         "id": str(s.id), "name": s.name, "selection": s.selection, "engines": s.engines, "profile": s.profile,
         "interval_minutes": s.interval_minutes, "max_workers": s.max_workers, "is_active": s.is_active,
@@ -251,7 +255,8 @@ async def _schedule_out(db: AsyncSession, s: MonitorSchedule, now: datetime) -> 
         "last_run_at": _iso(s.last_run_at), "last_batch_id": str(s.last_batch_id) if s.last_batch_id else None,
         "last_full_success_at": _iso(s.last_full_success_at),
         "latest_result": {"status": s.last_result_status, "at": _iso(s.last_result_at),
-                          "batch_id": str(s.last_result_batch_id) if s.last_result_batch_id else None},
+                          "batch_id": str(s.last_result_batch_id) if s.last_result_batch_id else None,
+                          "report_id": str(report_id) if report_id else None},
         "running": busy > 0, "pending_catchup": s.pending_catchup, "missed_slots": s.missed_slots,
         "backlog": backlog, "estimated_drain_at": _iso(eta), "overdue_reason": s.overdue_reason,
         "theoretical_hourly_capacity": int(3600 * slots / max(avg, 0.001)),
@@ -458,6 +463,8 @@ async def operations_overview(current_user: User = Depends(get_current_active_us
     snap = (await db.execute(select(AdvisorySnapshot).where(AdvisorySnapshot.is_active == True))).scalars().first()  # noqa
     cursor = (await db.execute(select(func.max(ScanEvent.id)))).scalar() or 0
     cs = await capacity_settings(db)
+    last_tick = (await db.execute(select(func.max(SchedulerHeartbeat.last_tick_at)))).scalar()
+    tick_age = max(0, (now - _utc(last_tick)).total_seconds()) if last_tick else None
     await db.commit()
     return {
         "server_time": now.isoformat(), "as_of": now.isoformat(), "display_timezone": settings.DEFAULT_TIMEZONE,
@@ -472,6 +479,9 @@ async def operations_overview(current_user: User = Depends(get_current_active_us
                   "age_hours": round((now - _utc(snap.imported_at)).total_seconds() / 3600, 2)}
                  if snap else None),
         "workers": workers, "workers_online": sum(1 for w in workers if w["state"] == "online"),
+        "scheduler": {"online": tick_age is not None and tick_age <= 60,
+                      "last_tick_at": _iso(last_tick),
+                      "age_seconds": round(tick_age, 1) if tick_age is not None else None},
         "capacity": _cap_out(cs),
     }
 

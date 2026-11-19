@@ -1,5 +1,7 @@
 # NOOSFORGE / Noospire
 
+> Đây là repo dùng cho dự án của Empire Team x Noosforge Lab - hiện tại đang được triển khai và thử nghiệm. Back-end hiện tại đang được track phụ thuộc vào Nuclei, ZAP và Trivy. Hạ tầng được bảo mật hoàn toàn để phục vụ cho quá trình thực hiện và nghiên cứu. Các check list pentest đang được triển khai đúng mục đích.
+
 Self-hosted security intelligence, asset monitoring and evidence-based remediation.
 The console uses Obsidian Dark / Warm Light Liquid Glass and Vietnamese/English.
 
@@ -9,6 +11,10 @@ The [current audit](docs/audit/PROJECT_CURRENT_STATE.md) records implemented fix
 actual validation and remaining gaps. Historical reports are not release evidence.
 The latest [local monitor handoff](docs/audit/LOCAL_MONITOR_HANDOFF_2026-11-16.md)
 documents the root-only two-hour monitor, measured execution and current limits.
+The latest [assessment workflow audit](docs/audit/ASSESSMENT_WORKFLOW_2026-11-17.md)
+records the real SBOM UI-to-worker/report/retest acceptance and remaining engine
+gaps. Run the [isolated local lab](docs/ASSESSMENT_LAB.md) to reproduce it without
+copying customer data.
 
 ## Current architecture
 

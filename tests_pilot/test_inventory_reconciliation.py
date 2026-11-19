@@ -75,11 +75,21 @@ def test_report_separates_owner_designation_provenance_and_coverage_without_secr
     assert r["counts"] == {"total": 3, "OWNER_DESIGNATED_PRIMARY": 1, "SEEDED_OR_TEST": 1, "UNKNOWN_OR_UNVERIFIED": 1}
     assert r["owner_designated_production_targets"] == [PRIMARY_TARGET]
     assert not r["production_scope_is_complete"]
+    assert r["assessment_authorization"] == {
+        "scope": "ALL_EMPIRE_OWNED_INFRASTRUCTURE",
+        "per_run_approval_required": False,
+        "primary_target_is_authorization_limit": False,
+        "inventory_membership_requires_evidence": True,
+    }
     assert all(not a["automated_assessment_ready"] for a in r["assets"])
     raw = json.dumps(r)
     for secret in ["never-echo-reference-value", "never-echo-token", "password", "token=hidden", "key=secret"]:
         assert secret not in raw
     assert r["credential_reference_locations"][0]["approval_verified"] is False
+    candidate = next(a for a in r["assets"] if a["asset_id"] == unknown)
+    assert candidate["classification"] == "UNKNOWN_OR_UNVERIFIED"
+    assert "Estate-wide authorization exists" in candidate["scope_basis"]
+    assert not candidate["automated_assessment_ready"]
 
 
 @pytest.mark.parametrize("target", ["https://empire.edu.vn/evil", "https://evil.empire.edu.vn/", "https://empire.edu.vn/?token=x", "https://user:pw@empire.edu.vn/"])

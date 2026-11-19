@@ -1,3 +1,15 @@
+# Owner clarification — 2026-11-17
+
+The owner explicitly authorizes assessment across **all Empire-owned infrastructure**.
+The configured root monitor is a current implementation/inventory boundary, not
+the limit of permission. Identify actual owned targets and configure supported
+checks without requiring another per-target/per-run authorization prompt.
+Preserve non-destructive operation, scoped technical identities, fixture exclusion,
+third-party isolation and the production-change approval boundary described below.
+Current inventory facts: [Empire inventory guidance](EMPIRE_INVENTORY_GUIDANCE.md).
+
+---
+
 Theme: Invert (Light)Light Theme: Warm
 NOOSFORGE — EMPIRE PRODUCTION AUTHORIZED OPERATIONS PROMPT
 Version: 1.0

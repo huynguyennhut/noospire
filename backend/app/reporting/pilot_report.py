@@ -7,7 +7,7 @@ after findings change status later.
 Sections: executive summary, scope, coverage, changes vs the previous report for the same scope,
 findings with redacted evidence, remediation with owner/assignee, appendix of errors/exclusions.
 The customer-approved Empire template has not been supplied: this is internal template
-`noospire-pilot-report/1.0`; reconciliation items are listed in the M5 handover.
+`noospire-pilot-report/1.2`; reconciliation items are listed in the M5 handover.
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ from backend.app.models.defensive import ExecutionRecord
 from backend.app.models.finding import NormalizedFinding
 from backend.app.models.lifecycle import FindingObservation, ReportSnapshot
 
-TEMPLATE_VERSION = "noospire-pilot-report/1.1"
+TEMPLATE_VERSION = "noospire-pilot-report/1.3"
 TZ = zoneinfo.ZoneInfo(settings.DEFAULT_TIMEZONE)
 OPEN_STATES = OPEN_FINDING_STATES
 SEV_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "INFO": 4}
@@ -71,8 +71,13 @@ async def build_snapshot(db, *, title: str, assets: List[Asset], batch_id: Optio
         exec_stmt.where(ExecutionRecord.queued_at >= since)
     execs = (await db.execute(exec_stmt.order_by(ExecutionRecord.queued_at))).scalars().all()
 
-    findings = (await db.execute(select(NormalizedFinding).where(NormalizedFinding.asset_id.in_(ids))
-                                 .order_by(NormalizedFinding.severity, NormalizedFinding.title))).scalars().all()
+    finding_stmt = select(NormalizedFinding).where(NormalizedFinding.asset_id.in_(ids))
+    if batch_id:
+        # A run report must not pull unrelated findings from the same asset.
+        # Observation links survive deduplication and later changes to scan_id.
+        finding_stmt = finding_stmt.where(NormalizedFinding.id.in_(select(FindingObservation.finding_id).where(
+            FindingObservation.batch_id == batch_id)))
+    findings = (await db.execute(finding_stmt.order_by(NormalizedFinding.severity, NormalizedFinding.title))).scalars().all()
     findings = [f for f in findings if f.status in OPEN_STATES or (f.last_seen_at and
                                                                     _utc(f.last_seen_at) >= since)]
     last_verified: Dict[uuid.UUID, datetime] = {}
@@ -127,6 +132,11 @@ async def build_snapshot(db, *, title: str, assets: List[Asset], batch_id: Optio
             ok = [e for e in mine if e.engine_id == eng and e.status == "succeeded"]
             per_engine[eng] = {"runs": sum(1 for e in mine if e.engine_id == eng), "succeeded": len(ok),
                                "last_success_at": _iso(max((e.finished_at for e in ok), default=None)),
+                               "measurement_types": sorted({(e.summary or {}).get("measurement_type") for e in mine
+                                   if e.engine_id == eng and (e.summary or {}).get("measurement_type")}),
+                               "requests_sent": sum((e.summary or {}).get("requests_sent", 0) for e in mine if e.engine_id == eng),
+                               "pages_observed": sum(len((e.summary or {}).get("pages", [])) for e in mine if e.engine_id == eng),
+                               "checks_evaluated": sum((e.summary or {}).get("checks_evaluated", 0) for e in mine if e.engine_id == eng),
                                "coverage_gaps": sorted({gap for e in mine if e.engine_id == eng
                                                         for gap in (e.summary or {}).get("coverage_gaps", [])})}
         coverage.append({"asset": a.name, "asset_id": str(a.id), "module": a.empire_module, "engines": per_engine})
@@ -173,7 +183,8 @@ def render_html(snap: dict, snap_sha: str) -> bytes:
         f"<td><code>{e((f['evidence'].get('output_sha256') or '')[:16])}</code></td></tr>" for f in snap["findings"])
     cov = "".join(
         f"<tr><td>{e(c['asset'])}</td><td>{e(c['module'] or '')}</td>"
-        + "".join(f"<td>{v['succeeded']}/{v['runs']} · {e(_ict(v['last_success_at']) or '—')}</td>"
+        + "".join(f"<td>{v['succeeded']}/{v['runs']} · {e(_ict(v['last_success_at']) or '—')}"
+                  + (f"<br>{e(', '.join(v.get('measurement_types', [])))} · requests {v.get('requests_sent', 0)} · pages {v.get('pages_observed', 0)} · checks {v.get('checks_evaluated', 0)}" if v.get('measurement_types') else "") + "</td>"
                   for v in c["engines"].values()) + "</tr>" for c in snap["coverage"])
     app = "".join(f"<tr><td>{e(a['asset'] or '')}</td><td>{e(a['engine'])}</td><td>{e(a['status'])}</td>"
                   f"<td>{e(a['reason'])}</td></tr>" for a in snap["appendix_errors_exclusions"])
@@ -191,7 +202,7 @@ td,th{{border:1px solid #ccc;padding:4px;vertical-align:top}}th{{background:#f3f
 {(' · kỳ trước/previous ' + e(_ict(ch['previous_generated_at']) or '')) if ch['previous_snapshot_id'] else ' · chưa có kỳ trước/no previous report'}</p>
 <p>Coverage: {es['coverage']['assets_with_successful_check']}/{es['coverage']['assets_in_scope']} asset có kiểm tra thành công · lỗi/loại trừ: {es['errors_or_exclusions']}</p>
 <h2>Phạm vi / Scope</h2><p>{e(snap['scope']['kind'])} · {len(snap['scope']['assets'])} asset · {('batch ' + e(str(snap['scope']['batch_id']))) if snap['scope']['batch_id'] else ('window ' + e(str(snap['scope']['window_days'])) + ' ngày/days')}</p>
-<h2>Coverage</h2><p>A successful public_web run covers one unauthenticated HEAD response and TLS handshake; it does not establish application health or a complete security assessment.</p><table><tr><th>Asset</th><th>Module</th><th>sbom</th><th>tls_health</th><th>public_web</th></tr>{cov}</table>
+<h2>Coverage</h2><p>public_web records either a single HEAD or bounded same-origin GET traversal as identified below. Passive native Nuclei checks, when available, analyze captured headers in a network-isolated sandbox. Neither mode establishes application health, authenticated coverage or a complete security assessment.</p><table><tr><th>Asset</th><th>Module</th><th>sbom</th><th>tls_health</th><th>public_web</th></tr>{cov}</table>
 <h2>Findings &amp; remediation</h2><table><tr><th>Severity</th><th>Status</th><th>Title</th><th>Asset</th><th>Location</th><th>Last verified</th><th>Remediation</th><th>Owner / assignee</th><th>Evidence sha</th></tr>{rows}</table>
 <h2>Phụ lục lỗi / loại trừ · Appendix: errors &amp; exclusions</h2><table><tr><th>Asset</th><th>Engine</th><th>Status</th><th>Reason</th></tr>{app}</table>
 <footer>{e(snap['redaction'])}<br>Template {e(snap['template_version'])} · snapshot sha256 {snap_sha} · executions {len(snap['executions'])} · correlation {e(', '.join(snap['correlation_ids'])[:300])}</footer>
@@ -223,24 +234,27 @@ def render_pdf(snap: dict, snap_sha: str) -> bytes:
     import io
 
     from reportlab.lib.pagesizes import A4
-    from reportlab.pdfgen import canvas
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 
     font, unicode_ok = _font()
     txt = (lambda s: s) if unicode_ok else _ascii
     buf = io.BytesIO()
-    c = canvas.Canvas(buf, pagesize=A4, invariant=1)  # invariant: no timestamps/IDs in PDF bytes
-    c.setTitle(_ascii(snap["title"]))
-    w, h = A4
-    y = h - 50
+    document = SimpleDocTemplate(buf, pagesize=A4, leftMargin=40, rightMargin=40,
+                                 topMargin=45, bottomMargin=45, invariant=1,
+                                 title=txt(snap["title"]), author="NOOSFORGE")
+    story = []
 
     def line(s: str, size: int = 9, gap: int = 13):
-        nonlocal y
-        if y < 60:
-            c.showPage()
-            y = h - 50
-        c.setFont(font, size)
-        c.drawString(40, y, txt(s)[:150])
-        y -= gap
+        if not s:
+            story.append(Spacer(1, gap / 2))
+            return
+        # Wrap by measured page width, including long hashes/locators. Escaping
+        # keeps user titles and advisory text literal rather than PDF markup.
+        style = ParagraphStyle("report-line", fontName=font, fontSize=size,
+                               leading=max(size + 3, gap), spaceAfter=4,
+                               splitLongWords=True, allowWidows=0, allowOrphans=0)
+        story.append(Paragraph(html.escape(txt(str(s))), style))
 
     es = snap["executive_summary"]
     line(snap["title"], 15, 22)
@@ -254,21 +268,49 @@ def render_pdf(snap: dict, snap_sha: str) -> bytes:
     line(f"Coverage: {es['coverage']['assets_with_successful_check']}/{es['coverage']['assets_in_scope']} assets · "
          f"errors/exclusions {es['errors_or_exclusions']}")
     line("")
+    line("Scope & coverage limitations", 12, 16)
+    scope = snap["scope"]
+    line(f"{scope['kind']} · batch {scope.get('batch_id') or '-'} · window {scope.get('window_days') or '-'} days")
+    line("Successful checks cover only the recorded engine/input. SBOM analysis does not probe the target. "
+         "public_web records single HEAD or bounded same-origin GET traversal. Passive native Nuclei analyzes "
+         "captured headers in an isolated network namespace when available. These do not establish application health, "
+         "authenticated coverage or comprehensive security assessment.")
+    for entry in snap["coverage"]:
+        line(f"{entry['asset']} · {entry['module']}")
+        for engine, coverage in entry["engines"].items():
+            line(f"  {engine}: {coverage['succeeded']}/{coverage['runs']} successful · last success "
+                 f"{_ict(coverage['last_success_at']) or '-'}", 8, 11)
+            if coverage.get("measurement_types"):
+                line(f"  Modes: {', '.join(coverage['measurement_types'])}; requests {coverage.get('requests_sent', 0)}; "
+                     f"pages {coverage.get('pages_observed', 0)}; checks {coverage.get('checks_evaluated', 0)}", 8, 11)
+            for coverage_gap in coverage.get("coverage_gaps", []):
+                line(f"  Coverage gap: {coverage_gap}", 8, 11)
+    line("")
     line("Findings & remediation", 12, 16)
     for f in snap["findings"]:
         line(f"[{f['severity']}] {f['status']} · {f['title']}")
         line(f"   {f['asset']} · {f['location']} · last verified {_ict(f['last_verified_at']) or '-'}", 8, 11)
-        line(f"   Fix: {(f['remediation'] or '-')[:130]} · owner {f['owner'] or '-'} / {f['assignee'] or '-'}", 8, 11)
+        line(f"   Fix: {f['remediation'] or '-'} · owner {f['owner'] or '-'} / {f['assignee'] or '-'}", 8, 11)
+        evidence = f.get("evidence") or {}
+        for key in ("execution_id", "input_sha256", "output_sha256", "rule_digest"):
+            if evidence.get(key):
+                line(f"   {key}: {evidence[key]}", 7, 10)
     line("")
     line("Appendix: errors & exclusions", 12, 16)
     for a in snap["appendix_errors_exclusions"]:
-        line(f"{a['asset']} · {a['engine']} · {a['status']} · {a['reason'][:100]}", 8, 11)
+        line(f"{a['asset']} · {a['engine']} · {a['status']} · {a['reason']}", 8, 11)
     line("")
-    line(snap["redaction"][:150], 7, 10)
+    line(snap["redaction"], 7, 10)
     if not unicode_ok:
         line("Note: no Unicode font found on this server; Vietnamese diacritics are transliterated in the PDF "
              "(HTML/JSON keep them).", 7, 10)
-    c.save()
+    def page_number(canvas, doc):
+        canvas.saveState()
+        canvas.setFont(font, 7)
+        canvas.drawRightString(A4[0] - 40, 25, f"NOOSFORGE · {doc.page}")
+        canvas.restoreState()
+
+    document.build(story, onFirstPage=page_number, onLaterPages=page_number)
     return buf.getvalue()
 
 

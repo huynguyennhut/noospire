@@ -17,8 +17,8 @@ import time
 
 ROOT = Path(__file__).resolve().parents[4]
 PRESETS = {
-    "backend": ["test_m1_identity_scope.py", "test_platform_access_security.py", "test_inventory_reconciliation.py", "test_root_observation.py", "test_verified_recheck_lifecycle.py", "test_m3_sbom_flow.py", "test_m5_console.py"],
-    "security": ["test_m1_identity_scope.py", "test_platform_access_security.py", "test_inventory_reconciliation.py", "test_root_observation.py", "test_engine_diagnostics.py", "test_m3_engine_units.py", "test_m3_tls_health.py", "test_m6_contract.py"],
+    "backend": ["test_m1_identity_scope.py", "test_platform_access_security.py", "test_inventory_reconciliation.py", "test_root_observation.py", "test_verified_recheck_lifecycle.py", "test_m3_sbom_flow.py", "test_m5_console.py", "test_assessment_workflow.py", "test_web_surface.py", "test_automation_controls.py"],
+    "security": ["test_m1_identity_scope.py", "test_platform_access_security.py", "test_inventory_reconciliation.py", "test_root_observation.py", "test_engine_diagnostics.py", "test_m3_engine_units.py", "test_m3_tls_health.py", "test_m6_contract.py", "test_web_surface.py"],
     "devops": ["test_m1_gateway.py", "test_m3_restart.py", "test_m6_smoke.py", "test_local_operations.py"],
     "pilot": [],
     "frontend": None,

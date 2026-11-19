@@ -22,13 +22,14 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 
-async def configure(db, schedule_id: uuid.UUID, *, queue_first_run=False) -> dict:
+async def configure(db, schedule_id: uuid.UUID, *, queue_first_run=False, mode="head") -> dict:
     from sqlalchemy import select
     from backend.app.core.config import settings
     from backend.app.core.inventory_reconciliation import PRIMARY_TARGET
     from backend.app.core.monitor_scheduler import _OwnerScope, active_work, next_slot_after
     from backend.app.core.planner import Selection, build_plan, materialize
     from backend.app.engines.public_web import approval_policy, validate_approval
+    from backend.app.engines import web_surface
     from backend.app.models.asset import Asset
     from backend.app.models.base import AdminAuditLog
     from backend.app.models.operations import MonitorSchedule, RunRequest
@@ -59,8 +60,14 @@ async def configure(db, schedule_id: uuid.UUID, *, queue_first_run=False) -> dic
             byte_budget=131072, created_by=marker)
         db.add(grant)
         await db.flush()
+    if mode == "surface":
+        grant.allowed_path_patterns = ["/*"]
+        grant.max_requests_per_run = web_surface.MAX_REQUESTS
+        grant.byte_budget = web_surface.MAX_BYTES
+    elif mode != "head":
+        raise ValueError("Unknown monitor mode")
     old_policy = (asset.assessment_policy or {}).get("public_web") or {}
-    policy = old_policy if old_policy.get("url") == PRIMARY_TARGET else approval_policy(asset, PRIMARY_TARGET, str(owner.id))
+    policy = old_policy if old_policy.get("url") == PRIMARY_TARGET and old_policy.get("mode", "head") == mode else approval_policy(asset, PRIMARY_TARGET, str(owner.id), mode=mode)
     asset.assessment_policy = {**(asset.assessment_policy or {}), "public_web": policy}
     await validate_approval(db, asset)  # real proof, exact scope, stop and expiry are mandatory
     capacity = await capacity_settings(db)
@@ -69,7 +76,7 @@ async def configure(db, schedule_id: uuid.UUID, *, queue_first_run=False) -> dic
     capacity.updated_by = str(owner.id)
     capacity.updated_at = now
 
-    desired = {"name": "Empire public root · every 2 hours", "selection": {"kind": "assets", "asset_ids": [str(asset.id)]},
+    desired = {"name": "Empire public surface · every 2 hours" if mode == "surface" else "Empire public root · every 2 hours", "selection": {"kind": "assets", "asset_ids": [str(asset.id)]},
                "engines": ["public_web"], "profile": "slow", "interval_minutes": 120, "max_workers": 1, "is_active": True}
     before = {k: getattr(schedule, k) for k in desired}
     changed = before != desired
@@ -84,7 +91,7 @@ async def configure(db, schedule_id: uuid.UUID, *, queue_first_run=False) -> dic
         schedule.updated_at = now
     first_batch = None
     if queue_first_run:
-        key = f"operator-public-monitor-v1:{asset.id}"
+        key = f"operator-public-monitor-v1:{asset.id}:{mode}:{policy['revision']}"
         prior = (await db.execute(select(RunRequest).where(RunRequest.idempotency_key == key))).scalars().first()
         if prior:
             first_batch = str(prior.batch_id)
@@ -106,7 +113,8 @@ async def configure(db, schedule_id: uuid.UUID, *, queue_first_run=False) -> dic
     await db.commit()
     return {"schedule_id": str(schedule.id), "asset_id": str(asset.id), "interval_minutes": 120,
             "next_run_at": schedule.next_run_at.isoformat(), "changed": changed, "first_batch_id": first_batch,
-            "target": PRIMARY_TARGET, "checks": "one unauthenticated HTTPS HEAD; TLS and response metadata",
+            "target": PRIMARY_TARGET, "mode": mode,
+            "checks": "bounded same-origin public GET traversal; TLS, headers and HTML policy checks" if mode == "surface" else "one unauthenticated HTTPS HEAD; TLS and response metadata",
             "application_health_assessed": False, "full_assessment_complete": False}
 
 
@@ -116,13 +124,15 @@ def main() -> int:
     p.add_argument("--schedule-id", required=True, type=uuid.UUID)
     p.add_argument("--apply", action="store_true")
     p.add_argument("--queue-first-run", action="store_true")
+    p.add_argument("--mode", choices=("head", "surface"), default="head")
     args = p.parse_args()
     source = args.database.resolve(strict=True)
     with closing(sqlite3.connect(source.as_uri() + "?mode=ro", uri=True)) as con:
         roots = con.execute("SELECT id FROM assets WHERE target_locator=?", ("https://empire.edu.vn/",)).fetchall()
         schedules = con.execute("SELECT name, interval_minutes FROM monitor_schedules WHERE id=?", (str(args.schedule_id),)).fetchall()
         preview = {"database": str(source), "root_count": len(roots), "schedule": schedules,
-                   "proposed_interval_minutes": 120, "target": "https://empire.edu.vn/", "network_requests": 0}
+                   "proposed_interval_minutes": 120, "target": "https://empire.edu.vn/", "mode": args.mode,
+                   "network_requests": 0}
         if not args.apply:
             print(json.dumps({**preview, "applied": False}))
             return 0
@@ -143,7 +153,7 @@ def main() -> int:
         from backend.app.core.database import AsyncSessionLocal, init_db
         await init_db()
         async with AsyncSessionLocal() as db:
-            return await configure(db, args.schedule_id, queue_first_run=args.queue_first_run)
+            return await configure(db, args.schedule_id, queue_first_run=args.queue_first_run, mode=args.mode)
     result = asyncio.run(apply())
     print(json.dumps({**result, "applied": True, "backup": str(backup), "backup_integrity": "ok"}))
     return 0

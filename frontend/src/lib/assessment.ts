@@ -21,3 +21,12 @@ export function assessmentLabel(asset: Pick<Asset, 'assessment_eligible' | 'asse
 export function eligibleAssetIds(assets: Asset[]): string[] {
   return assets.filter(assessmentEligible).map((asset) => asset.id);
 }
+
+/** Offline artifact admission must not grant permission to contact a target. */
+export function engineEligible(asset: Pick<Asset, 'assessment_eligible' | 'artifact_analysis_eligible'>, engine: string): boolean {
+  return engine === 'sbom' ? asset.artifact_analysis_eligible === true : assessmentEligible(asset);
+}
+
+export function engineAssetIds(assets: Asset[], engines: string[]): string[] {
+  return assets.filter((asset) => engines.some((engine) => engineEligible(asset, engine))).map((asset) => asset.id);
+}

@@ -1,0 +1,53 @@
+{
+  "recorded_at": "2026-11-17T09:00:38.905075+00:00",
+  "scope": "All Empire-owned infrastructure, explicitly authorized by owner 2026-11-17",
+  "checks": {
+    "preset": "security",
+    "checks": [
+      {
+        "command": [
+          "/home/nhut-nguyen/noospire/.venv/bin/python",
+          "-m",
+          "pytest",
+          "-p",
+          "pytest_asyncio.plugin",
+          "-q",
+          "tests_pilot/test_m1_identity_scope.py",
+          "tests_pilot/test_platform_access_security.py",
+          "tests_pilot/test_inventory_reconciliation.py",
+          "tests_pilot/test_root_observation.py",
+          "tests_pilot/test_engine_diagnostics.py",
+          "tests_pilot/test_m3_engine_units.py",
+          "tests_pilot/test_m3_tls_health.py",
+          "tests_pilot/test_m6_contract.py",
+          "--deselect=tests_pilot/test_m7_round_a.py::test_legacy_database_upgrades_in_place_and_backup_restores",
+          "--junitxml=/tmp/noosforge-security-_2z317u5/pytest.xml"
+        ],
+        "cwd": "/home/nhut-nguyen/noospire",
+        "exit_code": 0,
+        "status": "PASS",
+        "seconds": 31.83,
+        "log": "/tmp/noosforge-security-_2z317u5/01.log"
+      }
+    ]
+  },
+  "passed": 118,
+  "warnings": 120,
+  "new_target_network_requests": 0,
+  "source_sha256": {
+    "AGENTS.md": "36473e5fd7bab729de04410009c4547aac30a092dcd199a22eb92bc59ae709e9",
+    "docs/EMPIRE_INVENTORY_GUIDANCE.md": "bf155afe0ba894abc00c984d3316fc9eee0de860401e61d553d81f74e1d24c8a",
+    "docs/EMPIRE_PRODUCTION_AUTHORIZED_OPERATIONS.md": "a0ad4ac794c2fc43ce8bde4ea2798d56c93d1fe1f39c509c6587d0c9e43fae5f",
+    "backend/app/core/inventory_reconciliation.py": "e2106e70a64e1a4f60b37599ee77f2d53b90be6eb7876857eaae8e92917312ed",
+    "scripts/reconcile_production_inventory.py": "493b5fbd6c34d19e9b9fb1471c071e3b35e25de6ffa4a89ccb3c4afd93f021e2",
+    "tests_pilot/test_inventory_reconciliation.py": "1918b7060bbd41515bab0a8a094bc84bfc03efd553a16b3a072ec83c36c27dd4",
+    "docs/audit/EMPIRE_INFRASTRUCTURE_RECONCILIATION_2026-11-17.json": "7138fb2e3aa53bdfd7246d6761ab1570ba9a1e42a811739c31949074db0f3716"
+  },
+  "assessment_authorization": {
+    "scope": "ALL_EMPIRE_OWNED_INFRASTRUCTURE",
+    "per_run_approval_required": false,
+    "primary_target_is_authorization_limit": false,
+    "inventory_membership_requires_evidence": true
+  },
+  "commit_or_push_performed": false
+}

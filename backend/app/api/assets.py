@@ -5,7 +5,7 @@ import json
 import socket
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Literal
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field
@@ -60,13 +60,14 @@ router = APIRouter(prefix="/assets", tags=["Target & Asset Management"])
 
 class PublicWebApproval(BaseModel):
     url: str = Field(..., max_length=2048)
+    mode: Literal["head", "surface"] = "head"
 
 
 @router.put("/{asset_id}/public-web")
 async def approve_public_web(asset_id: uuid.UUID, payload: PublicWebApproval, request: Request,
                              current_user: User = Depends(require_owner),
                              db: AsyncSession = Depends(get_db)) -> Any:
-    """Approve one public HEAD observation within an existing ownership/scope grant."""
+    """Configure bounded HEAD or same-origin GET observations within an existing scope."""
     from backend.app.engines.public_web import PolicyDenied, approval_policy, validate_approval
     from backend.app.models.base import AdminAuditLog
 
@@ -74,7 +75,7 @@ async def approve_public_web(asset_id: uuid.UUID, payload: PublicWebApproval, re
     if asset is None:
         raise HTTPException(status_code=404, detail="Asset not found")
     try:
-        policy = approval_policy(asset, payload.url, str(current_user.id))
+        policy = approval_policy(asset, payload.url, str(current_user.id), mode=payload.mode)
         asset.assessment_policy = {**(asset.assessment_policy or {}), "public_web": policy}
         await validate_approval(db, asset)
     except PolicyDenied as exc:
@@ -82,7 +83,7 @@ async def approve_public_web(asset_id: uuid.UUID, payload: PublicWebApproval, re
         raise HTTPException(status_code=409, detail=f"{exc.code}: {exc.detail}") from exc
     db.add(AdminAuditLog(user_id=str(current_user.id), username=current_user.username,
                          action="PUBLIC_WEB_APPROVAL", details=json.dumps({"asset_id": str(asset_id),
-                         "revision": policy["revision"], "method": "HEAD"}),
+                         "revision": policy["revision"], "method": "GET" if payload.mode == "surface" else "HEAD"}),
                          ip_address=request.client.host if request.client else "unknown"))
     await db.commit()
     return policy
@@ -130,6 +131,10 @@ async def annotate_verification(db: AsyncSession, assets) -> None:
             "TARGET_EMERGENCY_STOP" if any(s.emergency_stop_active for s in related) else
             "SCOPE_EXPIRED" if not active else None)
         a.assessment_eligible = a.assessment_block_reason is None
+        # Supplied artifacts are analyzed locally: no target connection or ownership
+        # challenge is needed. Seed provenance and emergency stops still apply.
+        a.artifact_analysis_eligible = not provenance and not (has_seed and not proof) and not any(
+            s.emergency_stop_active for s in related)
 
 
 @router.get("/reconciliation")

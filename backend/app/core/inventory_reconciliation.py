@@ -1,8 +1,8 @@
 """Source-backed inventory reconciliation. No database writes, DNS, secrets or scans.
 
-The owner's current designation names only the primary root. Historical scope
-documents and seed-generated VERIFIED flags remain evidence to reconcile, not an
-automatic target allowlist.
+The owner authorizes the entire Empire-owned estate. The root is the currently
+identified target, not the permission boundary. Seed-generated VERIFIED flags
+remain evidence to reconcile, not an automatic target allowlist.
 """
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from urllib.parse import urlsplit, urlunsplit
 from backend.app.core.ultra_planner import UltraScanPlanner
 
 PRIMARY_TARGET = "https://empire.edu.vn/"
-SCOPE_SOURCE = "Owner clarification in the 2026-11-15 production-inventory request"
+SCOPE_SOURCE = "Owner clarification 2026-11-17: all Empire-owned infrastructure is authorized"
 
 # Exact locators corroborated in the repository's legacy tests. This is a deny
 # classification for fixture execution, never a production allowlist.
@@ -166,12 +166,17 @@ def reconcile(assets: list[dict], proofs: list[dict], scopes: list[dict]) -> dic
                      "target_auth_profile_present": bool(auth),
                      "owner_designation_matches": primary and not fixture,
                      "automated_assessment_ready": False,
-                     "scope_basis": SCOPE_SOURCE if primary else "No current owner designation; do not promote or scan"})
+                     "scope_basis": SCOPE_SOURCE if primary else
+                         "Estate-wide authorization exists; establish actual Empire ownership and exact technical scope before execution"})
     counts = {key: 0 for key in ("OWNER_DESIGNATED_PRIMARY", "SEEDED_OR_TEST", "UNKNOWN_OR_UNVERIFIED")}
     counts.update(Counter(r["classification"] for r in rows))
     return {"schema": "noosforge.inventory-reconciliation/1", "observed_at": now.isoformat(),
             "database_modified": False, "network_requests": 0,
             "scope_source": SCOPE_SOURCE, "owner_designated_production_targets": [PRIMARY_TARGET],
+            "assessment_authorization": {"scope": "ALL_EMPIRE_OWNED_INFRASTRUCTURE",
+                                         "per_run_approval_required": False,
+                                         "primary_target_is_authorization_limit": False,
+                                         "inventory_membership_requires_evidence": True},
             "production_scope_is_complete": False, "counts": {"total": len(rows), **counts},
             "stored_verification_counts": dict(Counter(a.get("verification_status") or "UNSET" for a in assets)),
             "ownership_proof_rows": len(proofs), "assessment_scope_rows": len(scopes),
@@ -183,7 +188,7 @@ def reconcile(assets: list[dict], proofs: list[dict], scopes: list[dict]) -> dic
             "coverage_gaps": [
                 {"code": "AUTHENTICATED_COVERAGE_NOT_CONFIGURED", "checks": ["BOLA", "BFLA", "RBAC", "TENANT_ISOLATION", "SESSION", "ACCOUNT_SECURITY"],
                  "reason": "No owner-approved identity registry or safe test-object manifest supplied; legacy auth fields are not approval."},
-                {"code": "PRODUCTION_INVENTORY_INCOMPLETE", "reason": "Only the primary root is designated; historical domains/ranges/services require reconciliation."},
+                {"code": "PRODUCTION_INVENTORY_INCOMPLETE", "reason": "The entire Empire-owned estate is authorized; only the root is currently identified. Additional real domains/ranges/services require inventory reconciliation, not new assessment permission."},
                 {"code": "HEALTH_ENDPOINT_PURPOSE_NOT_VERIFIED", "reason": "A root-page observation is not an approved application health endpoint."}],
             "configuration_note": "No secret reference or health endpoint is invented. This is inventory reconciliation, not customer security-test results."}
 

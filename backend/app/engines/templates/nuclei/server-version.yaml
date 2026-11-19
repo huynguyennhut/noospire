@@ -1,0 +1,16 @@
+id: noosforge-public-server-version
+info:
+  name: Public response advertises a server version
+  author: noosforge
+  severity: info
+  description: Captured public header metadata only; no vulnerable version or exploitation is established.
+  tags: passive,headers,noosforge
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+    matchers:
+      - type: regex
+        part: header
+        regex:
+          - '(?im)^server:\s*[^\r\n]*/[0-9][^\r\n]*\r?$'

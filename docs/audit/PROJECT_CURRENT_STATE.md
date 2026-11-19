@@ -1,6 +1,8 @@
 # Repository state and remediation audit — 2026-11-15
 
-Latest implementation/operation evidence: [2026-11-16 local monitor handoff](LOCAL_MONITOR_HANDOFF_2026-11-16.md).
+Latest implementation/operation evidence:
+[2026-11-17 assessment workflow](ASSESSMENT_WORKFLOW_2026-11-17.md) and
+[2026-11-16 local monitor handoff](LOCAL_MONITOR_HANDOFF_2026-11-16.md).
 
 > This records the earlier runtime-remediation stage. The subsequent owner-adopted
 > Empire authorization, current inventory restrictions, production HEAD observation
@@ -118,7 +120,8 @@ hashes or grants were rewritten. See [the roadmap](../IMPLEMENTATION_ROADMAP.md)
 
 The UI work improves the affected screens; full accessibility and global theme
 contrast are not certified. Existing shared-shell text/legacy badges still need a
-complete contrast pass. Finding views currently request the first 100 records;
-server pagination beyond that is a separate known follow-up. The README now uses
+complete contrast pass. The earlier first-100 finding limit was fixed in the
+[2026-11-17 workflow](ASSESSMENT_WORKFLOW_2026-11-17.md); bounded all-page loading
+now reports inconsistent/incomplete results explicitly. The README now uses
 verified launcher arguments/topology and the public-only assessment boundary,
 replacing obsolete fixed-success and authenticated-customer-probe guidance.

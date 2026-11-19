@@ -1,11 +1,13 @@
 'use client';
 
+import Link from 'next/link';
+
 import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { FileCode, Lock, RefreshCw, Upload, XCircle, Download, ExternalLink, ShieldAlert } from 'lucide-react';
 import { api, AdvisorySnapshotInfo, ApiError, EngineName, ExecutionDetail, RunStatus } from '@/lib/api';
 import { Asset } from '@/lib/types';
-import { assessmentEligible, assessmentLabel } from '@/lib/assessment';
+import { engineEligible, assessmentLabel } from '@/lib/assessment';
 import { useI18n } from '@/lib/i18n';
 import { RunTree, TodayResults } from '@/components/console/RunInsights';
 
@@ -66,6 +68,9 @@ function EngineRunsInner() {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const idemKey = useRef<string | null>(null);
+  const uploadedArtifact = useRef<{ asset: string; file: File; id: string } | null>(null);
+  const [snapshotBusy, setSnapshotBusy] = useState(false);
+  const [snapshotReason, setSnapshotReason] = useState('');
 
   const setQuery = useCallback((next: Record<string, string | null>) => {
     const q = new URLSearchParams(params.toString());
@@ -106,14 +111,14 @@ function EngineRunsInner() {
         if (stop) return;
         setDetail(d);
         setError(null);
-        try { const entries = await api.getScanLogPage(d.scan_id, logPage); if (!stop) { setLogs(entries.items); setLogPages(entries.pages); setLogTotal(entries.total); setLogError(null); } }
+        try { const entries = await api.getExecutionLogPage(d.execution_id, logPage); if (!stop) { setLogs(entries.items); setLogPages(entries.pages); setLogTotal(entries.total); setLogError(null); } }
         catch (e) { if (!stop) setLogError(errText(e, vi)); }
         if (stop) return;
         if (!TERMINAL.has(d.status)) timer = setTimeout(tick, 3000);
         else {
           loadRuns();
           if (d.status === 'succeeded') {
-            api.request(`/findings?scan_id=${d.scan_id}&size=200`).then((r: any) => !stop && setRunFindings(r.items || []))
+            api.listAllFindings({ executionId: d.execution_id, observationGroup: 'detected' }).then((r) => !stop && setRunFindings(r))
               .catch((e) => !stop && setError(errText(e, vi)));
           } else setRunFindings(null);
         }
@@ -148,7 +153,7 @@ function EngineRunsInner() {
   const activeSnapshot = snapshots?.find((s) => s.is_active) || null;
 
   const submit = async () => {
-    if (!assetId || busy || !assets.some((a) => a.id === assetId && assessmentEligible(a))) return;
+    if (!assetId || busy || !assets.some((a) => a.id === assetId && engineEligible(a, engine))) return;
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -158,11 +163,15 @@ function EngineRunsInner() {
       let artifactId: string | undefined;
       if (engine === 'sbom') {
         if (!file) throw new Error(vi ? 'Chọn tệp SBOM (CycloneDX/SPDX JSON).' : 'Choose an SBOM file (CycloneDX/SPDX JSON).');
-        const art = await api.uploadArtifact(assetId, file);
-        artifactId = art.id;
+        if (uploadedArtifact.current?.asset !== assetId || uploadedArtifact.current.file !== file) {
+          const art = await api.uploadArtifact(assetId, file);
+          uploadedArtifact.current = { asset: assetId, file, id: art.id };
+        }
+        artifactId = uploadedArtifact.current.id;
       }
       const res = await api.launchExecution({ asset_id: assetId, engine, artifact_id: artifactId }, idemKey.current);
       idemKey.current = null;
+      uploadedArtifact.current = null;
       setNotice(
         (vi ? 'Đã nhận: ' : 'Accepted: ') + `execution ${res.execution_id} · batch ${res.batch_id} · ${ict(res.queued_at)}` +
         (res.worker.ready ? '' : (vi ? ' · Chưa có worker hoạt động: job chờ trong hàng đợi.' : ' · No live worker: job waits in queue.')),
@@ -176,21 +185,35 @@ function EngineRunsInner() {
   };
 
   const importSnapshot = async (f: File) => {
+    setSnapshotBusy(true); setError(null); setNotice(null);
     try {
       const label = f.name.replace(/\.json$/i, '');
       const s = await api.importAdvisorySnapshot(f, 'OSV export', label);
-      setNotice((vi ? 'Đã nhập advisory snapshot ' : 'Imported advisory snapshot ') + `${s.version_label} (${s.record_count} records, ${s.digest.slice(0, 12)}…)`);
+      setNotice((vi ? 'Đã nhập bản chờ duyệt, chưa kích hoạt: ' : 'Staged, not activated: ') + `${s.version_label} (${s.record_count} records, ${s.digest.slice(0, 12)}…)`);
       setSnapshots(await api.listAdvisorySnapshots());
     } catch (e) {
       setError(errText(e, vi));
+    } finally {
+      setSnapshotBusy(false);
     }
+  };
+
+  const activateSnapshot = async (id: string, active: boolean) => {
+    setSnapshotBusy(true); setError(null); setNotice(null);
+    try {
+      const changed = await api.setAdvisoryActivation(id, active, snapshotReason.trim());
+      setSnapshots(await api.listAdvisorySnapshots());
+      setNotice((active ? (vi ? 'Đã kích hoạt: ' : 'Activated: ') : (vi ? 'Đã vô hiệu hóa: ' : 'Disabled: ')) + changed.version_label);
+      setSnapshotReason('');
+    } catch (e) { setError(errText(e, vi)); }
+    finally { setSnapshotBusy(false); }
   };
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-4 border-b border-white/10">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-4 border-b border-[var(--border-subtle)]">
         <div>
-          <h1 className="text-2xl font-black tracking-tight text-white flex items-center gap-2">
+          <h1 className="text-2xl font-black tracking-tight text-[var(--text-primary)] flex items-center gap-2">
             <FileCode className="w-6 h-6 text-cyan-400" /> {vi ? 'Lượt chạy engine phòng thủ' : 'Defensive engine runs'}
           </h1>
           <p className="text-xs text-[var(--text-secondary)] mt-1">
@@ -198,7 +221,7 @@ function EngineRunsInner() {
                 : 'Public web observations · versioned SBOM advisories · approved TLS/health. Times shown in ICT, stored in UTC.'}
           </p>
         </div>
-        <button onClick={loadRuns} className="px-3 py-1.5 rounded-lg border border-white/10 text-xs text-[var(--text-primary)] hover:bg-white/5 flex items-center gap-1">
+        <button onClick={loadRuns} className="px-3 py-1.5 rounded-lg border border-[var(--border-subtle)] text-xs text-[var(--text-primary)] hover:bg-white/5 flex items-center gap-1">
           <RefreshCw className="w-3.5 h-3.5" /> {vi ? 'Làm mới' : 'Refresh'}
         </button>
       </div>
@@ -207,9 +230,9 @@ function EngineRunsInner() {
       {notice && <div role="status" className="p-3 rounded-lg border border-emerald-700 bg-emerald-950/50 text-emerald-200 text-xs break-all">{notice}</div>}
 
       {run && (
-        <section className="p-4 rounded-xl border border-cyan-800 bg-black/30 text-xs text-[var(--text-primary)] space-y-2">
+        <section className="p-4 rounded-xl border border-cyan-800 bg-[var(--bg-surface)] text-xs text-[var(--text-primary)] space-y-2">
           <div className="flex flex-wrap gap-3 items-center">
-            <b className="text-sm text-white">{run.name}</b>
+            <b className="text-sm text-[var(--text-primary)]">{run.name}</b>
             <span>batch <code>{run.batch_id}</code></span>
             <span>{vi ? 'nhận lúc' : 'accepted'} {ict(run.accepted_at)}</span>
             <span>{run.trigger}</span>
@@ -219,6 +242,7 @@ function EngineRunsInner() {
             </span>
           </div>
           <p>{Object.entries(run.by_status).map(([k, v]) => `${k}: ${v}`).join(' · ') || (vi ? 'Không có execution nào trong phạm vi của bạn.' : 'No executions in your scope.')}</p>
+          {run.finished && run.executions.length > 0 && <Link className="assessment-link" href={`/reports/?batch=${run.batch_id}`}>{vi ? 'Xuất báo cáo lượt này' : 'Export this run report'} →</Link>}
           {run.plan_summary && Object.keys(run.plan_summary.reasons || {}).length > 0 && (
             <p className="text-[var(--text-secondary)]">{vi ? 'Lý do bỏ qua/dời' : 'Skip/defer reasons'}: {Object.entries(run.plan_summary.reasons).map(([k, v]) => `${k} × ${v}`).join(' · ')}</p>
           )}
@@ -238,14 +262,14 @@ function EngineRunsInner() {
 
       {!selectedExecution && <TodayResults />}
 
-      <section className="p-4 rounded-2xl border border-white/10 liquid-glass-card grid gap-4 md:grid-cols-2">
+      <section className="p-4 rounded-2xl border border-[var(--border-subtle)] liquid-glass-card grid gap-4 md:grid-cols-2">
         <div className="space-y-3">
           <label className="block text-xs text-[var(--text-primary)]">
             {vi ? 'Asset' : 'Asset'}
             <select disabled={busy} value={assetId} onChange={(e) => { idemKey.current = null; setAssetId(e.target.value); setQuery({ asset: e.target.value || null }); }}
-              className="mt-1 w-full bg-[var(--bg-primary)] border border-white/10 rounded-lg px-2 py-2 text-sm text-white">
+              className="mt-1 w-full bg-[var(--bg-primary)] border border-[var(--border-subtle)] rounded-lg px-2 py-2 text-sm text-[var(--text-primary)]">
               <option value="">{vi ? '— chọn asset trong phạm vi của bạn —' : '— choose an asset in your scope —'}</option>
-              {assets.map((a) => <option key={a.id} value={a.id} disabled={!assessmentEligible(a)}>{a.name} · {assessmentLabel(a, vi)}</option>)}
+              {assets.map((a) => <option key={a.id} value={a.id} disabled={!engineEligible(a, engine)}>{a.name} · {engine === 'sbom' && engineEligible(a, engine) ? (vi ? 'Phân tích tệp ngoại tuyến' : 'Offline artifact analysis') : assessmentLabel(a, vi)}</option>)}
             </select>
           </label>
           <fieldset disabled={busy} className="flex flex-wrap gap-4 text-xs text-[var(--text-primary)]"><label className="flex items-center gap-1"><input type="radio" checked={engine === 'public_web'} onChange={() => { idemKey.current = null; setEngine('public_web'); }} /> {vi ? 'Web công khai' : 'Public web'}</label>
@@ -260,11 +284,12 @@ function EngineRunsInner() {
             </label>
           ) : (
             <p className="text-xs text-[var(--text-secondary)]">
-              {engine === 'public_web' ? (vi ? 'Một HEAD trên URL được duyệt: TLS, HTTP, header bảo mật và thuộc tính cookie. Không theo redirect, không gửi credential; không thay thế đánh giá toàn diện.' : 'One HEAD on the approved URL: TLS, HTTP, security headers and cookie attributes. No redirects or credentials; this does not replace comprehensive assessment.') : vi ? 'Chỉ đo endpoint health mà owner đã duyệt trên asset này (một GET, không theo redirect, không gửi credential).'
+              {engine === 'public_web' ? (vi ? 'Theo chế độ của mục tiêu: HEAD hoặc duyệt tối đa 12 trang cùng origin, có giới hạn byte, tốc độ và dừng khẩn. Nuclei thụ động chạy trong sandbox khi có sẵn. Không gửi credential hoặc submit form; giới hạn thực tế nằm trong kết quả.' : 'Uses the target’s HEAD or bounded same-origin traversal mode (up to 12 pages), with byte/rate budgets and emergency stop. Passive Nuclei runs in a sandbox when available. No credentials or form submissions; actual limits are recorded in results.') : vi ? 'Chỉ đo endpoint health mà owner đã duyệt trên asset này (một GET, không theo redirect, không gửi credential).'
                   : 'Measures only the owner-approved health endpoint of this asset (one GET, no redirects, no credentials).'}
             </p>
           )}
-          <button onClick={submit} disabled={!assets.some((a) => a.id === assetId && assessmentEligible(a)) || busy || (engine === 'sbom' && !file)}
+          {engine === 'sbom' && <p className="text-xs text-[var(--text-secondary)]">{vi ? 'Chỉ phân tích tệp được cung cấp; không kết nối URL mục tiêu. Quyền quét mạng không được cấp qua thao tác này.' : 'Analyzes supplied files only; never connects to the target URL. This does not grant network assessment permission.'}</p>}
+          <button onClick={submit} disabled={!assets.some((a) => a.id === assetId && engineEligible(a, engine)) || busy || (engine === 'sbom' && !file)}
             className="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white text-sm font-bold flex items-center gap-2">
             <Upload className="w-4 h-4" /> {busy ? (vi ? 'Đang gửi…' : 'Submitting…') : (vi ? 'Chạy phân tích' : 'Run analysis')}
           </button>
@@ -286,14 +311,27 @@ function EngineRunsInner() {
             <div className="text-amber-300">{vi ? 'Chưa có snapshot: lượt SBOM sẽ ở trạng thái unavailable.' : 'No snapshot: SBOM runs will be unavailable.'}</div>
           )}
           <label className="block mt-2">
-            <span className="flex items-center gap-1"><Lock className="w-3 h-3" /> {vi ? 'Nhập OSV snapshot (chỉ owner)' : 'Import OSV snapshot (owner only)'}</span>
-            <input type="file" accept=".json" onChange={(e) => e.target.files?.[0] && importSnapshot(e.target.files[0])} className="mt-1 block text-xs" />
+            <span className="flex items-center gap-1"><Lock className="w-3 h-3" /> {vi ? 'Nhập OSV để duyệt (chỉ owner)' : 'Stage OSV snapshot (owner only)'}</span>
+            <input type="file" accept=".json" disabled={snapshotBusy} onChange={(e) => e.target.files?.[0] && importSnapshot(e.target.files[0])} className="mt-1 block w-full text-xs" />
           </label>
+          <p className="text-[var(--text-secondary)]">{vi ? 'Kiểm tra cấu trúc/index và hash trước khi kích hoạt; không xác minh độ đúng của nguồn advisory. Có thể chọn lại bản cũ hoặc vô hiệu hóa. Lượt đang chạy giữ bằng chứng của bộ đã nạp.' : 'Parser/index compatibility and hash are checked before activation; advisory accuracy is not certified. Activate an older version to roll back, or disable. Running jobs retain evidence of the rules they loaded.'}</p>
+          <label className="block">{vi ? 'Lý do thay đổi bộ kiểm tra (ít nhất 8 ký tự)' : 'Rule change reason (at least 8 characters)'}
+            <input value={snapshotReason} onChange={(e) => setSnapshotReason(e.target.value)} maxLength={500} disabled={snapshotBusy} className="mt-1 w-full bg-[var(--bg-primary)] border border-[var(--border-strong)] rounded-lg p-2" />
+          </label>
+          <ul className="space-y-2 max-h-64 overflow-auto" aria-label={vi ? 'Các phiên bản advisory' : 'Advisory versions'}>
+            {snapshots?.map((s) => <li key={s.id} className="border border-[var(--border-subtle)] rounded-lg p-2 break-all">
+              <b>{s.version_label}</b> · {s.record_count} records · {s.is_active ? (vi ? 'Đang dùng' : 'Active') : (vi ? 'Chưa kích hoạt' : 'Inactive')}
+              <div className="font-mono text-[10px]">{s.source} · SHA256 {s.digest}</div>
+              <button disabled={snapshotBusy || snapshotReason.trim().length < 8} onClick={() => activateSnapshot(s.id, !s.is_active)} className="mt-1 underline disabled:opacity-40" aria-label={`${s.is_active ? (vi ? 'Vô hiệu hóa' : 'Disable') : (vi ? 'Kích hoạt' : 'Activate')} ${s.version_label}`}>
+                {s.is_active ? (vi ? 'Vô hiệu hóa' : 'Disable') : (vi ? 'Kích hoạt / quay lại bản này' : 'Activate / roll back to this version')}
+              </button>
+            </li>)}
+          </ul>
         </div>
       </section>
 
       {detail && (
-        <section className="p-4 rounded-2xl border border-white/10 liquid-glass-card space-y-3" aria-live="polite">
+        <section className="p-4 rounded-2xl border border-[var(--border-subtle)] liquid-glass-card space-y-3" aria-live="polite">
           <div className="flex flex-wrap items-center gap-2">
             <span className={`px-2 py-0.5 rounded border text-xs font-mono font-bold ${STATUS_STYLE[detail.status] || ''}`}>{detail.status}</span>
             <span className="text-xs font-mono text-[var(--text-primary)] break-all">execution {detail.execution_id}</span>
@@ -326,7 +364,7 @@ function EngineRunsInner() {
               <thead><tr className="text-[var(--text-secondary)] text-left"><th className="pr-3">#</th><th className="pr-3">status</th><th className="pr-3">phase</th><th className="pr-3">worker</th><th className="pr-3">token</th><th className="pr-3">started</th><th>error</th></tr></thead>
               <tbody>
                 {(detail.attempts || []).map((a) => (
-                  <tr key={a.attempt_id} className="border-t border-white/5">
+                  <tr key={a.attempt_id} className="border-t border-[var(--border-subtle)]">
                     <td className="pr-3">{a.attempt_no}</td><td className="pr-3">{a.status}</td><td className="pr-3">{a.phase}</td>
                     <td className="pr-3 break-all">{a.worker_id}</td><td className="pr-3">{a.fencing_token}</td>
                     <td className="pr-3">{ict(a.started_at)}</td><td className="break-all">{a.error_class || ''}</td>
@@ -351,11 +389,13 @@ function EngineRunsInner() {
               {runFindings.length === 0 ? (
                 <div className="text-xs text-emerald-300">{vi ? 'Không có finding trong các kiểm tra đã chạy. Xem giới hạn phạm vi phía trên.' : 'No findings for the executed checks. Review the coverage limits above.'}</div>
               ) : (
+                <>
+                <p className="text-xs text-[var(--text-secondary)]">{vi ? 'Các phát hiện đã ghi nhận trong lượt này; trạng thái triage là trạng thái hiện tại. Bằng chứng nguyên bản nằm trong kết quả chuẩn hóa có hash ở trên.' : 'Findings detected in this execution; triage status is current. Original evidence is in the hashed normalized output above.'}</p>
                 <table className="w-full text-[11px] text-[var(--text-primary)]">
                   <thead className="text-[var(--text-secondary)] text-left"><tr><th className="pr-3">rule</th><th className="pr-3">severity</th><th className="pr-3">status</th><th className="pr-3">component</th><th>remediation</th></tr></thead>
                   <tbody>
                     {runFindings.map((f) => (
-                      <tr key={f.id} className="border-t border-white/5">
+                      <tr key={f.id} className="border-t border-[var(--border-subtle)]">
                         <td className="pr-3 font-mono">{f.scanner_rule_id}</td><td className="pr-3">{f.severity}{f.evidence?.severity_basis === 'unrated_default' ? ' (unrated)' : ''}</td>
                         <td className="pr-3">{f.status}</td><td className="pr-3 font-mono break-all">{f.target_component}@{f.affected_version}</td>
                         <td>{f.remediation}</td>
@@ -363,19 +403,20 @@ function EngineRunsInner() {
                     ))}
                   </tbody>
                 </table>
+                </>
               )}
             </div>
           )}
         </section>
       )}
 
-      <section className="rounded-2xl border border-white/10 liquid-glass-card overflow-x-auto">
+      <section className="rounded-2xl border border-[var(--border-subtle)] liquid-glass-card overflow-x-auto">
         <table className="w-full text-xs text-[var(--text-primary)]">
           <thead className="text-[var(--text-secondary)] text-left"><tr><th className="p-2">{vi ? 'Trạng thái' : 'Status'}</th><th className="p-2">Engine</th><th className="p-2">{vi ? 'Xếp hàng' : 'Queued'}</th><th className="p-2">Findings</th><th className="p-2">{vi ? 'Lý do' : 'Reason'}</th></tr></thead>
           <tbody>
             {runs.length === 0 && <tr><td className="p-3 text-[var(--text-secondary)]" colSpan={5}>{vi ? 'Chưa có lượt chạy trong phạm vi của bạn.' : 'No runs in your scope yet.'}</td></tr>}
             {runs.map((r) => (
-              <tr key={r.execution_id} className={`border-t border-white/5 cursor-pointer hover:bg-white/5 ${r.execution_id === selectedExecution ? 'bg-white/5' : ''}`}
+              <tr key={r.execution_id} className={`border-t border-[var(--border-subtle)] cursor-pointer hover:bg-white/5 ${r.execution_id === selectedExecution ? 'bg-white/5' : ''}`}
                 onClick={() => setQuery({ execution: r.execution_id })} tabIndex={0}
                 onKeyDown={(e) => { if (e.key === 'Enter') setQuery({ execution: r.execution_id }); }}>
                 <td className="p-2"><span className={`px-1.5 py-0.5 rounded border font-mono ${STATUS_STYLE[r.status] || ''}`}>{r.status}</span></td>

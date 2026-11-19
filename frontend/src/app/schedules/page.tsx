@@ -24,7 +24,7 @@ import {
   ScheduleSlotInfo,
 } from '@/lib/api';
 import { Asset } from '@/lib/types';
-import { eligibleAssetIds } from '@/lib/assessment';
+import { engineAssetIds } from '@/lib/assessment';
 import { LiveEvent, StreamState, subscribeEvents } from '@/lib/events';
 import { useI18n } from '@/lib/i18n';
 
@@ -101,13 +101,14 @@ export default function SchedulesPage() {
   const [planProfile, setPlanProfile] = useState<'light' | 'slow'>('light');
   const [accepted, setAccepted] = useState<RunStatus | null>(null);
   const [cap, setCap] = useState<CapacityInfo | null>(null);
-  const [form, setForm] = useState({ name: '', profile: 'light' as 'light' | 'slow', interval: 120, workers: 1 });
+  const [form, setForm] = useState({ name: '', profile: 'light' as 'light' | 'slow', interval: 1440, workers: 1 });
+  const [scheduleEngines, setScheduleEngines] = useState<EngineName[]>(['public_web']);
   const runKey = useRef<string | null>(null);
   const refreshTimer = useRef<any>(null);
 
   const load = useCallback(async () => {
     try {
-      const [ov, inventory] = await Promise.all([api.getOperationsOverview(), api.listAllAssets(true)]);
+      const [ov, inventory] = await Promise.all([api.getOperationsOverview(), api.listAllAssets()]);
       setAssets(inventory);
       setOverview(ov);
       setCap(ov.capacity);
@@ -175,7 +176,7 @@ export default function SchedulesPage() {
     setError(null);
     try {
       runKey.current = newKey();
-      plannedRequest.current = { selection: { kind: 'assets', asset_ids: eligibleAssetIds(assets) }, engines: planEngines, profile: planProfile };
+      plannedRequest.current = { selection: { kind: 'assets', asset_ids: engineAssetIds(assets, planEngines) }, engines: planEngines, profile: planProfile };
       setPlan(await api.previewPlan(plannedRequest.current));
     } catch (e) {
       setError(errText(e, vi));
@@ -230,8 +231,8 @@ export default function SchedulesPage() {
     try {
       await api.createMonitorSchedule({
         name: form.name || L('Giám sát phạm vi đã duyệt', 'Approved-scope monitoring'),
-        selection: { kind: 'assets', asset_ids: eligibleAssetIds(assets) },
-        engines: ['public_web'],
+        selection: { kind: 'assets', asset_ids: engineAssetIds(assets, scheduleEngines) },
+        engines: scheduleEngines,
         profile: form.profile,
         interval_minutes: form.interval,
         max_workers: form.workers,
@@ -314,7 +315,7 @@ export default function SchedulesPage() {
       <section className="assessment-panel space-y-3">
         <div className="flex flex-wrap gap-3 items-center justify-between"><h2 className="font-semibold">{L('Điều khiển vận hành', 'Operations control')}</h2>{owner && cap && <button disabled={busy} onClick={() => void emergencyStop()} className="assessment-link disabled:opacity-40">{cap.emergency_stop_active ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}{cap.emergency_stop_active ? L('Tiếp tục hàng đợi', 'Resume queue') : L('Dừng khẩn toàn hệ thống', 'Emergency stop')}</button>}</div>
         <p role="status" className="text-sm">{cap?.emergency_stop_active ? L('Đang dừng khẩn: worker không nhận job mới; quan sát web đang chạy sẽ dừng.', 'Emergency stop active: workers do not claim new jobs; in-flight public web observations will stop.') : L('Lịch tự động dùng hàng đợi bền vững; worker và scheduler phải chạy để thực thi.', 'Automation uses the durable queue; workers and scheduler must be running.')}</p>
-        <p className="assessment-muted">{L('Mặc định mỗi 120 phút trên các mục tiêu đủ điều kiện hiện tại. public_web kiểm tra URL được duyệt; TLS/health và SBOM chỉ áp dụng khi có cấu hình đầu vào. Hoàn tất job không đồng nghĩa đã đánh giá toàn diện.', 'Defaults to every 120 minutes for currently eligible targets. public_web checks the approved URL; TLS/health and SBOM require configured inputs. Job completion does not mean comprehensive assessment.')}</p>
+        <p className="assessment-muted">{L('Lịch mới mặc định hằng ngày; lịch đã lưu giữ nguyên chu kỳ. public_web kiểm tra URL được duyệt; TLS/health và SBOM cần đầu vào phù hợp. Hoàn tất job không đồng nghĩa đã đánh giá toàn diện.', 'New schedules default to daily; saved schedules retain their interval. public_web checks the approved URL; TLS/health and SBOM require appropriate inputs. Job completion does not mean comprehensive assessment.')}</p>
         <Link href="/engine-runs/" className="assessment-link">{L('Lượt chạy, nhật ký và bằng chứng', 'Runs, logs and evidence')} →</Link>
       </section>
       {/* Run eligible inventory through the same planner as schedules. */}
@@ -322,7 +323,7 @@ export default function SchedulesPage() {
         <div className="flex flex-wrap items-center gap-3">
           <PlayCircle className="w-5 h-5 text-cyan-400" />
           <h2 className="text-[var(--text-primary)] font-medium">{L('Đánh giá toàn bộ phạm vi đủ điều kiện', 'Assess all eligible targets')}</h2>
-          <span className="text-xs text-[var(--text-secondary)]">{assets.length} {L('mục tiêu đã đối chiếu', 'reconciled targets')}</span>
+          <span className="text-xs text-[var(--text-secondary)]">{engineAssetIds(assets, planEngines).length} {L('mục tiêu đủ điều kiện cho engine đã chọn', 'eligible targets for selected engines')}</span>
         </div>
         <div className="flex flex-wrap items-center gap-4 text-sm text-[var(--text-primary)]">
           {ENGINES.map((e) => (
@@ -339,7 +340,7 @@ export default function SchedulesPage() {
             <option value="light">{L('Nhẹ (kiểm tra nhanh)', 'Light (quick checks)')}</option>
             <option value="slow">{L('Chậm (1 worker, giãn cách theo host)', 'Slow (1 worker, host spacing)')}</option>
           </select>
-          <button disabled={busy || !planEngines.length || !assets.length || cap?.emergency_stop_active} onClick={() => void preview()} className="px-3 py-1.5 rounded bg-cyan-700 text-white disabled:opacity-50">
+          <button disabled={busy || !planEngines.length || !engineAssetIds(assets, planEngines).length || cap?.emergency_stop_active} onClick={() => void preview()} className="px-3 py-1.5 rounded bg-cyan-700 text-white disabled:opacity-50">
             {L('Xem trước tác động', 'Preview impact')}
           </button>
         </div>
@@ -468,14 +469,14 @@ export default function SchedulesPage() {
               </div>
             );
           })}
-          <p className="assessment-muted">{L('Lịch mới dùng public_web trên', 'New schedules use public_web for')} {assets.length} {L('mục tiêu đủ điều kiện đang hiển thị; danh sách mục tiêu được lưu cố định.', 'currently eligible targets; the target selection is stored explicitly.')}</p>
+          <p className="assessment-muted">{engineAssetIds(assets, scheduleEngines).length} {L('mục tiêu đủ điều kiện cho engine đã chọn; lưu danh sách cố định. SBOM dùng tệp mới nhất đã cung cấp. Lịch căn theo UTC; hằng ngày lúc 07:00 ICT (00:00 UTC). Không tự thay đổi lịch hiện có.', 'targets eligible for the selected engines; selection is stored explicitly. SBOM uses the latest supplied file. Slots align to UTC; daily at 07:00 ICT (00:00 UTC). Existing schedules are unchanged.')}</p>
           <form onSubmit={create} className="p-4 rounded border border-dashed border-[var(--border-strong)] flex flex-wrap items-end gap-3 text-sm text-[var(--text-primary)]">
             <label className="flex flex-col text-xs">{L('Tên', 'Name')}
               <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="bg-[var(--bg-surface-hover)] border border-[var(--border-strong)] rounded px-2 py-1" maxLength={200} />
             </label>
             <label className="flex flex-col text-xs">{L('Chu kỳ (phút)', 'Interval (min)')}
               <select value={form.interval} onChange={(e) => setForm({ ...form, interval: Number(e.target.value) })} className="bg-[var(--bg-surface-hover)] border border-[var(--border-strong)] rounded px-2 py-1">
-                {[15, 30, 60, 120, 240].map((m) => <option key={m} value={m}>{m}</option>)}
+                {[15, 30, 60, 120, 240, 720, 1440].map((m) => <option key={m} value={m}>{m === 1440 ? L('1440 — hằng ngày', '1440 — daily') : m}</option>)}
               </select>
             </label>
             <label className="flex flex-col text-xs">Profile
@@ -487,7 +488,8 @@ export default function SchedulesPage() {
             <label className="flex flex-col text-xs">{L('Số worker tối đa', 'Max workers')}
               <input type="number" min={1} max={32} value={form.workers} onChange={(e) => setForm({ ...form, workers: Number(e.target.value) })} className="bg-[var(--bg-surface-hover)] border border-[var(--border-strong)] rounded px-2 py-1 w-20" />
             </label>
-            <button disabled={busy || !assets.length} className="px-3 py-1.5 rounded bg-cyan-700 text-white flex items-center gap-1 disabled:opacity-50"><Plus className="w-4 h-4" />{L('Tạo lịch', 'Create schedule')}</button>
+            <fieldset disabled={busy} className="flex flex-wrap gap-2 text-xs"><legend>{L('Engine cho lịch mới', 'Engines for new schedule')}</legend>{ENGINES.map((e) => <label key={e} className="flex items-center gap-1"><input type="checkbox" checked={scheduleEngines.includes(e)} onChange={(event) => setScheduleEngines((old) => event.target.checked ? [...old, e] : old.filter((x) => x !== e))} />{e}</label>)}</fieldset>
+            <button disabled={busy || !engineAssetIds(assets, scheduleEngines).length} className="px-3 py-1.5 rounded bg-cyan-700 text-white flex items-center gap-1 disabled:opacity-50"><Plus className="w-4 h-4" />{L('Tạo lịch', 'Create schedule')}</button>
           </form>
         </section>
       ) : (

@@ -73,7 +73,8 @@ class Outcome:
     def __init__(self, status: str, reason: Optional[str] = None, error_class: Optional[str] = None,
                  output: Optional[bytes] = None, findings: Optional[List[dict]] = None, summary: Optional[dict] = None,
                  rule_meta: Optional[dict] = None, evaluated_locations: Optional[set] = None,
-                 known_rule_ids: Optional[set] = None, exit_code: int = 0, observed_at: Optional[datetime] = None):
+                 known_rule_ids: Optional[set] = None, exit_code: int = 0, observed_at: Optional[datetime] = None,
+                 evaluated_checks: Optional[dict] = None):
         self.status = status
         self.reason = reason
         self.error_class = error_class
@@ -85,6 +86,7 @@ class Outcome:
         self.known_rule_ids = known_rule_ids
         self.exit_code = exit_code
         self.observed_at = observed_at
+        self.evaluated_checks = evaluated_checks
 
 
 # ------------------------------------------------------------------ engines
@@ -219,12 +221,21 @@ async def _run_public_web(rec: ExecutionRecord, attempt: ExecutionAttempt, asset
     if not revision:
         return Outcome(EXEC_SKIPPED, "No pinned approval revision on the execution.", "SCOPE_CHANGED", rule_meta=rule_meta)
 
-    async def check_scope():
+    async def check_scope(request_url=None):
         async with AsyncSessionLocal() as scope_db:
             current = await scope_db.get(Asset, asset.id)
             if current is None:
                 raise public_web.PolicyDenied("ASSET_MISSING", "Asset no longer exists.")
-            return await public_web.validate_approval(scope_db, current, revision)
+            policy = await public_web.validate_approval(scope_db, current, revision)
+            if request_url is not None:
+                from backend.app.engines.web_surface import origin
+                from backend.app.models.scope import AssetAssessmentScope
+                grant = await scope_db.get(AssetAssessmentScope, uuid.UUID(policy["scope_id"]))
+                if (origin(request_url) != origin(policy["url"]) or not grant or
+                        not public_web.scope_allows(grant, request_url, datetime.now(timezone.utc),
+                            max_requests=policy.get("max_requests", 1), byte_budget=policy.get("byte_budget", public_web.MAX_HEADER_BYTES+2048))):
+                    raise public_web.PolicyDenied("REQUEST_OUT_OF_SCOPE", "Discovered URL is outside the configured origin/path scope.")
+            return policy
 
     try:
         approval = await check_scope()
@@ -232,8 +243,15 @@ async def _run_public_web(rec: ExecutionRecord, attempt: ExecutionAttempt, asset
         return Outcome(EXEC_SKIPPED, exc.detail, exc.code, rule_meta=rule_meta)
     if approval["url"] != rec.input_descriptor.get("url"):
         return Outcome(EXEC_SKIPPED, "Pinned URL no longer matches approval.", "SCOPE_CHANGED", rule_meta=rule_meta)
-    task = asyncio.create_task(public_web.measure(approval["url"], timeout=min(timeout, public_web.MAX_SECONDS),
-                                                   before_request=check_scope))
+    surface = approval.get("mode") == "surface"
+    if surface:
+        from backend.app.engines import web_surface
+        rule_meta = {"source": "builtin", "version": web_surface.RULESET["version"], "digest": web_surface.rules_digest()}
+        task = asyncio.create_task(web_surface.measure(approval, timeout=min(timeout, web_surface.MAX_SECONDS), before_request=check_scope, scan_id=rec.scan_id))
+        rule_titles = web_surface.RULES
+    else:
+        task = asyncio.create_task(public_web.measure(approval["url"], timeout=min(timeout, public_web.MAX_SECONDS), before_request=check_scope))
+        rule_titles = public_web.RULESET["rules"]
     try:
         # Poll persisted scope/stop state across processes; closing a pending task closes its socket.
         while not task.done():
@@ -253,13 +271,15 @@ async def _run_public_web(rec: ExecutionRecord, attempt: ExecutionAttempt, asset
     for check in checks:
         if check["status"] != "FAIL":
             continue
-        findings.append({"rule": check["id"], "location": approval["url"], "component": "public_web",
-                         "severity": check["severity"], "title": public_web.RULESET["rules"][check["id"]],
-                         "description": check["detail"] + " Observation applies only to this exact public HEAD response.",
+        findings.append({"rule": check["id"], "location": check.get("location", approval["url"]), "component": "public_web",
+                         "severity": check["severity"], "title": rule_titles[check["id"]],
+                         "description": check["detail"] + " Observation applies only to this captured public response.",
                          "cve": None, "cvss": None, "cvss_vector": None, "affected_version": None,
                          "fixed_version": None, "remediation": "Review this endpoint's TLS/response policy and recheck after a verified correction.",
                          "references": [], "evidence": {"check": check, "observed_at": res["observed_at"],
-                                                        "http_status": res["http_status"], "method": "HEAD"}})
+                                                        "http_status": next((p["status"] for p in res.get("pages", [])
+                                                            if p["url"] == check.get("location")), res["http_status"]),
+                                                        "method": "GET" if surface else "HEAD"}})
     summary = {**res, "egress_bytes": res["bytes_sent"] + res["bytes_received"],
                "checks_evaluated": len(checks), "checks_failed": len(findings)}
     document = {"schema": "noospire.engine-result/1", "engine_id": public_web.ENGINE_ID,
@@ -271,8 +291,9 @@ async def _run_public_web(rec: ExecutionRecord, attempt: ExecutionAttempt, asset
     status = EXEC_SUCCEEDED if checks else EXEC_UNAVAILABLE
     return Outcome(status, res["error"], "OBSERVATION_INCOMPLETE" if not checks else None,
                    output=json.dumps(document, sort_keys=True, indent=2).encode(), findings=findings,
-                   summary=summary, rule_meta=rule_meta, evaluated_locations={approval["url"]} if checks else set(),
-                   known_rule_ids={c["id"] for c in checks}, observed_at=datetime.fromisoformat(res["observed_at"]))
+                   summary=summary, rule_meta=rule_meta, evaluated_locations={c.get("location", approval["url"]) for c in checks},
+                   known_rule_ids={c["id"] for c in checks}, observed_at=datetime.fromisoformat(res["observed_at"]),
+                   evaluated_checks=res.get("evaluated_checks"))
 
 
 ENGINES = {public_web.ENGINE_ID: (_run_public_web, public_web.DRIVER_NAME, public_web.DRIVER_VERSION),
@@ -607,7 +628,9 @@ async def _upsert_findings(db, scan_id, rec, attempt, asset, outcome: Outcome, o
                               after=row.status, reason="Location not evaluated in this execution (input changed).",
                               output_sha=out_sha, rule_digest=digest, observed_at=now)
             continue
-        if outcome.known_rule_ids is not None and row.scanner_rule_id not in outcome.known_rule_ids:
+        if ((outcome.known_rule_ids is not None and row.scanner_rule_id not in outcome.known_rule_ids)
+                or (outcome.evaluated_checks is not None and row.scanner_rule_id not in
+                    outcome.evaluated_checks.get(row.target_location, []))):
             lifecycle.observe(db, finding_id=row.id, rec=rec, outcome="changed_scope", before=row.status,
                               after=row.status, reason="Rule absent from the rule set used; not equivalent evidence.",
                               output_sha=out_sha, rule_digest=digest, observed_at=now)

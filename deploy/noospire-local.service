@@ -1,0 +1,22 @@
+# User service for the existing checkout at ~/noospire. No tunnel/external deployment.
+[Unit]
+Description=NOOSFORGE local API, console, worker and scheduler
+After=network-online.target
+StartLimitIntervalSec=120
+StartLimitBurst=3
+
+[Service]
+Type=forking
+WorkingDirectory=%h/noospire
+ExecStart=%h/noospire/run.sh start --enable-jobs
+ExecStop=%h/noospire/run.sh stop
+PIDFile=%h/noospire/storage/local-stack/supervisor.pid
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=90
+TimeoutStopSec=40
+KillMode=control-group
+UMask=0077
+
+[Install]
+WantedBy=default.target

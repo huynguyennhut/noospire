@@ -185,6 +185,9 @@ def test_local_supervisor_console_jobs_restart_and_stop(tmp_path):
         assert initial.returncode == 0, initial.stderr + initial.stdout
         state = json.loads(initial.stdout)
         assert state["api_ready"] and state["gateway_ready"]
+        saved = json.loads((state_dir / "state.json").read_text())
+        assert int((state_dir / "supervisor.pid").read_text()) == saved["supervisor"]["pid"]
+        assert (state_dir / "supervisor.pid").stat().st_mode & 0o777 == 0o600
         assert state["jobs_enabled"] is False and set(state["services"]) == {"api", "gateway"}
         assert run("logs", "api", "--lines", "5").returncode == 0
         # A second control directory must refuse occupied ports, leaving first stack alive.
@@ -194,6 +197,7 @@ def test_local_supervisor_console_jobs_restart_and_stop(tmp_path):
         assert other.returncode == 1 and "already in use" in other.stderr
         assert run("status").returncode == 0
         assert run("stop").returncode == 0
+        assert not (state_dir / "supervisor.pid").exists()
         assert run("status").returncode == 1
         started = run("start", "--enable-jobs", "--api-port", str(api_port), "--port", str(gw_port))
         assert started.returncode == 0, started.stderr + started.stdout

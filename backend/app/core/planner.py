@@ -315,6 +315,9 @@ async def build_plan(db: AsyncSession, *, selection: Selection, engines: Sequenc
                         items.append(it)
                         continue
                     it.public_web_url, it.public_web_revision = hc["url"], hc["revision"]
+                    if hc.get("mode") == "surface":
+                        it.timeout_seconds = 75
+                        it.est_seconds = max(it.est_seconds, 20)
                 else:
                     hc = (asset.assessment_policy or {}).get("health_check") or {}
                 if not hc.get("url"):

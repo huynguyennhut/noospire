@@ -274,7 +274,7 @@ export default function DashboardPage() {
             className="border-cyan-500/40 text-cyan-300 hover:bg-cyan-950/40 hover:text-cyan-200 shadow-[0_0_15px_rgba(6,182,212,0.15)]"
             icon={<Zap className="w-3.5 h-3.5 text-cyan-400" />}
           >
-            <span>{locale === 'vi' ? 'Xem kế hoạch đánh giá' : 'Preview assessment'}</span>
+            <span>{locale === 'vi' ? 'Chọn kiểm tra' : 'Choose checks'}</span>
           </Button>
 
           {/* Quick Action: Launch Assessment */}
@@ -628,7 +628,7 @@ export default function DashboardPage() {
             <InteractiveGaugeChart
               value={coverage?.coverage_percentage ?? 0}
               height={160}
-              postureText={`${coverage ? `${coverage.coverage_percentage}%` : '—'} {locale === 'vi' ? 'có lịch sử' : 'with history'}`}
+              postureText={`${coverage ? `${coverage.coverage_percentage}%` : '—'} ${locale === 'vi' ? 'có lịch sử' : 'with history'}`}
               zones={[
                 { max: 100, label: locale === 'vi' ? 'LỊCH SỬ' : 'HISTORY', color: '#94A3B8' },
               ]}

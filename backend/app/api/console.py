@@ -295,7 +295,7 @@ async def recheck_finding_impl(db: AsyncSession, user: User, finding_id: uuid.UU
         raise HTTPException(status_code=404, detail="Finding not found")
     scope = await load_scope(user, db)
     scope.require(f.asset_id, "SCAN")
-    if f.scanner_engine not in ("sbom", "tls_health"):
+    if f.scanner_engine not in ("sbom", "tls_health", "public_web"):
         raise HTTPException(status_code=409, detail=f"No approved defensive control for engine '{f.scanner_engine}'; "
                                                     "import a manual verification as evidence instead.")
     key = f"{user.id}:recheck:{finding_id}:{idempotency_key}" if idempotency_key else None

@@ -174,7 +174,7 @@ export interface MonitorSchedule {
   last_run_at: string | null;
   last_batch_id: string | null;
   last_full_success_at: string | null;
-  latest_result: { status: string | null; at: string | null; batch_id: string | null };
+  latest_result: { status: string | null; at: string | null; batch_id: string | null; report_id?: string | null };
   running: boolean;
   pending_catchup: boolean;
   missed_slots: number;
@@ -234,6 +234,7 @@ export interface OperationsOverview {
   feed: { source: string; version: string; digest: string; imported_at: string; age_hours: number } | null;
   workers: Array<{ worker_id: string; last_seen_at: string; age_seconds: number; state: string; active_executions: number; throttle_reason: string | null }>;
   workers_online: number;
+  scheduler: { online: boolean; last_tick_at: string | null; age_seconds: number | null };
   capacity: CapacityInfo;
 }
 
@@ -667,8 +668,9 @@ class ApiClient {
 
   // Findings & Remediation
   public async listFindings(filters?: { assetId?: string; module?: string; severity?: string; status?: string;
-    statusGroup?: string; outcome?: string; day?: string; scanId?: string; executionId?: string }): Promise<{ items: Finding[]; total: number }> {
-    const params = new URLSearchParams({ size: '100' });
+    statusGroup?: string; outcome?: string; day?: string; scanId?: string; executionId?: string;
+    observationGroup?: 'detected'; page?: number; size?: number }): Promise<{ items: Finding[]; total: number }> {
+    const params = new URLSearchParams({ size: String(filters?.size || 100), page: String(filters?.page || 1) });
     if (filters?.assetId) params.append('asset_id', filters.assetId);
     if (filters?.module) params.append('empire_module', filters.module);
     if (filters?.severity) params.append('severity', filters.severity);
@@ -678,7 +680,25 @@ class ApiClient {
     if (filters?.day) params.append('day', filters.day);
     if (filters?.scanId) params.append('scan_id', filters.scanId);
     if (filters?.executionId) params.append('execution_id', filters.executionId);
+    if (filters?.observationGroup) params.append('observation_group', filters.observationGroup);
     return this.fetchJson<{ items: Finding[]; total: number }>(`/findings?${params.toString()}`);
+  }
+
+  public async listAllFindings(filters?: Parameters<ApiClient['listFindings']>[0]): Promise<Finding[]> {
+    const items: Finding[] = [];
+    const ids = new Set<string>();
+    let expected: number | undefined;
+    for (let page = 1; page <= 100; page++) {
+      const result = await this.listFindings({ ...filters, size: 200, page });
+      expected ??= result.total;
+      if (result.total !== expected || result.items.some((f) => ids.has(f.id)))
+        throw new Error('Findings changed while loading; refresh to obtain a consistent list.');
+      result.items.forEach((f) => { ids.add(f.id); items.push(f); });
+      if (items.length === expected) return items;
+      if (!result.items.length || items.length > expected)
+        throw new Error('Findings pagination is inconsistent; refresh before exporting.');
+    }
+    throw new Error('Too many findings for this view; narrow the asset or execution filter.');
   }
 
   public async getFinding(id: string): Promise<Finding> {
@@ -976,16 +996,26 @@ class ApiClient {
     return `${API_BASE}/executions/${id}/output`;
   }
 
+  public async getExecutionLogPage(id: string, page = 1): Promise<{ items: Array<{ timestamp: string; level: string; message: string; source: string }>; total: number; pages: number }> {
+    return this.fetchJson(`/executions/${id}/logs?page=${page}&size=50`);
+  }
+
   public async listAdvisorySnapshots(): Promise<AdvisorySnapshotInfo[]> {
     return this.fetchJson<AdvisorySnapshotInfo[]>('/threat-intel/advisory-snapshots');
   }
 
   public async importAdvisorySnapshot(file: File, source: string, versionLabel: string): Promise<AdvisorySnapshotInfo> {
-    const q = new URLSearchParams({ source, version_label: versionLabel });
+    const q = new URLSearchParams({ source, version_label: versionLabel, activate: 'false' });
     return this.fetchJson<AdvisorySnapshotInfo>(`/threat-intel/advisory-snapshots?${q.toString()}`, {
       method: 'POST',
       body: file,
       headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  public async setAdvisoryActivation(id: string, active: boolean, reason: string): Promise<AdvisorySnapshotInfo> {
+    return this.fetchJson(`/threat-intel/advisory-snapshots/${id}/activation`, {
+      method: 'PUT', body: JSON.stringify({ active, reason }),
     });
   }
 

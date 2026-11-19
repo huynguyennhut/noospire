@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import JSON, String, select
+from sqlalchemy import JSON, String, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -341,19 +341,28 @@ class ReportGenerator:
             from backend.app.models.asset import Asset
             from backend.app.models.finding import NormalizedFinding
             from backend.app.models.scan import Scan
+            from backend.app.models.defensive import ExecutionRecord
+            from backend.app.models.lifecycle import FindingObservation
             # Query actual findings from DB
             query = select(NormalizedFinding)
             if scan_id:
-                query = query.where(NormalizedFinding.scan_id == scan_id)
-            elif asset_id:
-                query = query.where(NormalizedFinding.asset_id == asset_id)
+                observed = select(FindingObservation.finding_id).join(
+                    ExecutionRecord, ExecutionRecord.id == FindingObservation.execution_id).where(
+                    ExecutionRecord.scan_id == scan_id,
+                    FindingObservation.outcome.in_(("new", "unchanged", "reopened")))
+                query = query.where(or_(NormalizedFinding.scan_id == scan_id, NormalizedFinding.id.in_(observed)))
             elif batch_id:
                 from backend.app.models.scan import Scan
                 scan_res = await db.execute(select(Scan.id).where(Scan.batch_id == batch_id))
                 b_scan_ids = [s for s in scan_res.scalars().all()]
-                if b_scan_ids:
-                    query = query.where(NormalizedFinding.scan_id.in_(b_scan_ids))
+                observed = select(FindingObservation.finding_id).where(
+                    FindingObservation.batch_id == batch_id,
+                    FindingObservation.outcome.in_(("new", "unchanged", "reopened")))
+                query = query.where(or_(NormalizedFinding.scan_id.in_(b_scan_ids), NormalizedFinding.id.in_(observed)))
                 target_scope = f"Batch Assessment ({batch_id})"
+
+            if asset_id:
+                query = query.where(NormalizedFinding.asset_id == asset_id)
 
             result = await db.execute(query)
             findings = list(result.scalars().all())

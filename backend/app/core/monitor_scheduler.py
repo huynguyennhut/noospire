@@ -37,7 +37,7 @@ from backend.app.models.defensive import (
     EXEC_SUCCEEDED,
     ExecutionRecord,
 )
-from backend.app.models.operations import CapacitySettings, MonitorSchedule, ScheduleSlot
+from backend.app.models.operations import CapacitySettings, MonitorSchedule, ScheduleSlot, SchedulerHeartbeat
 from backend.app.models.scan import Scan, ScanBatch
 
 log = logging.getLogger("noospire.scheduler")
@@ -147,6 +147,11 @@ class MonitorScheduler:
             except (IntegrityError, OperationalError) as exc:
                 report["conflicts"] += 1  # another scheduler owns this slot / write lock contention
                 log.info("slot claim lost for schedule %s: %s", sid, type(exc).__name__)
+        # Only completed ticks advertise readiness; a live but failing loop is stale.
+        async with AsyncSessionLocal() as db:
+            await db.merge(SchedulerHeartbeat(scheduler_id=self.scheduler_id,
+                                             last_tick_at=datetime.now(timezone.utc)))
+            await db.commit()
         return report
 
     async def _tick_schedule(self, sid: uuid.UUID, now: datetime, report: dict) -> None:
@@ -285,10 +290,25 @@ async def finalize_slots(db, schedule_id: uuid.UUID, now: datetime) -> int:
         result = _result_of(counts, slot.plan_summary or {})
         if long_pending and result == "completed":
             result = "partial"
+        # An atomic finalization claim also prevents two schedulers from creating
+        # separate automatic reports for the same completed slot.
+        claim = await db.execute(update(ScheduleSlot).where(ScheduleSlot.id == slot.id,
+            ScheduleSlot.status == "launched").values(status="finalizing"))
+        if claim.rowcount != 1:
+            continue
         slot.status = result
         slot.finished_at = now
         slot.result_summary = {"by_status": counts, "long_lane_pending": long_pending}
         s = await db.get(MonitorSchedule, schedule_id)
+        if s is not None and "public_web" in s.engines:
+            from backend.app.models.asset import Asset
+            from backend.app.reporting.pilot_report import create_snapshot
+            asset_ids = select(ExecutionRecord.asset_id).where(ExecutionRecord.batch_id == slot.batch_id)
+            assets = list((await db.execute(select(Asset).where(Asset.id.in_(asset_ids)))).scalars().all())
+            if assets:
+                report = await create_snapshot(db, title=f"{s.name} · {_utc(slot.slot_at).isoformat()}",
+                    assets=assets, batch_id=slot.batch_id, days=1, user_id=s.created_by, scope_kind="run")
+                slot.result_summary = {**slot.result_summary, "report_id": str(report.id)}
         if s is not None and (s.last_result_at is None or _utc(s.last_result_at) <= now):
             s.last_result_status = result
             s.last_result_at = now

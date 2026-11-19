@@ -1,0 +1,337 @@
+{
+  "schema": "noosforge-assessment-workflow-validation/1",
+  "recorded_at_utc": "2026-11-17T07:38:43.860295+00:00",
+  "scope": "NOOSFORGE software acceptance on isolated synthetic lab; no new Empire assessment",
+  "source_base_commit": "0c62d6a",
+  "delivery_branch": "codex/assessment-workflow",
+  "checks": {
+    "pilot": {
+      "preset": "pilot",
+      "checks": [
+        {
+          "command": [
+            "/home/nhut-nguyen/noospire/.venv/bin/python",
+            "-m",
+            "pytest",
+            "-p",
+            "pytest_asyncio.plugin",
+            "-q",
+            "tests_pilot",
+            "--deselect=tests_pilot/test_m7_round_a.py::test_legacy_database_upgrades_in_place_and_backup_restores",
+            "--junitxml=/tmp/noosforge-pilot-q0iuqqe7/pytest.xml"
+          ],
+          "cwd": "/home/nhut-nguyen/noospire",
+          "exit_code": 0,
+          "status": "PASS",
+          "seconds": 246.75,
+          "log": "/tmp/noosforge-pilot-q0iuqqe7/01.log"
+        }
+      ],
+      "pytest_summary": "256 passed, 1 deselected, 258 warnings in 238.09s (0:03:58)"
+    },
+    "backend_after_pdf_fix": {
+      "preset": "backend",
+      "checks": [
+        {
+          "command": [
+            "/home/nhut-nguyen/noospire/.venv/bin/python",
+            "-m",
+            "pytest",
+            "-p",
+            "pytest_asyncio.plugin",
+            "-q",
+            "tests_pilot/test_m1_identity_scope.py",
+            "tests_pilot/test_platform_access_security.py",
+            "tests_pilot/test_inventory_reconciliation.py",
+            "tests_pilot/test_root_observation.py",
+            "tests_pilot/test_verified_recheck_lifecycle.py",
+            "tests_pilot/test_m3_sbom_flow.py",
+            "tests_pilot/test_m5_console.py",
+            "tests_pilot/test_assessment_workflow.py",
+            "--deselect=tests_pilot/test_m7_round_a.py::test_legacy_database_upgrades_in_place_and_backup_restores",
+            "--junitxml=/tmp/noosforge-backend-ncu4lyt_/pytest.xml"
+          ],
+          "cwd": "/home/nhut-nguyen/noospire",
+          "exit_code": 0,
+          "status": "PASS",
+          "seconds": 123.24,
+          "log": "/tmp/noosforge-backend-ncu4lyt_/01.log"
+        }
+      ],
+      "pytest_summary": "114 passed, 115 warnings in 114.70s (0:01:54)"
+    },
+    "frontend": {
+      "preset": "frontend",
+      "checks": [
+        {
+          "command": [
+            "npm",
+            "run",
+            "test:lifecycle"
+          ],
+          "cwd": "/home/nhut-nguyen/noospire/frontend",
+          "exit_code": 0,
+          "status": "PASS",
+          "seconds": 2.48,
+          "log": "/tmp/noosforge-frontend-v9_ucozb/01.log"
+        },
+        {
+          "command": [
+            "npm",
+            "run",
+            "typecheck"
+          ],
+          "cwd": "/home/nhut-nguyen/noospire/frontend",
+          "exit_code": 0,
+          "status": "PASS",
+          "seconds": 7.08,
+          "log": "/tmp/noosforge-frontend-v9_ucozb/02.log"
+        },
+        {
+          "command": [
+            "npm",
+            "run",
+            "lint"
+          ],
+          "cwd": "/home/nhut-nguyen/noospire/frontend",
+          "exit_code": 0,
+          "status": "PASS",
+          "seconds": 4.72,
+          "log": "/tmp/noosforge-frontend-v9_ucozb/03.log"
+        },
+        {
+          "command": [
+            "npm",
+            "run",
+            "build"
+          ],
+          "cwd": "/home/nhut-nguyen/noospire/frontend",
+          "exit_code": 0,
+          "status": "PASS",
+          "seconds": 57.12,
+          "log": "/tmp/noosforge-frontend-v9_ucozb/04.log"
+        }
+      ]
+    },
+    "contract": {
+      "preset": "contract",
+      "checks": [
+        {
+          "command": [
+            "/home/nhut-nguyen/noospire/.venv/bin/python",
+            "scripts/contract_audit.py"
+          ],
+          "cwd": "/home/nhut-nguyen/noospire",
+          "exit_code": 0,
+          "status": "PASS",
+          "seconds": 8.41,
+          "log": "/tmp/noosforge-contract-1yokjyfn/01.log"
+        }
+      ]
+    }
+  },
+  "skills_validation": {
+    "command": ".venv/bin/python .agents/skills/noosforge-release-review/scripts/validate_skills.py",
+    "skills": 7,
+    "errors": 0,
+    "exit_code": 0
+  },
+  "diff_check": {
+    "command": "git diff --check",
+    "exit_code": 0
+  },
+  "browser": {
+    "tool": "cua_repl IAB",
+    "origin": "http://127.0.0.1:8082",
+    "asset_id": "032b0d0d-94ee-4343-aaeb-e8f265500146",
+    "asset_created_via_ui": true,
+    "findings_manually_seeded": false,
+    "customer_probes_in_this_task": 0,
+    "execution_ids": [
+      "bdd583af-e727-4b82-aad4-e451e08857e5",
+      "baeb6caa-4fd4-4918-a659-c832b694e7dd",
+      "9a3aa1ca-0769-41ce-aa40-09f5483f54d3",
+      "5a6a8b3e-59f5-4d14-a760-0fc669c36330",
+      "849b2cb7-5319-42f8-8197-836dd866aa00"
+    ],
+    "known_positive_matches": 4,
+    "patched_input_matches": 0,
+    "stable_finding_ids": true,
+    "final_lifecycle_counts": {
+      "RESOLVED": 3,
+      "NEW": 1
+    },
+    "omitted_component_outcome": "changed_scope; delta remains NEW",
+    "rules_disabled_outcome": "RULES_UNAVAILABLE; states preserved; reviewed snapshot reactivated via UI",
+    "recheck_execution": "5a6a8b3e-59f5-4d14-a760-0fc669c36330",
+    "original_snapshot_json_byte_identical_after_retest": true,
+    "original_pdf_byte_identical_after_renderer_upgrade": true,
+    "final_report_id": "27d06852-f811-4bd0-b6a1-1635e7bc88f3",
+    "final_report_template": "noospire-pilot-report/1.2",
+    "final_pdf_pages": 2,
+    "pdf_pages_rendered_and_visually_reviewed": [
+      1,
+      2
+    ],
+    "daily_schedule": "created via UI, 1440 minutes, next shown 07:00 ICT; paused and reload persisted",
+    "missing_response": "explicitly no recorded capture; no fabricated HTTP response",
+    "unrated_cvss": "delta has no recorded numeric score",
+    "reasonless_false_positive_save_enabled": false,
+    "keyboard": "Escape closes finding dialog",
+    "filter_empty_state": "HIGH => 0 matching; Reset Filters => 4",
+    "themes": [
+      "warm",
+      "obsidian-dark"
+    ],
+    "mobile_viewport": [
+      390,
+      844
+    ],
+    "mobile_document_width_scrollwidth": {
+      "findings": [
+        385,
+        385
+      ],
+      "modal": [
+        390,
+        390
+      ]
+    },
+    "viewport_reset": true,
+    "final_console_warnings_errors": [],
+    "navigation_smoke_routes": [
+      "/dashboard/",
+      "/assets/",
+      "/scans/",
+      "/active-assessments/",
+      "/engine-runs/",
+      "/schedules/",
+      "/empire-modules/",
+      "/checklist/",
+      "/findings/",
+      "/threat-intel/",
+      "/remediation/",
+      "/detection-rules/",
+      "/reports/",
+      "/users/",
+      "/integrations/",
+      "/health/",
+      "/settings/"
+    ],
+    "not_browser_accepted": [
+      "all role/grant/invite mutations",
+      "feed synchronization",
+      "legacy checklist execution",
+      "retention deletion",
+      "every action on all 17 screens"
+    ]
+  },
+  "runtime": {
+    "phase": "ready",
+    "supervisor_running": true,
+    "jobs_enabled": true,
+    "defensive_only": true,
+    "console_url": "http://localhost:8082/",
+    "api_ready": true,
+    "gateway_ready": true,
+    "services": {
+      "api": {
+        "pid": 16476,
+        "created": 1794900462.74,
+        "log": "/home/nhut-nguyen/noospire/storage/assessment-lab/processes/api.log",
+        "restarts": 0,
+        "running": true
+      },
+      "gateway": {
+        "pid": 16480,
+        "created": 1794900470.37,
+        "log": "/home/nhut-nguyen/noospire/storage/assessment-lab/processes/gateway.log",
+        "restarts": 0,
+        "running": true
+      },
+      "worker": {
+        "pid": 16486,
+        "created": 1794900471.24,
+        "log": "/home/nhut-nguyen/noospire/storage/assessment-lab/processes/worker.log",
+        "restarts": 0,
+        "running": true
+      },
+      "scheduler": {
+        "pid": 16487,
+        "created": 1794900471.26,
+        "log": "/home/nhut-nguyen/noospire/storage/assessment-lab/processes/scheduler.log",
+        "restarts": 0,
+        "running": true
+      }
+    },
+    "log_directory": "/home/nhut-nguyen/noospire/storage/assessment-lab/processes",
+    "error": null
+  },
+  "retained_synthetic_artifacts": [
+    {
+      "path": "docs/audit/evidence/assessment-workflow-2026-11-17/evidence-dark-mobile.jpg",
+      "bytes": 54984,
+      "sha256": "25c6cebdd969a34bae88c5e9f4ae983cc68d10c5bbf1ff3f35bd2a052049d23a"
+    },
+    {
+      "path": "docs/audit/evidence/assessment-workflow-2026-11-17/findings-dark-desktop.jpg",
+      "bytes": 106168,
+      "sha256": "27b1d515066ff7d2dbb0b632ff28350c6c5e3307d3c7a2f35c0cb728dd35eacd"
+    },
+    {
+      "path": "docs/audit/evidence/assessment-workflow-2026-11-17/findings-dark-mobile.jpg",
+      "bytes": 45572,
+      "sha256": "cd307ea13737b7321e699a2b5557121a668b1ea1532c764b3f7bd7310d742688"
+    },
+    {
+      "path": "docs/audit/evidence/assessment-workflow-2026-11-17/findings-warm-desktop.jpg",
+      "bytes": 105160,
+      "sha256": "71c2cf807cd5757ee65a3285f064ee0ae545180b03788aa0fe4955cd64aaa5a4"
+    },
+    {
+      "path": "docs/audit/evidence/assessment-workflow-2026-11-17/findings-warm-mobile.jpg",
+      "bytes": 44639,
+      "sha256": "14b604e3f2052252a23cb00c3e117a936e91f263ed052a54a4e79ced802c2af0"
+    },
+    {
+      "path": "docs/audit/evidence/assessment-workflow-2026-11-17/report-before-retest.json",
+      "bytes": 7986,
+      "sha256": "5d7e181bfe0e1e70a81f05fe5c7d07faae67b8194c527f04934cb74981673b98"
+    },
+    {
+      "path": "docs/audit/evidence/assessment-workflow-2026-11-17/report-final.json",
+      "bytes": 9034,
+      "sha256": "74e30895d98e4c8924bc255a2ab7dc06cbcd1374b97b338b419c1c569255d9e9"
+    },
+    {
+      "path": "docs/audit/evidence/assessment-workflow-2026-11-17/report-final.pdf",
+      "bytes": 25647,
+      "sha256": "6739bc7b4b474117a407579d848c856de74a89ade08ddcc3c29ecd82f29d2b99"
+    },
+    {
+      "path": "docs/audit/evidence/assessment-workflow-2026-11-17/ui-navigation-smoke.json",
+      "bytes": 6796,
+      "sha256": "b4327e1840a83c8e7ad10f96c688f21ac2ba057790d3eb51bd01ac5b47ad59e1"
+    }
+  ],
+  "local_intermediate_artifacts": "/home/nhut-nguyen/noospire/storage/assessment-lab/evidence",
+  "known_limits": [
+    "Nuclei/ZAP/Trivy/crawler/Empire adapters NOT_INTEGRATED in fenced flow",
+    "No automated Empire target-auth profiles or safe multi-role test records",
+    "No full production inventory/approved customer health manifest",
+    "No Docker/native scanner/PostgreSQL/external deployment/recovery acceptance",
+    "Client all-findings load is bounded to 20000; global accessibility/contrast is not certified",
+    "One real-repository-DB-copy pilot case deliberately deselected; legacy tests not run"
+  ],
+  "intermediate_failures": {
+    "artifact_directory": "/tmp/noosforge-pilot-kvc9rha0",
+    "passed": 248,
+    "failed": 2,
+    "deselected": 1,
+    "notes": [
+      "API timeout in subprocess test during concurrent frontend builds",
+      "Contract scanned source while it was being changed; fixed by stable rerun"
+    ]
+  },
+  "release_review": "Changed native SBOM vertical flow accepted locally; broad production assessment/deployment remains HOLD on named gaps."
+}

@@ -43,7 +43,7 @@ LEGACY = {
 DEFENSIVE = {
     "public_web": {"name": "Public web response baseline", "driver": public_web.DRIVER_NAME,
                    "version": public_web.DRIVER_VERSION,
-                   "capabilities": ["single-head", "tls-verification", "certificate-expiry", "response-header-policy", "cookie-secure-attribute"]},
+                   "capabilities": ["single-head", "bounded-same-origin-get", "tls-verification", "certificate-expiry", "response-header-policy", "cookie-secure-attribute", "html-policy-checks", "network-isolated-native-nuclei-passive-when-provisioned"]},
     "sbom": {"name": "SBOM vs versioned advisories", "driver": sbom_engine.DRIVER_NAME,
              "version": sbom_engine.DRIVER_VERSION, "capabilities": ["cyclonedx", "spdx", "pypi", "semver", "maven"]},
     "tls_health": {"name": "Read-only TLS / health measurement", "driver": tls_health.DRIVER_NAME,

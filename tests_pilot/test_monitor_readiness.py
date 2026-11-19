@@ -159,3 +159,31 @@ async def test_operator_configuration_is_exact_root_idempotent_and_preserves_oth
         assert len(grants) == 2  # original scope preserved; dedicated exact-root grant added
         dedicated = next(s for s in grants if s.created_by == "noosforge:public-monitor")
         assert dedicated.allowed_path_patterns == ["/"] and dedicated.max_requests_per_run == 1
+
+async def test_surface_configuration_upgrades_only_dedicated_grant_and_keeps_revision_on_retry(client,owner):
+    from scripts.configure_empire_monitor import configure
+    from backend.app.core.inventory_reconciliation import PRIMARY_TARGET
+    aid=await ready_asset();seeded=await fixture_asset(seed=True);sid=uuid.uuid4()
+    async with AsyncSessionLocal() as db:
+        (await db.get(Asset,aid)).target_locator=PRIMARY_TARGET
+        db.add(MonitorSchedule(id=sid,name='SYNTHETIC surface upgrade',selection={'kind':'all'},
+                              engines=['tls_health'],interval_minutes=60,created_by=str(owner.id)))
+        await db.commit()
+    async with AsyncSessionLocal() as db:
+        await configure(db,sid)
+        original=next(s for s in (await db.execute(select(AssetAssessmentScope).where(
+            AssetAssessmentScope.asset_id==aid))).scalars() if s.created_by!='noosforge:public-monitor')
+        original_id=original.id;original_paths=list(original.allowed_path_patterns)
+    async with AsyncSessionLocal() as db:
+        first=await configure(db,sid,mode='surface')
+        revision=(await db.get(Asset,aid)).assessment_policy['public_web']['revision']
+    async with AsyncSessionLocal() as db:
+        second=await configure(db,sid,mode='surface')
+        root=await db.get(Asset,aid)
+        assert root.assessment_policy['public_web']['revision']==revision
+        grant=(await db.execute(select(AssetAssessmentScope).where(AssetAssessmentScope.asset_id==aid,
+            AssetAssessmentScope.created_by=='noosforge:public-monitor'))).scalar_one()
+        assert grant.allowed_path_patterns==['/*'] and grant.max_requests_per_run==12 and grant.byte_budget==1_000_000
+        assert (await db.get(AssetAssessmentScope,original_id)).allowed_path_patterns==original_paths
+        assert (await db.get(Asset,seeded)).assessment_policy=={}
+        assert first['mode']==second['mode']=='surface'

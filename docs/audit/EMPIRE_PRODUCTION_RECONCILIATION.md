@@ -1,3 +1,5 @@
+> Current scope update (2026-11-17): the owner authorizes all Empire-owned infrastructure. Root-only wording below records the earlier configured inventory and execution, not the current authorization boundary. See [current inventory guidance](../EMPIRE_INVENTORY_GUIDANCE.md).
+
 # Empire production inventory and execution reconciliation
 
 Recorded 2026-11-15. This continues the [repository audit](PROJECT_CURRENT_STATE.md)
